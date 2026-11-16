@@ -3,6 +3,7 @@
 A Chrome extension and a small local helper for logging defects while you test a web app. You don't have to switch between Chrome, DevTools and the Claude app.
 
 - **Record** the Chrome window (docked DevTools included) or your entire screen, from a small Recorder window. Pause, resume and stop any time.
+- **Track localizations:** collect every raw localization key the app shows while you test, and save the list as a CSV.
 - **Halt** with a shortcut (⌥⇧B). This pauses the recording, takes a snapshot, and freezes the API and console log at that instant.
 - **Captured automatically:** every fetch/XHR call on the sites you enable, with failures flagged. That includes DIGIT `Errors[]` responses that come back with HTTP 200. Console errors are captured too.
 - **Report form:**
@@ -77,6 +78,39 @@ You can change these at `chrome://extensions/shortcuts`.
 
 If the Status change or closing fails after the comment is posted, **Retry** redoes only that step. The comment is never posted twice. Add `&dry=1` to the tab's URL to see the `gh` commands without posting.
 
+## Track localizations (finding untranslated text)
+
+Use this while you click through workflows, to collect every place the app shows a raw localization key instead of translated text.
+
+1. On your app's tab, open the popup and click **Track localizations**. The toolbar badge shows **LOC**, unless a recording is running.
+2. Test as usual, in as many tabs and pages of that site as you like. You can record at the same time.
+3. Click **■ Stop & save list**. Chrome's **Save as** dialog opens so you can pick the folder.
+
+You get one CSV per site, named after it: `bgrm.bomet.go.ke` gives `bgrm_bomet_go_ke.csv`. Columns:
+
+| Code | Page |
+|---|---|
+| `CS_COMMON_SUBMIT` | `digit-ui/employee/pgr/inbox-v2` |
+
+The CSV opens in Excel, Numbers, Google Sheets and LibreOffice on Mac, Windows and Ubuntu.
+
+**What counts as a missing localization:**
+- A raw key anywhere in the text: `\b[A-Z][A-Z0-9&]+(?:_[A-Za-z0-9&]+)+\b`. For example `CS_COMMON_SUBMIT`, `DSS_W&S_TOTAL_COLLECTION`, or `WARD_1` in "Azad Nagar - WARD_1".
+- Or a whole string that's a raw tenant code: `^[a-z]{2}(?:\.[a-z0-9_]+)+$`, e.g. `ke.bomet`.
+- Not flagged: icon names (`arrow_drop_down`), complaint numbers, emails, URLs, amounts, dates, plain words, or keys without an underscore (`SUBMIT`).
+
+**Dropdowns, drill-downs and pages that load later:**
+- When tracking starts and on every page load, the whole page is checked, *including hidden parts* already in the page, such as a dropdown's options before you open it.
+- After that, anything that appears is checked the moment it appears: custom dropdowns, expanded rows, drill-down tables, modals, toasts, lazily loaded rows, and the next page in single-page apps.
+- Placeholder text, tooltips (`title`) and screen-reader labels are checked too.
+- Content the app only fetches when you click is found once you open it, so click through what you want covered.
+
+**Long sessions:** only unique *Code + Page* pairs are kept (a few dozen bytes each), never page text, so a day-long session stays tiny. Tracking survives page reloads and Chrome restarts until you stop it.
+
+- **Save so far** saves the list without stopping.
+- After stopping, the popup shows the last list and offers **Save again**.
+- Starting a new list replaces the last one; you're warned if it wasn't saved.
+
 ## Incognito
 
 Chrome only runs extensions in Incognito windows if you allow it: go to `chrome://extensions` → eGov Bug Reporter → **Details** → switch on **Allow in Incognito**. The Setup tab shows whether it's on.
@@ -108,7 +142,7 @@ Nothing in the form uses Claude except **Draft with Claude**.
 extension/   Chrome extension (Manifest V3, no build step)
   background/  service worker: shortcuts, halt, capture store, recorder control
   recorder/    Recorder window: window/screen capture, WebCodecs H.264 → MP4 via bundled mp4-muxer (MIT)
-  content/     fetch/XHR/console hook (page world) + relay
+  content/     fetch/XHR/console hook (page world) + relay; localization tracker + rules
   popup/ report/ options/  UI
   lib/         shared logic (cURL, failure detection, title/body assembly, iterations)
 host/        local helper (Node, no dependencies): gh + Claude Code, install.sh

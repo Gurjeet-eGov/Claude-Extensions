@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 
 const page = readFileSync(new URL('./api-playground.html', import.meta.url));
+const locPage = readFileSync(new URL('./loc-playground.html', import.meta.url));
 const json = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
@@ -17,6 +18,9 @@ createServer((req, res) => {
       case '/':
         res.writeHead(200, { 'content-type': 'text/html' });
         return res.end(page);
+      case '/digit-ui/employee/pgr/inbox-v2':
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(locPage);
       case '/pgr-services/v2/request/_search':
         return json(res, 200, { ResponseInfo: { status: 'successful' }, ServiceWrappers: [{ service: { serviceRequestId: 'PGR-2026-11-14-000123', applicationStatus: 'PENDINGFORASSIGNMENT' } }] });
       case '/pgr-services/v2/request/_create':

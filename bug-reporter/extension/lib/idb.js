@@ -2,7 +2,7 @@
 // (all run on the extension's origin).
 
 const DB_NAME = 'egov-bug-reporter';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: + locs (Track Localizations)
 let dbPromise = null;
 
 export function openDb() {
@@ -22,6 +22,10 @@ export function openDb() {
       if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('reports')) db.createObjectStore('reports', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('usage')) db.createObjectStore('usage', { keyPath: 'ts' });
+      if (!db.objectStoreNames.contains('locs')) {
+        const s = db.createObjectStore('locs', { keyPath: 'id' }); // id = host|page|code: one row per pair
+        s.createIndex('host', 'host');
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {
@@ -150,6 +154,32 @@ export async function deleteOlderThan(store, field, minTs) {
     };
     cur.onerror = () => reject(cur.error);
   });
+  await done(tx);
+}
+
+/** Adds rows whose key isn't stored yet; existing keys are left alone. Returns how many were new. */
+export async function addNew(store, values) {
+  if (!values.length) return 0;
+  const db = await openDb();
+  const tx = db.transaction(store, 'readwrite');
+  const s = tx.objectStore(store);
+  let added = 0;
+  for (const v of values) {
+    const r = s.add(v);
+    r.onsuccess = () => added++;
+    r.onerror = (e) => {
+      e.preventDefault(); // duplicate key: keep the transaction going
+      e.stopPropagation();
+    };
+  }
+  await done(tx);
+  return added;
+}
+
+export async function clearStore(store) {
+  const db = await openDb();
+  const tx = db.transaction(store, 'readwrite');
+  tx.objectStore(store).clear();
   await done(tx);
 }
 

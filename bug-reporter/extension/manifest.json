@@ -31,7 +31,8 @@
     "scripting",
     "nativeMessaging",
     "activeTab",
-    "tabs"
+    "tabs",
+    "downloads"
   ],
   "optional_host_permissions": [
     "http://*/*",

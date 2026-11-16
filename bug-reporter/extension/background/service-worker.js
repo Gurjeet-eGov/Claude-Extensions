@@ -16,16 +16,19 @@ import {
 } from './recorder-control.js';
 import { put, get, newId, deleteOlderThan } from '../lib/idb.js';
 import { getSettings, originPattern } from '../lib/settings.js';
+import { syncLocScripts, startLoc, stopLoc, saveLoc, storeFound, locStatus, exportCsv } from './loc-tracking.js';
 
 // ---------- lifecycle ----------
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   await syncContentScripts();
+  await syncLocScripts();
   if (details.reason === 'install') chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await syncContentScripts();
+  await syncLocScripts();
   await updateBadge('idle');
 });
 
@@ -195,11 +198,32 @@ const handlers = {
   },
   async 'site-enable'(msg) {
     await enableSite(msg.pattern, msg.tabId);
+    await syncLocScripts();
     return { ok: true };
   },
   async 'site-disable'(msg) {
     await disableSite(msg.pattern);
+    await syncLocScripts();
     return { ok: true };
+  },
+  // ---- Track Localizations ----
+  async 'loc-found'(msg, sender) {
+    return storeFound(msg.host || (sender.tab?.url ? new URL(sender.tab.url).host : ''), msg.items);
+  },
+  async 'loc-start'(msg) {
+    return startLoc({ tabUrl: msg.tabUrl });
+  },
+  async 'loc-stop'(msg) {
+    return stopLoc({ save: msg.save !== false });
+  },
+  async 'loc-save'() {
+    return saveLoc();
+  },
+  async 'loc-status'() {
+    return { ok: true, ...(await locStatus()) };
+  },
+  async 'loc-export'() {
+    return { ok: true, files: await exportCsv() };
   },
   async 'rec-start'() {
     return startRecording();
