@@ -66,7 +66,7 @@ You can change these at `chrome://extensions/shortcuts`.
 ## Updating an existing issue (re-testing a bug)
 
 1. Record while you re-test, exactly as for a new bug.
-2. In the popup, click **Update existing issue**. You can also bind a key to "Halt & update" at `chrome://extensions/shortcuts`; Chrome allows only four default shortcuts and they're taken. Halting works the same as for a new bug: the recording pauses, a snapshot is taken, and the API log freezes.
+2. In the popup, click **Update Issue**. You can also bind a key to "Halt & update" at `chrome://extensions/shortcuts`; Chrome allows only four default shortcuts and they're taken. Halting works the same as for a new bug: the recording pauses, a snapshot is taken, and the API log freezes.
 3. In the form:
    - **Project:** pre-selected from the site you're on.
    - **Issue:** `215`, `#215` or the issue link, then press Enter. A card shows the issue's title, Open/Closed state, current board Status and assignee, so you can check it's the right bug.
