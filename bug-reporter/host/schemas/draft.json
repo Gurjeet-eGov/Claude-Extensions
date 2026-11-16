@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short issue title only: sentence case, specific about the observed failure, under 80 characters, no environment/module/priority prefix, no trailing period."
+    },
+    "description": {
+      "type": "string",
+      "description": "What is broken, in the reporter's own facts. Markdown bullets when there are several threads. Include IDs, tenant, role or user they mentioned."
+    },
+    "actual": {
+      "type": "string",
+      "description": "What happens now. One or two lines."
+    },
+    "expected": {
+      "type": "string",
+      "description": "What should happen. Empty string if the reporter gave no expectation."
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 5,
+      "description": "3 to 5 distinctive search keywords (screen, field, error code) for a duplicate search. Not environment or module words."
+    },
+    "relatedApiIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ids (like a3) of listed API calls that look related to the defect, including ones not attached."
+    },
+    "question": {
+      "type": "string",
+      "description": "Empty string, unless the notes are too thin to write a useful issue; then one short question for the reporter."
+    }
+  },
+  "required": ["title", "description", "actual", "expected", "keywords", "relatedApiIds", "question"]
+}

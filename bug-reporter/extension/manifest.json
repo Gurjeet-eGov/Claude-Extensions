@@ -1,0 +1,74 @@
+{
+  "manifest_version": 3,
+  "name": "eGov Bug Reporter",
+  "short_name": "Bug Reporter",
+  "version": "0.2.0",
+  "description": "Record the window, halt on a defect, capture failed APIs and file a GitHub issue drafted by Claude.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0XJfqQymR54OjEnqsEm+nFVywztV3jMBEXkTmgQHCq1csLe37VthWfGGmTn65sKMqy6C5Y8jA/CJ+e2+Qqd8nn449vMxXIPQ1AkBIBbb842yvukruTPzLvnYigTTb2gHgKjmcaOt5em2ZmFqTE5u6grS3RerPn4snnxN5NjUqG9kj24XT/5WTHjPKrKSAqp9h8R0B9qhlabNUcN+OiPPOfnYrgcVk/6gjkG6K2MlWrdPLhY90p9QsvvSDRbj3nnoyk/IgtqdxlVjR+B1VD4TPPyCzL5VnGxdpQJzq+N0IBxFd3xGyHaA6OEou+8W1exKaOuVjFxoT1lI2/8sXN8l/QIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "eGov Bug Reporter",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "options_page": "options/options.html",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "nativeMessaging",
+    "activeTab",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Start / pause / resume recording"
+    },
+    "halt-report": {
+      "suggested_key": {
+        "default": "Alt+Shift+B",
+        "mac": "Alt+Shift+B"
+      },
+      "description": "Halt & report: pause, snapshot, open the report form"
+    },
+    "snapshot": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Alt+Shift+S"
+      },
+      "description": "Take a snapshot (recording continues)"
+    },
+    "stop-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+X",
+        "mac": "Alt+Shift+X"
+      },
+      "description": "Stop recording"
+    },
+    "update-issue": {
+      "description": "Halt & update an existing issue (set a key at chrome://extensions/shortcuts)"
+    }
+  },
+  "incognito": "spanning"
+}

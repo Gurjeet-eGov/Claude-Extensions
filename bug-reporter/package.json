@@ -1,0 +1,13 @@
+{
+  "name": "egov-bug-reporter",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chrome extension + local helper to record, capture failed APIs and log GitHub issues with Claude",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

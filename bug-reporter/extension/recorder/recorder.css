@@ -1,0 +1,66 @@
+body {
+  padding: 14px 16px;
+  min-width: 360px;
+}
+header {
+  margin-bottom: 8px;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  flex: none;
+}
+.dot.rec {
+  background: var(--rec);
+  animation: blink 1.2s infinite;
+}
+.dot.paused {
+  background: var(--warn);
+}
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.rec {
+    animation: none;
+  }
+}
+.choices {
+  display: grid;
+  gap: 8px;
+}
+.choices button {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  white-space: normal;
+}
+.choices button span {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.timer {
+  font-size: 22px;
+  margin: 6px 0 10px;
+}
+.btns button {
+  flex: 1;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg-sunk);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+#stopped,
+#err {
+  margin-top: 10px;
+}

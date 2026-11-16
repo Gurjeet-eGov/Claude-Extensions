@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>API Playground</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 24px; background: #fff; color: #111; }
+      button { margin: 4px; padding: 6px 12px; }
+      #log { font: 12px ui-monospace, monospace; white-space: pre-wrap; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>API playground</h1>
+    <p>Fires the kinds of calls the Bug Reporter must capture. Add <code>?auto=1</code> to fire all of them on load.</p>
+    <div>
+      <button id="ok">200 search</button>
+      <button id="e400">400 DIGIT error</button>
+      <button id="e200">200 with Errors[]</button>
+      <button id="e500">500 HTML</button>
+      <button id="net">Unreachable host</button>
+      <button id="xhr">XHR 200</button>
+      <button id="con">console.error</button>
+      <button id="thr">Uncaught error</button>
+    </div>
+    <div id="log"></div>
+    <script>
+      const log = (m) => (document.getElementById('log').textContent += m + '\n');
+      const RI = { RequestInfo: { apiId: 'Rainmaker', authToken: 'a1b2c3-token', userInfo: { uuid: 'u-1', type: 'EMPLOYEE' } } };
+      const post = (path, body) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json', 'auth-token': 'a1b2c3-token' }, body: JSON.stringify({ ...RI, ...body }) });
+      const actions = {
+        ok: () => post('/pgr-services/v2/request/_search?tenantId=ke.bomet', {}).then((r) => log('search ' + r.status)),
+        e400: () => post('/pgr-services/v2/request/_create', { service: { tenantId: 'ke.bomet', serviceCode: 'StreetLight' } }).then((r) => log('create ' + r.status)),
+        e200: () => post('/egov-mdms-service/v1/_search', { MdmsCriteria: { tenantId: 'ke' } }).then((r) => log('mdms ' + r.status)),
+        e500: () => fetch('/user/_details?tenantId=ke').then((r) => log('user ' + r.status)),
+        net: () => fetch('http://127.0.0.1:1/unreachable').catch((e) => log('net ' + e.message)),
+        xhr: () => {
+          const x = new XMLHttpRequest();
+          x.open('POST', '/localization/messages/v1/_search?locale=en_IN&tenantId=ke');
+          x.setRequestHeader('content-type', 'application/json');
+          x.onload = () => log('xhr ' + x.status);
+          x.send(JSON.stringify(RI));
+        },
+        con: () => console.error('Complaint assign failed', { code: 'ASSIGN_FAILED' }),
+        thr: () => setTimeout(() => { throw new Error('Cannot read properties of undefined (reading "assignee")'); }),
+      };
+      for (const [id, fn] of Object.entries(actions)) document.getElementById(id).onclick = fn;
+      if (new URLSearchParams(location.search).get('auto') === '1') {
+        let i = 0;
+        for (const fn of Object.values(actions)) setTimeout(fn, 300 * i++);
+      }
+    </script>
+  </body>
+</html>

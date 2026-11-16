@@ -1,0 +1,302 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Report Issue</title>
+    <link rel="icon" href="../icons/icon32.png" />
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="row wrap">
+        <img src="../icons/icon32.png" width="22" height="22" alt="" />
+        <div class="grow">
+          <h1>Report issue</h1>
+          <div class="muted small" id="pageInfo"></div>
+        </div>
+        <button id="openSettings" class="link">Settings</button>
+      </div>
+    </header>
+
+    <div id="fatal" class="notice bad wrap hidden"></div>
+
+    <main class="cols wrap" id="main">
+      <!-- Evidence -->
+      <section class="evidence">
+        <div class="card">
+          <div class="row">
+            <h2 class="grow">Screenshots</h2>
+            <label class="btn small">Add image<input id="addImage" type="file" accept="image/png,image/jpeg,image/gif" multiple hidden /></label>
+          </div>
+          <div id="shots" class="shots"></div>
+          <div id="shotNote" class="muted small"></div>
+        </div>
+
+        <div class="card" id="videoCard">
+          <div class="row">
+            <h2 class="grow">Screen recording</h2>
+            <label class="row small"><input type="checkbox" id="videoInclude" checked /> Attach clip</label>
+          </div>
+          <div id="videoNone" class="muted hidden"></div>
+          <div id="videoBox" class="hidden">
+            <label class="field">
+              <span>Clip: last <b id="clipSecs"></b> before the halt · <span id="clipSize" class="mono"></span></span>
+              <input type="range" id="clipRange" min="5" max="60" step="5" />
+            </label>
+            <div id="clipWarn" class="notice warn small hidden"></div>
+            <video id="clipVideo" controls preload="metadata"></video>
+            <div class="row small">
+              <span id="clipState" class="muted grow"></span>
+              <button id="downloadFull" class="link small">Download full recording</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <h2 class="grow">API calls</h2>
+            <label class="row small"
+              >Time
+              <select id="apiRange" class="inline">
+                <option value="window">Around the halt</option>
+                <option value="all">All captured</option>
+              </select>
+            </label>
+          </div>
+          <div class="row apitools">
+            <div class="seg small" role="radiogroup" aria-label="Show">
+              <label><input type="radio" name="apiShow" value="all" checked />All <span id="cntAll" class="cnt"></span></label>
+              <label><input type="radio" name="apiShow" value="failed" />Failed only <span id="cntFailed" class="cnt"></span></label>
+            </div>
+            <input type="search" id="apiSearch" class="grow" placeholder="Filter by path, status or error code" />
+          </div>
+          <div id="apiList" class="apilist">
+            <div class="apihead">
+              <label class="row"><input type="checkbox" id="selectAll" /> <span id="selectAllLabel">Select all shown</span></label>
+              <span class="grow"></span>
+              <span id="selCount" class="muted"></span>
+              <label class="row muted"><input type="checkbox" id="hideStatic" checked /> Hide static files <span id="cntStatic" class="cnt"></span></label>
+            </div>
+            <div id="apiRows"></div>
+          </div>
+          <div class="muted small" id="apiInfo"></div>
+        </div>
+
+        <div class="card">
+          <div class="row"><h2 class="grow">Console errors</h2><span class="muted small">tick to include</span></div>
+          <div id="consoleList" class="consolelist"></div>
+        </div>
+      </section>
+
+      <!-- Form -->
+      <section class="form">
+        <div class="card hidden" id="updateCard">
+          <h2>Update an existing issue</h2>
+          <p class="muted small">Posts a comment with this evidence on the issue, and can change its Status or close it.</p>
+          <label class="field">
+            <span>Project</span>
+            <select id="uProject"></select>
+            <span id="uMeta" class="muted small"></span>
+          </label>
+          <label class="field">
+            <span>Issue <span class="req">required</span></span>
+            <div class="row">
+              <input id="uIssue" type="text" class="grow" placeholder="215, #215 or the issue link" />
+              <button id="uLookup">Look up</button>
+            </div>
+          </label>
+          <div id="uIssueCard" class="issuecard hidden"></div>
+          <div class="field">
+            <span>Verification result</span>
+            <div class="seg result-seg" role="radiogroup" aria-label="Verification result">
+              <label><input type="radio" name="uResult" value="" checked />None</label>
+              <label><input type="radio" name="uResult" value="fixed" />✅ Verified fixed</label>
+              <label><input type="radio" name="uResult" value="failing" />❌ Still failing</label>
+              <label><input type="radio" name="uResult" value="partial" />⚠️ Partly fixed</label>
+            </div>
+          </div>
+          <label class="field">
+            <span>Status <span class="muted">(blank = no change)</span></span>
+            <select id="uStatus"><option value="">No change</option></select>
+          </label>
+          <label class="field">
+            <span>Comment</span>
+            <textarea id="uText" rows="5" placeholder="What you re-tested and what you saw"></textarea>
+          </label>
+          <div class="claude-opts">
+            <span class="small"><b>Polish with Claude</b> <span class="muted">(optional: rewrites your comment using the ticked API calls)</span></span>
+            <div class="row small">
+              <label class="row">Model
+                <select id="uModel">
+                  <option value="sonnet">Sonnet 5.5</option>
+                  <option value="haiku">Haiku 5.5</option>
+                  <option value="opus">Opus 5.5</option>
+                  <option value="default">Claude Code default</option>
+                </select>
+              </label>
+              <label class="row">Effort
+                <select id="uEffort"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
+              </label>
+              <label class="row">Detail
+                <select id="uDetail"><option value="detailed">Detailed</option><option value="concise">Concise</option></select>
+              </label>
+              <span class="grow"></span>
+              <button id="uPolish">Polish with Claude</button>
+            </div>
+            <div id="uPolishState" class="muted small"></div>
+          </div>
+          <h3 class="preview-h">Preview</h3>
+          <div id="uPreview" class="md"></div>
+          <div id="uWarn" class="notice warn small hidden"></div>
+          <div id="uErr" class="notice bad small hidden"></div>
+          <div class="row actions">
+            <button id="uClose">Close with comment</button>
+            <select id="uCloseReason" class="inline" aria-label="Close reason">
+              <option value="completed">as completed</option>
+              <option value="not planned">as not planned</option>
+            </select>
+            <span class="grow"></span>
+            <button id="uSend" class="primary">Comment</button>
+          </div>
+          <ul id="uProgress" class="progress"></ul>
+          <div id="uResultBox" class="hidden"></div>
+        </div>
+
+        <div class="card">
+          <div id="noProjects" class="notice warn hidden">No projects set up yet. <button class="link" id="goProjects">Add your project boards in Settings</button>, then reload this tab.</div>
+          <label class="field">
+            <span>Project</span>
+            <div class="row">
+              <select id="project" class="grow"></select>
+              <button id="refreshMeta" title="Reload from GitHub" aria-label="Reload board data from GitHub">↻</button>
+            </div>
+            <span id="metaState" class="muted small"></span>
+          </label>
+          <div class="grid2">
+            <label class="field">
+              <span>Module</span>
+              <select id="module">
+                <option>Citizen</option>
+                <option>Employee</option>
+                <option>Configurator</option>
+                <option value="__other">Other…</option>
+              </select>
+              <input id="moduleOther" type="text" class="hidden" placeholder="Module name" />
+            </label>
+            <div class="field">
+              <span>Type</span>
+              <div class="seg" role="radiogroup" aria-label="Type">
+                <label><input type="radio" name="label" value="bug" checked />Bug</label>
+                <label><input type="radio" name="label" value="enhancement" />Enhancement</label>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <span>Priority <span class="req">required</span></span>
+            <div class="seg" role="radiogroup" aria-label="Priority" id="prioSeg">
+              <label><input type="radio" name="prio" value="P0" />P0</label>
+              <label><input type="radio" name="prio" value="P1" />P1</label>
+              <label><input type="radio" name="prio" value="P2" />P2</label>
+              <label><input type="radio" name="prio" value="P3" />P3</label>
+            </div>
+            <span id="prioNote" class="muted small hint"></span>
+          </div>
+          <div class="grid2">
+            <label class="field">
+              <span>Assignee</span>
+              <select id="assignee"><option value="">Choose a project first</option></select>
+            </label>
+            <label class="field">
+              <span>Status</span>
+              <select id="status"></select>
+            </label>
+          </div>
+          <label class="field" id="iterField">
+            <span>Iteration</span>
+            <select id="iteration"></select>
+          </label>
+        </div>
+
+        <div class="card">
+          <label class="field">
+            <span>What happened <span class="req">required</span></span>
+            <textarea id="actual" rows="3" placeholder="e.g. GRO can't assign the complaint, toast says Something went wrong"></textarea>
+          </label>
+          <label class="field">
+            <span>What should have happened</span>
+            <textarea id="expected" rows="2" placeholder="e.g. Complaint should move to the LME's inbox"></textarea>
+          </label>
+          <label class="field">
+            <span>Other notes <span class="muted">(IDs, tenant, role…)</span></span>
+            <textarea id="extra" rows="2"></textarea>
+          </label>
+          <div class="claude-opts">
+            <span class="small"><b>Claude for this issue</b> <span class="muted">(defaults from Settings)</span></span>
+            <div class="row small">
+              <label class="row">Model
+                <select id="draftModel">
+                  <option value="sonnet">Sonnet 5.5</option>
+                  <option value="haiku">Haiku 5.5</option>
+                  <option value="opus">Opus 5.5</option>
+                  <option value="default">Claude Code default</option>
+                </select>
+              </label>
+              <label class="row">Effort
+                <select id="draftEffort">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label class="row">Detail
+                <select id="draftDetail">
+                  <option value="detailed">Detailed</option>
+                  <option value="concise">Concise</option>
+                </select>
+              </label>
+            </div>
+            <label class="row small"><input type="checkbox" id="claudeShot" /> Let Claude see the screenshot <span class="muted">(≈1–1.5K extra tokens)</span></label>
+          </div>
+          <div id="formErr" class="notice bad small hidden"></div>
+          <div class="row actions">
+            <button id="skipClaude">Skip Claude</button>
+            <button id="draft" class="primary grow">Draft with Claude</button>
+          </div>
+          <div id="draftState" class="muted small"></div>
+        </div>
+
+      </section>
+    </main>
+    <section id="review" class="wrap review hidden">
+      <div class="card" id="preview">
+        <div class="row">
+          <button id="back">← Back to edit</button>
+          <h2 class="grow">Review</h2>
+          <button id="regen" class="link">Regenerate</button>
+        </div>
+        <div id="filingTo" class="muted small"></div>
+        <div id="claudeQ" class="notice warn small hidden"></div>
+        <label class="field"><span>Title</span><input id="title" type="text" /></label>
+        <div class="row tabsmall">
+          <button data-view="rendered" class="active">Preview</button>
+          <button data-view="raw">Markdown</button>
+          <span class="grow"></span>
+          <button id="rebuild" class="link small hidden">Rebuild body from evidence</button>
+        </div>
+        <div id="bodyRendered" class="md"></div>
+        <textarea id="body" class="mono hidden"></textarea>
+        <div id="bodyWarn" class="notice warn small hidden"></div>
+        <div id="dupes" class="dupes"></div>
+        <div class="row foot">
+          <span id="usage" class="muted small grow"></span>
+          <button id="file" class="primary">File issue</button>
+        </div>
+        <ul id="progress" class="progress"></ul>
+        <div id="result" class="hidden"></div>
+      </div>
+    </section>
+    <script type="module" src="report.js"></script>
+  </body>
+</html>

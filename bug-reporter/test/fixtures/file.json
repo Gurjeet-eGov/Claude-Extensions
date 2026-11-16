@@ -1,0 +1,19 @@
+{
+  "reportId": "devfile01",
+  "repo": "eGov-Global/CMS-KENYA",
+  "title": "Bomet: Employee: Assign fails with INVALID_ASSIGNEE for department LME",
+  "body": "### Description\nTest body.\n\n### Actual Behavior\nToast shows Something went wrong.\n",
+  "label": "bug",
+  "assignee": "dev-priya",
+  "defaultAssignee": "dev-priya",
+  "attachments": [],
+  "board": {
+    "owner": "eGov-Global",
+    "projectNumber": 17,
+    "projectId": "PVT_example",
+    "status": { "fieldId": "PVTSSF_status", "optionId": "todo" },
+    "priority": { "mode": "board", "fieldId": "PVTSSF_priority", "optionId": "p1" },
+    "iteration": { "fieldId": "PVTIF_iteration", "iterationId": "sprint22" }
+  },
+  "dryRun": true
+}

@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Bug Reporter</title>
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="row">
+      <img src="../icons/icon32.png" width="20" height="20" alt="" />
+      <strong class="grow">Bug Reporter</strong>
+      <button id="settings" class="link" title="Settings">Settings</button>
+    </header>
+
+    <section id="site" class="block">
+      <div id="siteOn" class="hidden">
+        <div class="row"><span class="dot ok"></span><span class="grow">Capturing APIs on <b id="host1"></b></span></div>
+        <div class="muted small" id="stats"></div>
+      </div>
+      <div id="siteOff" class="hidden">
+        <div class="row"><span class="dot"></span><span class="grow">Not capturing on <b id="host2"></b></span></div>
+        <button id="enable" class="primary full">Enable on this site</button>
+        <div class="muted small">Captures fetch/XHR calls and console errors on this site only.</div>
+      </div>
+      <div id="siteNa" class="hidden muted">Open your web app tab to capture its API calls.</div>
+    </section>
+
+    <section class="block">
+      <div class="row">
+        <span id="recDot" class="dot"></span>
+        <span id="recLabel" class="grow">Not recording</span>
+        <span id="recInfo" class="muted small mono"></span>
+      </div>
+      <div class="row btns">
+        <button id="recStart" class="rec">● Start recording</button>
+        <button id="recPause" class="hidden">❚❚ Pause</button>
+        <button id="recResume" class="hidden rec">● Resume</button>
+        <button id="recStop" class="hidden">■ Stop</button>
+      </div>
+      <div id="recError" class="notice bad small hidden"></div>
+    </section>
+
+    <section class="block">
+      <div class="row btns">
+        <button id="snap" class="grow">📸 Snapshot <span id="tray" class="muted"></span></button>
+        <button id="report" class="primary grow">Report issue</button>
+      </div>
+      <div class="row btns">
+        <button id="update" class="grow">Update existing issue</button>
+      </div>
+    </section>
+
+    <footer class="muted small">
+      <div class="keys">
+        <span><kbd>⌥⇧R</kbd> record / pause</span>
+        <span><kbd>⌥⇧B</kbd> halt &amp; report</span>
+        <span><kbd>⌥⇧S</kbd> snapshot</span>
+        <span><kbd>⌥⇧X</kbd> stop</span>
+        <span class="muted">Update issue: no key yet (set one below)</span>
+      </div>
+      <div class="row"><span id="helper" class="grow"></span><button id="shortcuts" class="link small">Change shortcuts</button></div>
+    </footer>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

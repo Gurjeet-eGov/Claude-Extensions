@@ -1,0 +1,157 @@
+html,
+body {
+  background: var(--bg-soft);
+}
+#costNote {
+  margin-top: 12px;
+}
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+header {
+  margin-bottom: 16px;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.tabs button {
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 12px;
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+.tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.tab > p {
+  margin-top: 0;
+}
+.checks {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.check-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.check-row .icon {
+  font-weight: 700;
+}
+.check-row.ok .icon {
+  color: var(--ok);
+}
+.check-row.bad .icon {
+  color: var(--danger);
+}
+.check-row.warn .icon {
+  color: var(--warn);
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0 16px;
+  margin-top: 12px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+.field.check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding-top: 22px;
+}
+.field.check span {
+  font-weight: 400;
+}
+.hint {
+  display: block;
+  margin-top: 4px;
+}
+.card.sub {
+  background: var(--bg-soft);
+  margin: 4px 0 12px;
+}
+.end {
+  justify-content: flex-end;
+}
+#projectForm {
+  margin-top: 12px;
+}
+.project {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.project .meta {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.project .actions {
+  grid-row: span 2;
+  display: flex;
+  gap: 6px;
+  align-items: start;
+}
+.map {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  max-width: 360px;
+  margin-top: 8px;
+}
+.totals {
+  gap: 24px;
+  margin: 8px 0 12px;
+}
+.totals div b {
+  display: block;
+  font-size: 18px;
+}
+table.usage {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.usage th,
+table.usage td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+table.usage .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#sites .row {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}

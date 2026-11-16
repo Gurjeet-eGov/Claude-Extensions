@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Bug Reporter Recorder</title>
+    <link rel="icon" href="../icons/icon32.png" />
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="recorder.css" />
+  </head>
+  <body>
+    <header class="row">
+      <span id="dot" class="dot"></span>
+      <strong id="state" class="grow">Not recording</strong>
+      <span id="surface" class="muted small"></span>
+    </header>
+
+    <section id="idle">
+      <p class="muted small">Choose what to record. Chrome then asks you to pick it.</p>
+      <div class="choices">
+        <button id="recWindow" class="rec">
+          <b>● Record a window</b>
+          <span>Pick your Chrome window. Docked DevTools is included.</span>
+        </button>
+        <button id="recScreen">
+          <b>● Record entire screen</b>
+          <span>Use this if DevTools is undocked or you use other apps.</span>
+        </button>
+      </div>
+      <p id="stopped" class="notice small hidden">
+        Stopped. The last part of that recording stays available for reports until you start a new one or close this window.
+      </p>
+    </section>
+
+    <section id="active" class="hidden">
+      <div id="timer" class="mono timer"></div>
+      <div class="row btns">
+        <button id="pause">❚❚ Pause</button>
+        <button id="resume" class="rec hidden">● Resume</button>
+        <button id="stop">■ Stop</button>
+      </div>
+      <p class="muted small">
+        This window minimises itself. Keep it open while you test: closing it ends the recording. Press <kbd>⌥⇧B</kbd> to halt and
+        report.
+      </p>
+    </section>
+
+    <div id="err" class="notice bad small hidden"></div>
+    <script type="module" src="recorder.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "reportId": "devdraft01",
+  "projectTitle": "CMS Kenya - Delivery",
+  "repo": "eGov-Global/CMS-KENYA",
+  "module": "Employee",
+  "label": "bug",
+  "pageUrl": "https://bgrm.bomet.go.ke/digit-ui/employee/pgr/complaint-details/PGR-2026-11-14-000123",
+  "notes": {
+    "actual": "GRO clicks Assign on the complaint, picks an LME and submits; a red toast says Something went wrong and the complaint stays Pending for assignment",
+    "expected": "complaint should move to the LME's inbox",
+    "extra": "tenant ke.bomet, GRO user gro-user-01"
+  },
+  "selectedApis": [
+    { "id": "a7", "summary": "−0:04 POST /pgr-services/v2/request/_update → 400 · INVALID_ASSIGNEE: Assignee is not an employee of the department" }
+  ],
+  "otherFailures": [
+    { "id": "a3", "summary": "−0:31 POST /egov-hrms/employees/_search → 200 · ERROR_IN_BODY: department filter not supported" }
+  ],
+  "consoleErrors": [],
+  "model": "sonnet",
+  "effort": "low"
+}

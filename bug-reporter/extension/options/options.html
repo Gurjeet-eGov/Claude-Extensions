@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bug Reporter Settings</title>
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="row">
+        <img src="../icons/icon48.png" width="32" height="32" alt="" />
+        <div class="grow">
+          <h1>Bug Reporter settings</h1>
+          <div class="muted">Set up the local helper, connect your project boards, and tune recording and Claude usage.</div>
+        </div>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button data-tab="setup" class="active" role="tab">Setup</button>
+        <button data-tab="projects" role="tab">Projects</button>
+        <button data-tab="recording" role="tab">Recording</button>
+        <button data-tab="claude" role="tab">Claude</button>
+        <button data-tab="capture" role="tab">Capture &amp; storage</button>
+        <button data-tab="usage" role="tab">Usage</button>
+      </nav>
+
+      <!-- Setup -->
+      <section id="tab-setup" class="tab">
+        <div class="row">
+          <h2 class="grow">Local helper</h2>
+          <button id="recheck">Re-check</button>
+        </div>
+        <p class="muted">
+          The helper runs on this machine and uses <b>your own</b> <code>gh</code> and Claude Code logins. Nothing is sent to any other
+          service.
+        </p>
+        <div id="diag" class="checks"><div class="muted">Checking…</div></div>
+        <div id="installHelp" class="card hidden">
+          <h3>Install the helper (one time)</h3>
+          <p>In Terminal, run the installer from the folder you downloaded:</p>
+          <div class="fixcmd"><code id="installCmd">cd &lt;bug-reporter folder&gt;/host &amp;&amp; ./install.sh</code><button data-copy="installCmd">Copy</button></div>
+          <p class="muted small">Then click <b>Re-check</b>. This extension's ID is <code id="extId"></code>.</p>
+        </div>
+        <div id="setupNext" class="notice ok hidden">The helper is ready. Next: add your project boards in the <b>Projects</b> tab.</div>
+      </section>
+
+      <!-- Projects -->
+      <section id="tab-projects" class="tab hidden">
+        <div class="row">
+          <h2 class="grow">Projects</h2>
+          <button id="addProject" class="primary">Add project</button>
+        </div>
+        <p class="muted">
+          Each project is a GitHub project board. Details are read from GitHub with your <code>gh</code> login and stored only in this
+          browser.
+        </p>
+        <div id="projectList"></div>
+
+        <div id="projectForm" class="card hidden">
+          <h3 id="pfTitle">Add project</h3>
+          <label class="field"
+            ><span>GitHub project board link</span>
+            <div class="row">
+              <input id="pfBoard" type="url" class="grow" placeholder="https://github.com/orgs/eGov-Global/projects/17" />
+              <button id="pfRead">Read board</button>
+            </div>
+          </label>
+          <div id="pfErr" class="notice bad hidden"></div>
+          <div id="pfDetails" class="hidden">
+            <div class="notice small" id="pfSummary"></div>
+            <div class="grid2">
+              <label class="field"
+                ><span>Repository for issues</span>
+                <select id="pfRepoSel"></select>
+                <input id="pfRepo" type="text" class="hidden" placeholder="owner/repo" />
+              </label>
+              <label class="field"
+                ><span>Env Prefix <span class="muted">(optional)</span></span>
+                <input id="pfPrefix" type="text" placeholder="e.g. Bomet — leave empty for none" />
+                <span class="muted small hint">Goes at the front of the title: <code id="pfPreview"></code></span>
+              </label>
+              <label class="field"
+                ><span>Default assignee</span>
+                <select id="pfAssignee"><option value="">Choose the repository first</option></select>
+              </label>
+              <label class="field"
+                ><span>Initial Status</span>
+                <select id="pfStatus"></select>
+              </label>
+            </div>
+            <label class="field"
+              ><span>Environment URL(s) of the app <span class="muted">(optional, one per line)</span></span>
+              <textarea id="pfEnvs" rows="2" placeholder="https://bgrm.bomet.go.ke"></textarea>
+              <span class="muted small hint">When you report from one of these sites, this project is pre-selected.</span>
+            </label>
+            <div id="pfPriority" class="card sub"></div>
+            <div class="row end">
+              <button id="pfCancel">Cancel</button>
+              <button id="pfSave" class="primary">Save project</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recording -->
+      <section id="tab-recording" class="tab hidden">
+        <h2>Recording</h2>
+        <p class="muted">Defaults keep a 60-second clip under 10 MB, GitHub's video limit on free plans.</p>
+        <div class="grid3">
+          <label class="field"><span>Frames per second</span><select data-set="recording.fps"><option>10</option><option>15</option><option>24</option><option>30</option></select></label>
+          <label class="field"><span>Max width (px)</span><select data-set="recording.maxWidth"><option>1280</option><option>1600</option><option>1920</option><option>2560</option></select></label>
+          <label class="field"><span>Bitrate (kbps)</span><input data-set="recording.bitrateKbps" type="number" min="300" max="8000" step="100" /></label>
+          <label class="field"><span>Default clip length (s)</span><input data-set="recording.clipSeconds" type="number" min="10" max="900" step="5" /></label>
+          <label class="field"><span>Video size cap (MB)</span><input data-set="recording.capMB" type="number" min="1" max="100" step="1" /></label>
+          <label class="field"><span>Rolling buffer (minutes)</span><input data-set="recording.bufferMinutes" type="number" min="1" max="60" step="1" /></label>
+        </div>
+        <p class="muted small">Raise the cap to 100 MB only if your org is on a paid GitHub plan.</p>
+        <p><button id="openShortcuts" class="link">Change keyboard shortcuts…</button></p>
+      </section>
+
+      <!-- Claude -->
+      <section id="tab-claude" class="tab hidden">
+        <h2>Claude</h2>
+        <p class="muted">
+          Claude only writes the title and the Description / Actual / Expected text, in one short call with no tools and no thinking. Detailed drafts read a condensed copy of the attached calls' request and response; the full cURL and response are always added to the issue by the extension. Dropdowns, the
+          duplicate search and filing never use Claude.
+        </p>
+        <div class="grid3">
+          <label class="field"
+            ><span>Model</span>
+            <select data-set="claude.model">
+              <option value="sonnet">Sonnet 5.5 (recommended)</option>
+              <option value="haiku">Haiku 5.5 (lowest usage, plainer wording)</option>
+              <option value="opus">Opus 5.5</option>
+              <option value="default">Claude Code default</option>
+            </select>
+          </label>
+          <label class="field"
+            ><span>Effort</span>
+            <select data-set="claude.effort">
+              <option value="low">Low (recommended)</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <label class="field"
+            ><span>Detail</span>
+            <select data-set="claude.detail">
+              <option value="detailed">Detailed: reads the attached calls' request and response</option>
+              <option value="concise">Concise: one-line summaries only (fewer tokens)</option>
+            </select>
+          </label>
+          <label class="field check"
+            ><input data-set="claude.sendScreenshot" type="checkbox" /> <span>Let Claude see the screenshot by default <span class="muted">(about 1–1.5K extra tokens)</span></span></label
+          >
+        </div>
+        <label class="field"
+          ><span>Skill file <span class="muted">(optional)</span></span>
+          <input data-set="claude.skillPath" type="text" placeholder="Leave empty to use the skill bundled with the helper" />
+          <span class="muted small hint">Path to a SKILL.md on this machine, if your team keeps its own copy of the drafting rules.</span>
+        </label>
+      </section>
+
+      <!-- Capture -->
+      <section id="tab-capture" class="tab hidden">
+        <h2>Capture &amp; storage</h2>
+        <div class="grid3">
+          <label class="field"><span>API calls kept per tab</span><input data-set="network.maxCalls" type="number" min="50" max="5000" step="50" /></label>
+          <label class="field"><span>Keep calls for (minutes)</span><input data-set="network.retentionMinutes" type="number" min="5" max="240" step="5" /></label>
+          <label class="field"><span>Truncate responses in issue at (KB)</span><input data-set="network.truncateKB" type="number" min="1" max="60" step="1" /></label>
+          <label class="field"><span>Delete temporary files after (days)</span><input data-set="housekeeping.tempDays" type="number" min="1" max="30" step="1" /></label>
+        </div>
+        <h3>Sites with capture enabled</h3>
+        <div id="sites"></div>
+      </section>
+
+      <!-- Usage -->
+      <section id="tab-usage" class="tab hidden">
+        <div class="row">
+          <h2 class="grow">Claude usage</h2>
+          <button id="clearUsage" class="danger">Clear log</button>
+        </div>
+        <div id="usageTotals" class="row totals"></div>
+        <table class="usage">
+          <thead>
+            <tr><th>When</th><th>Project</th><th>Model</th><th>Effort</th><th class="num">Tokens in</th><th class="num">Tokens out</th><th class="num">Turns</th><th class="num">Time</th><th class="num">Cost (USD)</th></tr>
+          </thead>
+          <tbody id="usageRows"></tbody>
+        </table>
+        <p class="muted small" id="costNote"></p>
+      </section>
+    </div>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

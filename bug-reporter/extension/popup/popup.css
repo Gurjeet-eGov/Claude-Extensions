@@ -1,0 +1,66 @@
+body {
+  width: 340px;
+  padding: 12px;
+}
+header {
+  margin-bottom: 10px;
+}
+.block {
+  border-top: 1px solid var(--border);
+  padding: 10px 0;
+}
+.btns {
+  margin-top: 8px;
+}
+.btns button {
+  flex: 1;
+}
+.full {
+  width: 100%;
+  margin: 8px 0 4px;
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--border);
+  flex: none;
+}
+.dot.ok {
+  background: var(--ok);
+}
+.dot.rec {
+  background: var(--rec);
+  animation: blink 1.2s infinite;
+}
+.dot.paused {
+  background: var(--warn);
+}
+@keyframes blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.rec {
+    animation: none;
+  }
+}
+footer {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  margin-bottom: 6px;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg-sunk);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
