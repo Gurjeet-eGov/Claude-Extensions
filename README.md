@@ -4,7 +4,7 @@ Browser extensions that bring Claude into everyday QA work.
 
 | Extension | What it does |
 |---|---|
-| [**Bug Reporter**](bug-reporter/) | Record your Chrome window while you test a web app, halt on a defect, and file a GitHub issue in one go. The issue includes a screenshot, a trimmed video, the failing API calls (cURL + response) and the project board fields. Claude writes the description. You can also post re-test results as a comment on an existing issue. |
+| [**Bug Reporter**](bug-reporter/) | Record your Chrome window while you test a web app, halt on a defect, and file a GitHub issue in one go. The issue includes a screenshot, a trimmed video, the failing API calls (cURL + response) and the project board fields. Claude writes the description. You can also post re-test results as a comment on an existing issue, and [track missing localizations](bug-reporter/docs/TRACK-LOCALIZATIONS.md) while you test, saved as a CSV. |
 
 ## Get started
 

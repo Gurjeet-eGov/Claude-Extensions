@@ -80,7 +80,7 @@ If the Status change or closing fails after the comment is posted, **Retry** red
 
 ## Track localizations (finding untranslated text)
 
-Use this while you click through workflows, to collect every place the app shows a raw localization key instead of translated text.
+Use this while you click through workflows, to collect every place the app shows a raw localization key instead of translated text. Full guide: **[docs/TRACK-LOCALIZATIONS.md](docs/TRACK-LOCALIZATIONS.md)**.
 
 1. On your app's tab, open the popup and click **Track localizations**. The toolbar badge shows **LOC**, unless a recording is running.
 2. Test as usual, in as many tabs and pages of that site as you like. You can record at the same time.
@@ -147,7 +147,7 @@ extension/   Chrome extension (Manifest V3, no build step)
   lib/         shared logic (cURL, failure detection, title/body assembly, iterations)
 host/        local helper (Node, no dependencies): gh + Claude Code, install.sh
 skill/       drafting rules Claude follows (copy of log-issue, trimmed)
-docs/        SETUP.md: step-by-step setup and troubleshooting
+docs/        SETUP.md (setup + troubleshooting), TRACK-LOCALIZATIONS.md
 test/        unit tests: npm test
 ```
 

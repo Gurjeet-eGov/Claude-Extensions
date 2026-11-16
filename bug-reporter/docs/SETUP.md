@@ -130,7 +130,7 @@ The first time you record, macOS asks whether Chrome may record the screen. If i
 | ⌥⇧X | Stop recording |
 | *(set your own)* | Halt and update an existing issue: set a key at `chrome://extensions/shortcuts`, or use **Update Issue** in the popup |
 
-To collect untranslated text instead, click **Track localizations** in the popup, browse the app, then click **■ Stop & save list** and pick where to save the CSV.
+To collect untranslated text instead, click **Track localizations** in the popup, browse the app, then click **■ Stop & save list** and pick where to save the CSV. See the [Track Localizations guide](TRACK-LOCALIZATIONS.md).
 
 The [README](../README.md) explains every part of the form.
 
