@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Run</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <div id="app" class="app"><div class="loading">Loading the sheet&hellip;</div></div>
+  <div id="modal" class="modal hidden"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script>
+    window.TR_PARAMS = <?!= params ?>;
+    window.TR_MODE = <?!= JSON.stringify(mode) ?>;
+  </script>
+  <?!= include('shared'); ?>
+  <?!= include('client'); ?>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Run summary</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" style="padding-bottom:10px">
+      <div class="topbar-row">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run summary</span><span class="brand-sheet" id="sheetName"></span></div>
+        <span class="grow"></span>
+        <div class="pickers no-print">
+          <label class="sr" for="tabPick">Tab</label><select id="tabPick"></select>
+          <label class="sr" for="cyclePick">Cycle</label><select id="cyclePick"></select>
+          <button id="printBtn">Print / PDF</button>
+        </div>
+      </div>
+    </header>
+    <main id="main"><div class="loading">Working out the figures&hellip;</div></main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+  <script>
+    window.TR_PARAMS = <?!= params ?>;
+    window.TR_MODE = <?!= JSON.stringify(mode) ?>;
+  </script>
+  <?!= include('shared'); ?>
+  <script>
+  (function () {
+    'use strict';
+    var esc = TR.esc;
+    var P = window.TR_PARAMS || {};
+    var state = { tab: null, cycle: P.cycle || '' };
+    var main = document.getElementById('main');
+
+    function load() {
+      main.innerHTML = '<div class="loading">Working out the figures&hellip;</div>';
+      TR.api('api_summary', state.tab, state.cycle).then(function (r) {
+        if (!r.ok) { main.innerHTML = '<div class="banner bad">' + esc(r.error) + '</div>'; return; }
+        state.cycle = r.cycle;
+        var cp = document.getElementById('cyclePick');
+        cp.innerHTML = r.cycles.map(function (c) { return '<option value="' + esc(c.label) + '"' + (c.label === r.cycle ? ' selected' : '') + '>' + esc(c.label ? 'Cycle ' + c.label : 'Status') + '</option>'; }).join('');
+        cp.classList.toggle('hidden', r.cycles.length < 2);
+        main.innerHTML = '<div class="summary-head"><h1>' + esc(r.tab) + '</h1><span class="muted">cycle ' + esc(r.cycle || '–') +
+          (r.release ? ' · release ' + esc(r.release) : '') + ' · as of ' + esc(r.generatedAt) + '</span></div>' + TR.summaryHtml(r);
+      });
+    }
+
+    TR.api('api_bootstrap').then(function (b) {
+      if (!b.ok) { main.innerHTML = '<div class="banner bad">' + esc(b.error) + '</div>'; return; }
+      document.getElementById('sheetName').textContent = b.sheetName;
+      var tabs = b.tabs.filter(function (t) { return ((t.saved && t.saved.role) || t.detected.role) === 'manual'; });
+      if (!tabs.length) { main.innerHTML = '<div class="empty card"><p>No test case tabs yet.</p></div>'; return; }
+      state.tab = tabs.some(function (t) { return t.name === P.tab; }) ? P.tab : tabs[0].name;
+      var tp = document.getElementById('tabPick');
+      tp.innerHTML = tabs.map(function (t) { return '<option' + (t.name === state.tab ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
+      tp.classList.toggle('hidden', tabs.length < 2);
+      load();
+    });
+
+    document.getElementById('tabPick').addEventListener('change', function (e) { state.tab = e.target.value; state.cycle = ''; load(); });
+    document.getElementById('cyclePick').addEventListener('change', function (e) { state.cycle = e.target.value; load(); });
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+  })();
+  </script>
+</body>
+</html>
