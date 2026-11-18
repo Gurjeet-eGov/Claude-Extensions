@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Run summary</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" style="padding-bottom:10px">
+      <div class="topbar-row">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run summary</span><span class="brand-sheet" id="sheetName"></span></div>
+        <span class="grow"></span>
+        <div class="pickers no-print">
+          <label class="sr" for="tabPick">Tab</label><select id="tabPick"></select>
+          <label class="sr" for="cyclePick">Cycle</label><select id="cyclePick"></select>
+          <button id="printBtn">Print / PDF</button>
+        </div>
+      </div>
+    </header>
+    <main id="main"><div class="loading">Working out the figures&hellip;</div></main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+  <script src="/shared.js"></script>
+  <script src="/summary.js"></script>
+</body>
+</html>

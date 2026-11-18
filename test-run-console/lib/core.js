@@ -61,8 +61,16 @@ var TRCore = (function () {
   /** Spec-file column of an automation results tab. */
   var SPEC_ALIASES = ['test file', 'spec', 'spec file', 'file', 'test spec'];
 
-  var STATUS_RE = /^\s*(?:test\s*)?(?:execution\s*)?(?:status|result)s?\s*(?:[\/|:\-\u2013]\s*(.*))?$/i;
-  var COMMENT_RE = /^\s*(?:comments?|notes?|remarks?)\s*(?:[\/|:\-\u2013]\s*(.*))?$/i;
+  // "Test Status / v2.12", "Test Status - v2.12", or the label on its own line
+  // ("Test Status\nv2.12", as Google Sheets exports wrapped headers). A label
+  // after a plain space must contain a digit, so "Status of fix" is not a cycle.
+  var STATUS_RE = /^(?:test )?(?:execution )?(?:status|result)s?(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(\S*\d.*))?$/i;
+  var COMMENT_RE = /^(?:comments?|notes?|remarks?)(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(\S*\d.*))?$/i;
+
+  /** A header cell on one line: line breaks and repeated spaces become one space. */
+  function oneLineHeader(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
 
   function normalizeHeader(s) {
     return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -81,12 +89,12 @@ var TRCore = (function () {
     var statuses = [];
     var comments = [];
     for (var i = 0; i < headers.length; i++) {
-      var raw = String(headers[i] == null ? '' : headers[i]);
-      if (!raw.trim()) continue;
+      var raw = oneLineHeader(headers[i]);
+      if (!raw) continue;
       var m = raw.match(STATUS_RE);
-      if (m) { statuses.push({ label: (m[1] || '').trim(), status: i }); continue; }
+      if (m) { statuses.push({ label: (m[1] || m[2] || '').trim(), status: i }); continue; }
       var c = raw.match(COMMENT_RE);
-      if (c) comments.push({ label: (c[1] || '').trim(), col: i, used: false });
+      if (c) comments.push({ label: (c[1] || c[2] || '').trim(), col: i, used: false });
     }
     return statuses.map(function (s) {
       var pair = null;

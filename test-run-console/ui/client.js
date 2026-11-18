@@ -1,12 +1,11 @@
-<script>
-/* Test Run console: the page. Talks to the server only through TR.api (google.script.run). */
+/* Test Run console: the page. Talks only to the local Test Run server (TR.api / TR.http). */
 (function () {
   'use strict';
 
   var esc = TR.esc;
   var api = TR.api;
-  var PARAMS = window.TR_PARAMS || {};
-  var MODE = window.TR_MODE || 'webapp';
+  var PARAMS = {};
+  new URLSearchParams(location.search).forEach(function (v, k) { PARAMS[k] = v; });
   var VIEWS = [
     { id: 'run', label: 'Run' },
     { id: 'plan', label: 'Plan' },
@@ -17,8 +16,14 @@
   ];
 
   var S = {
+    app: null,
     boot: null,
     cfg: null,
+    excelOpen: false,
+    claudeBusy: null,
+    claudeStarted: 0,
+    usage: {},
+    claudeError: {},
     tab: null,
     model: null,
     byKey: {},
@@ -53,7 +58,9 @@
   function cur() { return S.model && S.model.cycleIdx >= 0 ? S.model.cycles[S.model.cycleIdx] : null; }
   function cycleLabel() { var c = cur(); return c ? c.label : ''; }
   function clsOf(c) { return TR.classify(S.model && S.model.cycleIdx >= 0 ? c.statuses[S.model.cycleIdx] : ''); }
-  function claudeOn() { return !!(S.cfg && S.cfg.claude); }
+  function claudeOn() { return !!(S.app && S.app.settings.claude.enabled); }
+  function claudeReady() { return claudeOn() && !!S.app.claude.available; }
+  function book() { return TR.state.book; }
   function hasField(f) { return !!(S.model && S.model.fields && S.model.fields[f] >= 0); }
   function roleOf(t) { return (t.saved && t.saved.role) || t.detected.role; }
   function runTabs() { return S.boot ? S.boot.tabs.filter(function (t) { return roleOf(t) === 'manual'; }) : []; }
@@ -92,13 +99,13 @@
     if (!r) return;
     if (r.code === 'READONLY') {
       S.readOnly = true;
-      toast('You have view-only access to this sheet, so nothing can be saved. Ask the sheet owner for edit access.', 'bad');
+      toast('This workbook file is read-only on this computer, so nothing can be saved.', 'bad');
     } else if (r.code === 'MOVED' || r.code === 'GONE' || r.code === 'NO_CYCLE' || r.code === 'NO_TAB') {
       toast(r.error, 'bad');
       loadTab(cycleLabel(), true);
       loadSide();
     } else if (r.code === 'BUSY') {
-      toast('Someone else is saving right now. Try again in a moment.', 'bad');
+      toast('Another save is in progress. Try again in a moment.', 'bad');
     } else {
       toast(r.error || 'Something went wrong.', 'bad');
     }
@@ -111,20 +118,42 @@
 
   function init() {
     render();
-    api('api_bootstrap').then(function (b) {
+    TR.http('GET', '/api/app').then(function (a) {
+      if (!a.ok) { S.loading = false; S.fatal = a.error; render(); return; }
+      S.app = a;
+      var names = a.books.map(function (b) { return b.name; });
+      var want = names.indexOf(PARAMS.book) >= 0 ? PARAMS.book : (names.indexOf(a.last.book) >= 0 ? a.last.book : names[0]);
+      TR.state.book = want || null;
+      if (!want) { S.loading = false; render(); return; }
+      boot(PARAMS.tab || TR.store.get('tab:' + want) || a.last.tab, PARAMS.cycle || '');
+    });
+    setInterval(checkVersion, 10000);
+    window.addEventListener('focus', checkVersion);
+  }
+
+  /** Read the open workbook's tabs, then load one. */
+  function boot(wantTab, cycle) {
+    S.boot = null;
+    S.model = null;
+    S.loading = true;
+    render();
+    return api('api_bootstrap').then(function (b) {
       if (!b.ok) { S.loading = false; S.fatal = b.error; render(); return; }
+      S.fatal = null;
       S.boot = b;
       S.cfg = b.config;
+      S.excelOpen = !!b.excelOpen;
       var tabs = runTabs();
-      var want = PARAMS.tab || TR.store.get('tab');
-      S.tab = tabs.some(function (t) { return t.name === want; }) ? want : (tabs[0] ? tabs[0].name : null);
+      S.tab = tabs.some(function (t) { return t.name === wantTab; }) ? wantTab : (tabs[0] ? tabs[0].name : null);
       if (!S.cfg) S.view = 'setup';
       else if (PARAMS.view && VIEWS.some(function (v) { return v.id === PARAMS.view; })) S.view = PARAMS.view;
       loadSide();
-      if (S.tab) loadTab(PARAMS.cycle || ''); else { S.loading = false; render(); }
+      if (S.tab) loadTab(cycle || ''); else { S.loading = false; render(); }
     });
-    setInterval(checkVersion, 30000);
-    window.addEventListener('focus', checkVersion);
+  }
+
+  function refreshApp() {
+    return TR.http('GET', '/api/app').then(function (a) { if (a.ok) { S.app = a; render(); } return a; });
   }
 
   function loadTab(cycle, quiet) {
@@ -138,25 +167,49 @@
       m.cases.forEach(function (c) { S.byKey[c.key] = c; });
       if (S.selected && !S.byKey[S.selected]) S.selected = null;
       S.summary = null;
-      if (S.cfg) S.cfg.claude = m.claude;
+      S.excelOpen = !!m.excelOpen;
+      if (m.reloaded) toast('The workbook changed on disk, so it was reloaded.');
+      TR.store.set('tab:' + book(), S.tab);
       render();
     });
   }
 
+  /** Findings and inbox live beside the workbook; redraw only when they changed. */
+  var sideSeen = { findings: null, inbox: null };
   function loadSide() {
-    api('api_listFindings').then(function (r) { if (r.ok) { S.findings = r.findings; render(); } });
-    api('api_listInbox').then(function (r) { if (r.ok) { S.inbox = r.inbox; render(); } });
+    var first = sideSeen.findings === null;
+    api('api_listFindings').then(function (r) {
+      if (!r.ok) return;
+      var sig = JSON.stringify(r.findings);
+      if (sig === sideSeen.findings) return;
+      var known = {};
+      S.findings.forEach(function (f) { known[f.key] = true; });
+      var fresh = first ? [] : r.findings.filter(function (f) { return !known[f.key] && f.source === 'bug-reporter'; });
+      sideSeen.findings = sig;
+      S.findings = r.findings;
+      fresh.forEach(function (f) { toast('New finding from Bug Reporter: ' + f.key + ' ' + f.text.slice(0, 60)); });
+      render();
+    });
+    api('api_listInbox').then(function (r) {
+      if (!r.ok) return;
+      var sig = JSON.stringify(r.inbox);
+      if (sig === sideSeen.inbox) return;
+      sideSeen.inbox = sig;
+      S.inbox = r.inbox;
+      render();
+    });
   }
 
   function checkVersion() {
     if (!S.model || S.writes > 0 || document.hidden) return;
     var ae = document.activeElement;
     if (ae && ae.matches && ae.matches('input, textarea') && ae.value) return;
+    loadSide();
     api('api_version', S.tab).then(function (r) {
       if (!r.ok || !S.model || r.version === S.model.version) return;
       var mine = S.selfDirty;
       S.selfDirty = false;
-      loadTab(cycleLabel(), true).then(function () { if (!mine) toast('Updated with the latest changes in the sheet.'); });
+      loadTab(cycleLabel(), true).then(function () { if (!mine) toast('Updated with the latest changes in the workbook.'); });
       loadSide();
     });
   }
@@ -188,8 +241,13 @@
   function topbar() {
     var b = S.boot;
     var m = S.model;
-    var h = '<header class="topbar"><div class="topbar-row"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run</span>' +
-      (b ? '<span class="brand-sheet" title="' + esc(b.sheetName) + '">' + esc(b.sheetName) + '</span>' : '') + '</div><span class="grow"></span><div class="pickers">';
+    var h = '<header class="topbar"><div class="topbar-row"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run</span></div><span class="grow"></span><div class="pickers">';
+    if (S.app) {
+      h += '<label class="sr" for="bookPick">Workbook</label><select id="bookPick" data-change="book" title="Workbook (in the sheets folder)">' +
+        (S.app.books.length ? S.app.books.map(function (x) { return opt(x.name, x.name.replace(/\.xlsx$/i, ''), x.name === book()); }).join('') : '<option value="">No workbooks yet</option>') + '</select>' +
+        '<button class="ghost" data-action="import" title="Add an .xlsx workbook to the sheets folder">Import</button>' +
+        (book() ? '<a class="btn ghost" href="/api/books/download?name=' + encodeURIComponent(book()) + '" title="Download this workbook, e.g. to upload it to Google Sheets">Download</a>' : '');
+    }
     var tabs = runTabs();
     if (tabs.length) {
       h += '<label class="sr" for="tabPick">Tab</label><select id="tabPick" data-change="tab" title="Test case tab">' +
@@ -199,7 +257,7 @@
       h += '<label class="sr" for="cyclePick">Cycle</label><select id="cyclePick" data-change="cycle" title="Test cycle (status column)">' +
         m.cycles.map(function (c, i) { return opt(i, c.label ? 'Cycle ' + c.label : 'Status', i === m.cycleIdx); }).join('') + '</select>';
     }
-    h += '</div>' + (b && b.email ? '<span class="who" title="Signed in as">' + esc(b.email) + '</span>' : '') + '</div>';
+    h += '</div>' + (S.app && S.app.settings.user ? '<span class="who" title="Results are marked as tested by this name (change it in Setup)">' + esc(S.app.settings.user) + '</span>' : '') + '</div>';
     if (m && m.cases.length && m.cycles.length) {
       var c = TR.counts(m.cases.map(clsOf));
       var done = Math.round(((c.total - c.none) / (c.total || 1)) * 100);
@@ -226,16 +284,20 @@
 
   function body() {
     if (S.fatal) return '<div class="banner bad"><div><b>The console could not start.</b><div class="small">' + esc(S.fatal) + '</div></div></div>';
-    if (!S.boot) return '<div class="loading">Loading the sheet…</div>';
+    if (S.app && !S.app.books.length) {
+      return '<div class="empty card"><h3>No workbooks yet</h3><p>Put your test case <b>.xlsx</b> files in<br><span class="mono">' + esc(S.app.sheetsDir) + '</span><br>or import one here. They stay on this computer and are never committed to git.</p><p style="margin-top:14px"><button class="primary" data-action="import">Import a workbook</button></p></div>';
+    }
+    if (!S.boot) return '<div class="loading">Loading the workbook…</div>';
     var banners = '';
-    if (S.readOnly) banners += '<div class="banner warn"><b>View only.</b><span class="muted">You can read everything here, but you need edit access to the sheet to mark results.</span></div>';
+    if (S.readOnly) banners += '<div class="banner warn"><b>View only.</b><span class="muted">This workbook file is read-only on this computer, so results cannot be saved.</span></div>';
+    if (S.excelOpen) banners += '<div class="banner warn"><b>This workbook is open in Excel.</b><span class="muted">Close it there while you test: saving from Excel would overwrite results marked here.</span></div>';
     if (S.view === 'setup') return banners + viewSetup();
     if (!S.tab) return banners + '<div class="empty card"><h3>No test case tab found</h3><p>Open Setup and mark which tabs hold test cases.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Open Setup</button></p></div>';
     if (S.loading && !S.model) return '<div class="loading">Loading ' + esc(S.tab) + '…</div>';
     if (!S.model) return '';
     var m = S.model;
     if (!m.configured) banners += '<div class="banner"><span>Columns for this tab were detected automatically.</span><span class="grow"></span><button data-action="view" data-view="setup">Check Setup</button></div>';
-    if (m.missing && m.missing.length) banners += '<div class="banner bad"><span>These columns were renamed or removed in the sheet: <b>' + esc(m.missing.map(function (f) { return S.boot.labels[f]; }).join(', ')) + '</b>.</span><span class="grow"></span><button data-action="view" data-view="setup">Fix in Setup</button></div>';
+    if (m.missing && m.missing.length) banners += '<div class="banner bad"><span>These columns were renamed or removed in the workbook: <b>' + esc(m.missing.map(function (f) { return S.boot.labels[f]; }).join(', ')) + '</b>.</span><span class="grow"></span><button data-action="view" data-view="setup">Fix in Setup</button></div>';
     switch (S.view) {
       case 'plan': return banners + viewPlan();
       case 'findings': return banners + viewFindings();
@@ -411,7 +473,7 @@
       '<span class="grow"></span>' + (S.undo.length ? '<button class="ghost" data-action="undo" title="Undo last mark (U)">Undo</button>' : '') + '</div>';
     var who = [c.testedBy, c.testedOn].filter(Boolean).join(' · ');
     if (who) a += '<div class="meta-line">Last marked: ' + esc(who) + '</div>';
-    a += '<div class="meta-line faint">Row ' + c.row + ' in the sheet</div>';
+    a += '<div class="meta-line faint">Row ' + c.row + ' in the workbook</div>';
     return '<div class="detail"><div class="fields">' + f.join('') + '</div><div class="actions">' + a + '</div></div>';
   }
 
@@ -492,7 +554,7 @@
       c.statuses[ci] = r.current;
       c.comments[ci] = r.comment;
       S.undo = S.undo.filter(function (u) { return u.key !== c.key; });
-      toast((c.id || 'This case') + ' was just marked "' + (r.current || 'not run') + '"' + (r.by ? ' by ' + r.by : '') + ' in the sheet. Showing that result; mark again if you need to.', 'bad');
+      toast((c.id || 'This case') + ' was just marked "' + (r.current || 'not run') + '"' + (r.by ? ' by ' + r.by : '') + ' in the workbook. Showing that result; mark again if you need to.', 'bad');
       render();
       return;
     }
@@ -553,7 +615,7 @@
     var dis = S.readOnly ? ' disabled' : '';
     var h = '<div class="grid">';
 
-    h += '<section class="card card-pad stack"><h2>Cycle</h2><p class="small muted">A cycle is one pair of columns in the sheet: <i>Test Status / name</i> and <i>Comment / name</i>. Earlier cycles stay as they are, so you can compare.</p>';
+    h += '<section class="card card-pad stack"><h2>Cycle</h2><p class="small muted">A cycle is one pair of columns in the workbook: <i>Test Status / name</i> and <i>Comment / name</i>. Earlier cycles stay as they are, so you can compare.</p>';
     if (m.cycles.length) h += '<div class="small">Current: <b>' + esc(cycleLabel() || 'Status') + '</b>' + (m.prevIdx >= 0 ? ' · previous: ' + esc(m.cycles[m.prevIdx].label || 'Status') : '') + '</div>';
     h += '<div class="row"><label class="sr" for="newCycle">New cycle name</label><input id="newCycle" data-bind="newCycle" placeholder="New cycle, e.g. v2.20.1" value="' + esc(val('newCycle')) + '"' + dis + '><button class="primary" data-action="start-cycle"' + dis + '>Start new cycle</button></div>' +
       '<p class="small faint">Adds the two columns next to the latest cycle and copies its dropdown and formatting.</p></section>';
@@ -582,12 +644,14 @@
       h += '<p class="small muted">Automatic: grouped by Feature, then Sub feature, in sheet order. Groups holding the riskiest untested cases come first.</p>';
     }
     if (claudeOn()) {
-      h += '<p class="small muted">Claude can regroup cases into paths that one person runs in a single pass: one login and one piece of test data carried through its states.</p>' +
+      h += '<p class="small muted">Claude can regroup cases into paths that one person runs in a single pass: one login and one piece of test data carried through its states. The plan lands in the Inbox for you to check first.</p>' +
         '<label class="check"><input type="checkbox" data-bind="planTodo"' + (val('planTodo', true) ? ' checked' : '') + '> Only untested cases</label>' +
         '<input data-bind="planFocus" id="planFocus" placeholder="Optional note for Claude, e.g. GRO and LME are the same person here" value="' + esc(val('planFocus')) + '">' +
-        '<div class="row"><button class="primary" data-action="copy-paths">Copy for Claude</button><button data-action="view" data-view="inbox">Paste the plan</button></div>';
+        claudeControls('paths') +
+        '<div class="row">' + claudeButton('paths', 'Plan paths with Claude', 'claude-paths', false) + '<button class="ghost" data-action="copy-paths" title="Copy the prompt to use Claude somewhere else">Copy prompt</button></div>' +
+        claudeStatusLine('paths');
     } else {
-      h += '<p class="small faint">Turn on Claude help in Setup to get paths planned for you (copy and paste; nothing is connected).</p>';
+      h += '<p class="small faint">Turn on Claude help in Setup to get paths planned for you.</p>';
     }
     h += '</section>';
 
@@ -627,15 +691,21 @@
     var open = list.filter(function (f) { return f.state === 'open'; });
     var selected = open.filter(function (f) { return S.findingSel[f.key]; });
     h += '<div class="row section"><h2>Findings in ' + esc(S.tab) + '</h2><span class="grow"></span>';
-    if (claudeOn()) h += '<button class="primary" data-action="copy-findings"' + (selected.length ? '' : ' disabled') + '>Copy ' + (selected.length || '') + ' for Claude</button>';
     h += '</div>';
+    if (claudeOn() && open.length) {
+      h += '<section class="card card-pad stack"><div class="row"><b>Write up with Claude</b><span class="small muted">Tick findings below, then draft test cases from them. Drafts land in the Inbox for review.</span></div>' +
+        claudeControls('draft') +
+        '<div class="row">' + claudeButton('draft', selected.length ? 'Draft ' + selected.length + ' with Claude' : 'Draft with Claude', 'claude-draft', !selected.length) +
+        '<button class="ghost" data-action="copy-findings"' + (selected.length ? '' : ' disabled') + ' title="Copy the prompt to use Claude somewhere else">Copy prompt</button></div>' +
+        claudeStatusLine('draft') + '</section>';
+    }
     if (!list.length) return h + '<div class="empty card"><p>No findings yet.</p></div>';
     h += '<div class="card table-wrap"><table><thead><tr><th style="width:28px"></th><th>Finding</th><th>Bug</th><th>State</th><th></th></tr></thead><tbody>';
     list.forEach(function (f) {
       var st = { open: pill('other', 'To write up'), written: pill('pass', 'Written up' + (f.caseId ? ' · ' + f.caseId : '')), covered: pill('none', 'Already covered' + (f.caseId ? ' · ' + f.caseId : '')) }[f.state] || '';
       h += '<tr><td>' + (f.state === 'open' ? '<input type="checkbox" aria-label="Select ' + esc(f.key) + '" data-action="pick-finding" data-key="' + esc(f.key) + '"' + (S.findingSel[f.key] ? ' checked' : '') + '>' : '') + '</td>' +
-        '<td><span class="mono faint">' + esc(f.key) + '</span> ' + esc(f.text) + (f.area ? '<div class="small muted">' + esc(f.area) + '</div>' : '') + (f.details ? '<div class="small faint">' + esc(f.details) + '</div>' : '') + '<div class="small faint">' + esc([f.by, f.at].filter(Boolean).join(' · ')) + '</div></td>' +
-        '<td>' + TR.issueLink(f.issue, S.model.issueBase) + '</td><td>' + st + '</td>' +
+        '<td><span class="mono faint">' + esc(f.key) + '</span> ' + esc(f.text) + (f.source === 'bug-reporter' ? ' <span class="pill accent" title="Noted from the Bug Reporter extension when the issue was filed">from Bug Reporter</span>' : '') + (f.area ? '<div class="small muted">' + esc(f.area) + '</div>' : '') + (f.details ? '<div class="small faint" style="white-space:pre-line">' + esc(f.details) + '</div>' : '') + '<div class="small faint">' + esc([f.by, f.at].filter(Boolean).join(' · ')) + '</div></td>' +
+        '<td>' + (f.url ? '<a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.issue || 'issue') + '</a>' : TR.issueLink(f.issue, S.model.issueBase)) + '</td><td>' + st + '</td>' +
         '<td class="num"><div class="row" style="justify-content:flex-end">' + (f.state === 'open' ? '<button data-action="writeup" data-key="' + esc(f.key) + '"' + dis + '>Write up</button>' : '') +
         '<button class="ghost danger" data-action="del-finding" data-key="' + esc(f.key) + '" title="Delete"' + dis + '>Delete</button></div></td></tr>';
     });
@@ -721,16 +791,17 @@
     var dis = S.readOnly ? ' disabled' : '';
     var h = datalists();
     if (claudeOn()) {
-      h += '<section class="card card-pad stack"><h2>Paste Claude\'s reply</h2><p class="small muted">Paste the whole reply, including the <span class="mono">```json</span> block. It is checked and listed below for review. Nothing is added to the sheet until you click <b>Add to sheet</b>.</p>' +
+      h += '<details class="card card-pad"' + (val('replyOpen') ? ' open' : '') + '><summary class="small"><b>Paste a reply from Claude used elsewhere</b> <span class="muted">(after "Copy prompt")</span></summary>' +
+        '<div class="stack" style="margin-top:8px"><p class="small muted">Paste the whole reply, including the <span class="mono">```json</span> block. It is checked and listed below for review.</p>' +
         '<label class="sr" for="reply">Reply</label><textarea id="reply" data-bind="reply" rows="4" placeholder="Paste here">' + esc(val('reply')) + '</textarea>' +
-        '<div class="row"><span class="grow"></span><button class="primary" data-action="read-reply"' + dis + '>Read reply</button></div></section>';
+        '<div class="row"><span class="grow"></span><button class="primary" data-action="read-reply"' + dis + '>Read reply</button></div></div></details>';
     }
     h += '<div class="row section"><h2>To review</h2><span class="grow"></span><button data-action="new-manual"' + dis + '>+ Write a test case by hand</button></div>';
     var any = false;
     S.manual.forEach(function (it, i) {
       any = true;
       h += '<div class="section"><div class="small muted" style="margin-bottom:4px">Written by hand</div>' +
-        scenarioEditor(it, 'man:' + i, '<button class="ghost" data-action="discard-manual" data-index="' + i + '">Discard</button><button class="primary" data-action="add-manual" data-index="' + i + '"' + dis + '>Add to sheet</button>') + '</div>';
+        scenarioEditor(it, 'man:' + i, '<button class="ghost" data-action="discard-manual" data-index="' + i + '">Discard</button><button class="primary" data-action="add-manual" data-index="' + i + '"' + dis + '>Add to workbook</button>') + '</div>';
     });
     S.inbox.forEach(function (e) {
       if (e.tab !== S.tab) return;
@@ -739,7 +810,7 @@
     });
     var elsewhere = S.inbox.filter(function (e) { return e.tab !== S.tab; });
     if (elsewhere.length) h += '<p class="small muted section">' + elsewhere.length + ' more inbox entr' + (elsewhere.length === 1 ? 'y is' : 'ies are') + ' waiting in other tabs: ' + esc(elsewhere.map(function (e) { return e.tab; }).join(', ')) + '.</p>';
-    if (!any) h += '<div class="empty card"><p>Nothing to review.' + (claudeOn() ? ' Copy findings for Claude on the Findings screen, then paste the reply here.' : '') + '</p></div>';
+    if (!any) h += '<div class="empty card"><p>Nothing to review.' + (claudeOn() ? ' Draft test cases from your findings on the Findings screen; they land here.' : '') + '</p></div>';
     return h;
   }
 
@@ -763,7 +834,7 @@
         if (done) { h += '<div class="item done small">' + esc(it.scenario) + ' – <b>' + esc(it.state === 'added' ? 'added as ' + (it.addedId || 'a new row') : it.state) + '</b></div>'; return; }
         h += scenarioEditor(it, 'it:' + e.key + ':' + i,
           '<button class="ghost" data-action="reject-item" data-entry="' + esc(e.key) + '" data-index="' + i + '"' + dis + '>Reject</button>' +
-          '<button class="primary" data-action="accept-item" data-entry="' + esc(e.key) + '" data-index="' + i + '"' + dis + '>Add to sheet</button>');
+          '<button class="primary" data-action="accept-item" data-entry="' + esc(e.key) + '" data-index="' + i + '"' + dis + '>Add to workbook</button>');
       } else if (e.type === 'edits') {
         if (done) { h += '<div class="item done small">' + esc(it.caseId) + ' – <b>' + esc(it.state) + '</b></div>'; return; }
         var rows = Object.keys(it.fields).map(function (f) {
@@ -808,7 +879,7 @@
       if (!r.ok) { el.disabled = false; writeError(r); return; }
       replaceEntry(r.entry);
       var it = list === 'items' ? r.entry.items[idx] : null;
-      if (it && it.state === 'added') toast('Added to the sheet as ' + (it.addedId || 'a new row') + '.');
+      if (it && it.state === 'added') toast('Added to the workbook as ' + (it.addedId || 'a new row') + '.');
       else if (it && it.state === 'applied') toast('Edit applied.');
       if (action === 'accept') { loadTab(cycleLabel(), true); loadSide(); }
       render();
@@ -834,10 +905,12 @@
       return '<div class="loading">Working out the figures…</div>';
     }
     var r = S.summary;
-    var url = S.boot.appUrl ? S.boot.appUrl + '?view=summary&tab=' + encodeURIComponent(S.tab) + '&cycle=' + encodeURIComponent(label) : '';
+    var url = '/summary.html?book=' + encodeURIComponent(book()) + '&tab=' + encodeURIComponent(S.tab) + '&cycle=' + encodeURIComponent(label);
     var h = '<div class="summary-head"><h1>' + esc(r.tab) + '</h1><span class="muted">cycle ' + esc(r.cycle || '–') + (r.release ? ' · release ' + esc(r.release) : '') + ' · as of ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-      '<div class="row no-print">' + (url ? '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">Open shareable page</a>' : '') +
-      '<button data-action="write-summary"' + (S.readOnly ? ' disabled' : '') + ' title="Write these figures into a visible tab of the sheet">Update summary tab</button><button data-action="print">Print / PDF</button></div></div>';
+      '<div class="row no-print"><a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">Open summary page</a>' +
+      '<button data-action="export-summary" title="Save this summary as one HTML file you can send or attach">Export summary</button>' +
+      '<button data-action="write-summary"' + (S.readOnly ? ' disabled' : '') + ' title="Write these figures into a visible tab of the workbook">Update summary tab</button><button data-action="print">Print / PDF</button></div></div>';
+    if (S.exported) h += '<div class="banner no-print"><span>Saved <span class="mono">' + esc(S.exported.file) + '</span></span><span class="grow"></span><a class="btn" href="' + esc(S.exported.url) + '" target="_blank" rel="noopener">Open it</a></div>';
     return h + TR.summaryHtml(r);
   }
 
@@ -849,7 +922,6 @@
     if (S.setup) return S.setup;
     var cfg = S.cfg || {};
     S.setup = {
-      claude: !!cfg.claude,
       issueBase: cfg.issueBase || '',
       tabs: S.boot.tabs.map(function (t) {
         var src = t.saved || t.detected;
@@ -859,17 +931,124 @@
     return S.setup;
   }
 
-  var STATUS_HEAD = /^\s*(?:test\s*)?(?:execution\s*)?(?:status|result)s?\s*(?:[\/|:\-–]\s*(.*))?$/i;
+  var STATUS_HEAD = /^(?:test )?(?:execution )?(?:status|result)s?(?:\s*[\/|:\-–]\s*(.+)|\s+(\S*\d.*))?$/i;
+  function isStatusHeader(x) { return STATUS_HEAD.test(String(x == null ? '' : x).replace(/\s+/g, ' ').trim()); }
+
+  // ---------------------------------------------------------------------------
+  // Claude (local Claude Code, like Bug Reporter): defaults from Setup, changeable per draft
+  // ---------------------------------------------------------------------------
+
+  function claudeChoice(kind) {
+    var d = S.app.settings.claude[kind];
+    return { model: val('cl:' + kind + ':model', d.model), effort: val('cl:' + kind + ':effort', d.effort) };
+  }
+
+  function modelOptions(selected) {
+    return Object.keys(S.app.claude.models).map(function (k) { return opt(k, S.app.claude.models[k], k === selected); }).join('');
+  }
+
+  function effortOptions(selected) {
+    return S.app.claude.efforts.map(function (e) { return opt(e, e.charAt(0).toUpperCase() + e.slice(1), e === selected); }).join('');
+  }
+
+  function claudeControls(kind) {
+    var c = claudeChoice(kind);
+    var dis = S.claudeBusy ? ' disabled' : '';
+    return '<div class="claude-opts"><span class="small"><b>Claude for this ' + (kind === 'paths' ? 'plan' : 'draft') + '</b> <span class="muted">(defaults from Setup)</span></span>' +
+      '<div class="row small"><label class="row">Model <select data-bind="cl:' + kind + ':model"' + dis + '>' + modelOptions(c.model) + '</select></label>' +
+      '<label class="row">Effort <select data-bind="cl:' + kind + ':effort"' + dis + '>' + effortOptions(c.effort) + '</select></label></div></div>';
+  }
+
+  function claudeButton(kind, label, action, disabled) {
+    var busy = S.claudeBusy === kind;
+    var off = disabled || !!S.claudeBusy || S.readOnly || !S.app.claude.available;
+    return '<button class="primary" data-action="' + action + '"' + (off ? ' disabled' : '') + '>' + (busy ? 'Asking Claude…' : esc(label)) + '</button>';
+  }
+
+  function prettyModel(id) {
+    var m = String(id || '');
+    var k = Object.keys(S.app.claude.models).filter(function (x) { return x !== 'default' && m.indexOf(x) >= 0; })[0];
+    return k ? S.app.claude.models[k] : (m || 'unknown model');
+  }
+
+  function kTok(n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n || 0); }
+
+  function usageLine(u) {
+    return esc(prettyModel(u.model)) + ' · effort ' + esc(u.requested.effort) + ' · ' + kTok(u.totalInput) + ' in / ' + kTok(u.outputTokens) + ' out · ' +
+      (u.durationMs / 1000).toFixed(1) + ' s · ' + esc(u.costText) + ' API-equivalent' + (u.fellBack ? ' · used the CLI\'s model name' : '');
+  }
+
+  function claudeStatusLine(kind) {
+    if (!S.app.claude.available) {
+      return '<div class="note bad">Claude Code was not found on this computer. Install it, run <span class="mono">claude auth login</span>, then restart Test Run. You can still use <b>Copy prompt</b>.</div>';
+    }
+    if (S.claudeBusy === kind) {
+      var c = claudeChoice(kind);
+      return '<div class="small muted">Asking Claude (' + esc(S.app.claude.models[c.model]) + ', effort ' + esc(c.effort) + ')… <span id="claudeElapsed">' + Math.round((Date.now() - S.claudeStarted) / 1000) + ' s</span>. You can keep testing meanwhile.</div>';
+    }
+    var e = S.claudeError[kind];
+    if (e) return '<div class="note bad">' + esc(e.error) + (e.fix && e.fix.length ? ' Try: <span class="mono">' + esc(e.fix.join(' ; ')) + '</span>' : '') + '</div>';
+    var u = S.usage[kind];
+    return u ? '<div class="small muted">Last run: ' + usageLine(u) + '</div>' : '';
+  }
+
+  var elapsedTimer = null;
+  function runClaude(kind, payload) {
+    var c = claudeChoice(kind);
+    S.claudeBusy = kind;
+    S.claudeStarted = Date.now();
+    delete S.claudeError[kind];
+    render();
+    clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(function () {
+      var el = $('claudeElapsed');
+      if (el) el.textContent = Math.round((Date.now() - S.claudeStarted) / 1000) + ' s';
+    }, 1000);
+    var body = { kind: kind, book: book(), tab: S.tab, model: c.model, effort: c.effort };
+    Object.keys(payload).forEach(function (k) { body[k] = payload[k]; });
+    TR.http('POST', '/api/claude', body).then(function (r) {
+      clearInterval(elapsedTimer);
+      S.claudeBusy = null;
+      if (r.usage) S.usage[kind] = r.usage;
+      if (!r.ok) {
+        S.claudeError[kind] = r;
+        toast(r.error || 'Claude could not draft this.', 'bad');
+        render();
+        return;
+      }
+      S.inbox.push(r.entry);
+      if (kind === 'draft') S.findingSel = {};
+      var n = r.entry.type === 'paths' ? r.entry.paths.length + ' paths' : (r.entry.items || []).length + ' test case(s)';
+      toast('Claude drafted ' + n + '. Review them in the Inbox.');
+      S.view = 'inbox';
+      render();
+      window.scrollTo(0, 0);
+    });
+  }
+
+  function appSettingsCard() {
+    var st = S.app.settings;
+    var cl = S.app.claude;
+    return '<section class="card card-pad stack"><h2>You and Claude <span class="small muted">(this computer, all workbooks)</span></h2>' +
+      '<div class="form-grid"><div><label for="appUser">Your name (fills <i>Tested by</i>)</label><input id="appUser" data-bind="app:user" value="' + esc(val('app:user', st.user)) + '"></div></div>' +
+      '<label class="check"><input type="checkbox" data-bind="app:enabled"' + (val('app:enabled', st.claude.enabled) ? ' checked' : '') + '> Claude help</label>' +
+      '<p class="small muted" style="margin-left:24px">Drafts test cases from your findings and plans test paths, through your own Claude Code login (no API key), the same way Bug Reporter does. Only the findings you tick and related scenario titles are sent, and everything lands in the Inbox for review first. ' +
+      (cl.available ? '<span class="pill pass">Claude Code found</span>' : '<span class="pill fail">Claude Code not found</span> Install it and run <span class="mono">claude auth login</span>.') + '</p>' +
+      '<div class="table-wrap"><table><thead><tr><th>Default for</th><th>Model</th><th>Effort</th></tr></thead><tbody>' +
+      '<tr><td>Writing up findings</td><td><select aria-label="Model for writing up" data-bind="app:draft.model">' + modelOptions(val('app:draft.model', st.claude.draft.model)) + '</select></td><td><select aria-label="Effort for writing up" data-bind="app:draft.effort">' + effortOptions(val('app:draft.effort', st.claude.draft.effort)) + '</select></td></tr>' +
+      '<tr><td>Planning test paths</td><td><select aria-label="Model for planning" data-bind="app:paths.model">' + modelOptions(val('app:paths.model', st.claude.paths.model)) + '</select></td><td><select aria-label="Effort for planning" data-bind="app:paths.effort">' + effortOptions(val('app:paths.effort', st.claude.paths.effort)) + '</select></td></tr>' +
+      '</tbody></table></div><p class="small faint">You can still change the model and effort for any single draft.</p>' +
+      '<div class="row"><span class="grow"></span><button data-action="save-app">Save</button></div></section>';
+  }
 
   function viewSetup() {
     var d = setupDraft();
     var dis = S.readOnly ? ' disabled' : '';
     var h = '';
-    if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab was read, then save. Saving adds a hidden <span class="mono">_testrun</span> tab to this sheet for settings; nothing else changes.</div></div>';
-    h += '<section class="card card-pad stack"><h2>General</h2>' +
-      '<label class="check"><input type="checkbox" data-setup="claude"' + (d.claude ? ' checked' : '') + dis + '> Claude help (copy and paste)</label>' +
-      '<p class="small muted" style="margin-left:24px">Adds <b>Copy for Claude</b> buttons and a place to paste replies. Claude is never connected to this sheet or to Google Drive: you see and copy the exact text, and paste the reply back for review. Leave it off and everything still works by hand.</p>' +
-      '<div class="form-grid"><div class="wide"><label for="issueBase">Issue link address (optional)</label><input id="issueBase" type="url" data-setup="issueBase" placeholder="https://github.com/org/repo/issues" value="' + esc(d.issueBase) + '"' + dis + '><span class="small faint">Turns "#123" in the sheet into a link.</span></div></div></section>';
+    if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read, then save. Settings are kept beside the workbook in <span class="mono">sheets/.testrun/</span>; the workbook itself does not change.</div></div>';
+    h += appSettingsCard();
+    h += '<section class="section card card-pad stack"><h2>This workbook</h2>' +
+      '<div class="form-grid"><div class="wide"><label for="issueBase">Issue link address (optional)</label><input id="issueBase" type="url" data-setup="issueBase" placeholder="https://github.com/org/repo/issues" value="' + esc(d.issueBase) + '"' + dis + '><span class="small faint">Turns "#123" in the workbook into a link.</span></div></div></section>';
 
     d.tabs.forEach(function (t, ti) {
       var headers = (t.top && t.top[t.headerRow - 1]) || [];
@@ -881,7 +1060,7 @@
         h += '<p class="small muted">Results here feed the <b>Auto</b> badges on manual cases. Manual cases link to a spec when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
         return;
       }
-      var cycles = headers.filter(function (x) { return STATUS_HEAD.test(String(x)); });
+      var cycles = headers.filter(isStatusHeader);
       h += '<div class="row"><label for="hr' + ti + '">Header row</label><input id="hr' + ti + '" type="text" inputmode="numeric" size="3" data-setup-tab="' + ti + '" data-key="headerRow" value="' + esc(t.headerRow) + '"' + dis + '>' +
         '<button class="ghost" data-action="redetect" data-index="' + ti + '"' + dis + '>Detect columns again</button>' +
         '<span class="grow"></span><label class="check"><input type="checkbox" data-setup-tab="' + ti + '" data-key="fillDown"' + (t.fillDown ? ' checked' : '') + dis + '> Blank Feature / Sub feature continues the row above</label></div>';
@@ -1016,6 +1195,59 @@
         loadTab(cycleLabel(), true);
       });
     },
+    'claude-paths': function () { runClaude('paths', { onlyUntested: !!val('planTodo', true), focus: val('planFocus'), cycle: cycleLabel() }); },
+    'claude-draft': function () {
+      var keys = Object.keys(S.findingSel).filter(function (k) { return S.findingSel[k]; });
+      if (keys.length) runClaude('draft', { findingKeys: keys });
+    },
+    'save-app': function () {
+      var st = S.app.settings;
+      var body = {
+        user: String(val('app:user', st.user)).trim(),
+        claude: {
+          enabled: !!val('app:enabled', st.claude.enabled),
+          draft: { model: val('app:draft.model', st.claude.draft.model), effort: val('app:draft.effort', st.claude.draft.effort) },
+          paths: { model: val('app:paths.model', st.claude.paths.model), effort: val('app:paths.effort', st.claude.paths.effort) }
+        }
+      };
+      TR.http('POST', '/api/app', body).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        S.app = r;
+        Object.keys(S.form).forEach(function (k) { if (k.indexOf('app:') === 0 || k.indexOf('cl:') === 0) delete S.form[k]; });
+        toast('Saved.');
+        render();
+      });
+    },
+    import: function () {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      input.addEventListener('change', function () {
+        var f = input.files && input.files[0];
+        if (!f) return;
+        var send = function (overwrite) {
+          return TR.http('POST', '/api/books/import?name=' + encodeURIComponent(f.name) + (overwrite ? '&overwrite=1' : ''), f, true);
+        };
+        send(false).then(function (r) {
+          if (!r.ok && r.code === 'EXISTS' && window.confirm(r.error + ' Replace it with the file you picked?')) return send(true);
+          return r;
+        }).then(function (r) {
+          if (!r) return;
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          toast('Imported ' + r.name + '.');
+          switchBook(r.name);
+        });
+      });
+      input.click();
+    },
+    'export-summary': function () {
+      TR.http('POST', '/api/export-summary', { book: book(), tab: S.tab, cycle: cycleLabel() }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        S.exported = r;
+        toast('Summary saved as a file you can send.');
+        render();
+      });
+    },
     'copy-paths': function () { copyForClaude('paths', { onlyUntested: !!val('planTodo', true), focus: val('planFocus'), cycle: cycleLabel() }); },
     'clear-plan': function () {
       queueWrite(function () { return api('api_clearPathPlan', S.tab); }).then(function (r) {
@@ -1070,7 +1302,7 @@
         if (!r.ok) { el.disabled = false; writeError(r); return; }
         S.manual.splice(i, 1);
         Object.keys(S.form).forEach(function (k) { if (k.indexOf('man:') === 0) delete S.form[k]; });
-        toast('Added to the sheet as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
+        toast('Added to the workbook as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
         loadTab(cycleLabel(), true);
         loadSide();
       });
@@ -1112,7 +1344,7 @@
     'write-summary': function () {
       queueWrite(function () { return api('api_writeSummaryTab', S.tab, cycleLabel()); }).then(function (r) {
         if (!r.ok) { writeError(r); return; }
-        toast('The "' + r.sheet + '" tab in the sheet is up to date.');
+        toast('The "' + r.sheet + '" tab in the workbook is up to date.');
       });
     },
     print: function () { window.print(); },
@@ -1139,7 +1371,6 @@
     'save-setup': function () {
       var d = S.setup;
       var payload = {
-        claude: d.claude,
         issueBase: d.issueBase,
         tabs: d.tabs.map(function (t) { return { name: t.name, role: t.role, headerRow: t.headerRow, columns: t.columns, fillDown: t.fillDown }; })
       };
@@ -1169,10 +1400,32 @@
     });
   }
 
+  function switchBook(name) {
+    return TR.http('POST', '/api/books/select', { name: name }).then(function (a) {
+      if (!a.ok) { toast(a.error, 'bad'); return; }
+      S.app = a;
+      TR.state.book = name;
+      S.selected = null;
+      S.keep = {};
+      S.undo = [];
+      S.findings = [];
+      S.inbox = [];
+      sideSeen = { findings: null, inbox: null };
+      S.manual = [];
+      S.setup = null;
+      S.summary = null;
+      S.exported = null;
+      S.filters.type = '';
+      S.view = 'run';
+      boot(TR.store.get('tab:' + name), '');
+    });
+  }
+
   var CHANGES = {
+    book: function (el) { if (el.value) switchBook(el.value); },
     tab: function (el) {
       S.tab = el.value;
-      TR.store.set('tab', S.tab);
+      TR.store.set('tab:' + book(), S.tab);
       S.selected = null;
       S.keep = {};
       S.undo = [];
@@ -1257,7 +1510,6 @@
     if (o) { e.preventDefault(); mark(S.selected, o.value); }
   });
 
-  if (MODE === 'demo') window.__TR_STATE = S;
+  window.__TR_STATE = S; // for the browser tests
   init();
 })();
-</script>

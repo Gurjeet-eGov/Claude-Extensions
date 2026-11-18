@@ -1,5 +1,6 @@
-// A small in-memory stand-in for the parts of SpreadsheetApp the console uses,
-// so the real .gs files run under Node for the unit tests and the local demo.
+// A small in-memory stand-in for the sheet API the console logic uses, for the
+// unit tests. It also defines the behaviour lib/xlsx-book.mjs must match
+// (test/server.test.mjs runs against both).
 // Display rules that matter are copied from Sheets: a leading apostrophe makes
 // text literal (and is hidden), and a leading "=" would become a formula (shown
 // here as "#FORMULA!" so tests notice it).
@@ -270,32 +271,9 @@ export class FakeSpreadsheet {
   }
 }
 
-/** Globals the .gs files expect, backed by one FakeSpreadsheet. env.email can be changed between calls. */
-export function makeGlobals(ss, env = {}) {
-  const state = Object.assign({ email: 'tester.one@example.org', url: 'http://localhost/exec', now: null }, env);
-  const lock = { tryLock: () => true, waitLock: () => {}, releaseLock: () => {} };
-  const pad = (n) => String(n).padStart(2, '0');
-  return {
-    state,
-    globals: {
-      SpreadsheetApp: {
-        getActiveSpreadsheet: () => ss,
-        getActive: () => ss,
-        CopyPasteType,
-        DataValidationCriteria,
-        newDataValidation: () => new ValidationBuilder(),
-        flush: () => {},
-      },
-      LockService: { getDocumentLock: () => lock, getScriptLock: () => lock },
-      Session: { getActiveUser: () => ({ getEmail: () => state.email }), getScriptTimeZone: () => 'Etc/UTC' },
-      Utilities: {
-        formatDate: (d) => {
-          const t = state.now ? new Date(state.now) : d;
-          return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
-        },
-      },
-      ScriptApp: { getService: () => ({ getUrl: () => state.url }) },
-      Logger: { log: () => {} },
-    },
-  };
-}
+/** The sheet-API constants and builders lib/sheet.js uses, for this back end. */
+export const FakeSheetsApi = {
+  CopyPasteType,
+  DataValidationCriteria,
+  newDataValidation: () => new ValidationBuilder(),
+};

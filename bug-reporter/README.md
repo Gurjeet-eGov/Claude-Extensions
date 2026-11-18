@@ -111,6 +111,16 @@ The CSV opens in Excel, Numbers, Google Sheets and LibreOffice on Mac, Windows a
 - After stopping, the popup shows the last list and offers **Save again**.
 - Starting a new list replaces the last one; you're warned if it wasn't saved.
 
+## Noting the bug as a test scenario (Test Run)
+
+If the [Test Run console](../test-run-console/) is running on this computer, the review screen shows **Also add this scenario to Test Run** next to **File issue**, followed by where the note will go (workbook, tab, cycle).
+
+- **If you tick it:** once the issue is filed, the bug is noted in Test Run as a finding. It carries the title, the issue link, the Description / Actual / Expected text, and the module. You can then write it up there as a test case, by hand or with Claude.
+- **The checkbox** starts unticked and remembers your last choice. When Test Run isn't running, it doesn't appear.
+- **If the note fails,** you get a warning only: the issue itself is already filed.
+- **Settings:** options → **Test Run** has an on/off switch, the port (default 5178) and **Check now**.
+- **Network:** the extension only contacts `127.0.0.1` for this.
+
 ## Incognito
 
 Chrome only runs extensions in Incognito windows if you allow it: go to `chrome://extensions` → eGov Bug Reporter → **Details** → switch on **Allow in Incognito**. The Setup tab shows whether it's on.

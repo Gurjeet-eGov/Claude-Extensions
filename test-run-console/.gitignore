@@ -1,2 +1,4 @@
 node_modules/
-.clasp.json
+# Your workbooks and the console data next to them stay on this computer.
+sheets/*
+!sheets/.gitkeep

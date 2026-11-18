@@ -2,12 +2,12 @@
 
 Built when a tester selects findings and clicks **Copy for Claude** on the Findings screen. It carries the selected findings, the scenario titles of related cases (for the duplicate check), and the Feature / Sub feature / Test type values already used in the tab. No names, emails or sheet links.
 
-Generated from `apps-script/prompts.gs` by `npm run prompts`. Do not edit by hand.
+Generated from `lib/prompts.js` by `npm run prompts`. Do not edit by hand.
 
 Words in `{{double braces}}` are filled in by the console from the selected items only.
 
 ````text
-You are helping a QA tester turn quick findings into manual test cases for the "{{tab}}" tab of a Google Sheet.
+You are helping a QA tester turn quick findings into manual test cases for the "{{tab}}" tab of a test case workbook.
 
 House style for test cases:
 - Scenario: one line starting "Verify if" or "Verify that", naming the actor (use this deployment's own role names) and the observable behaviour.

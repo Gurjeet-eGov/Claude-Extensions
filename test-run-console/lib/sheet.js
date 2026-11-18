@@ -1,13 +1,16 @@
 /**
- * Test Run console: everything that reads or writes the spreadsheet.
+ * Test Run console: everything that reads or writes a workbook.
  *
- * The script is attached to one Google Sheet and only has the
- * "spreadsheets.currentonly" permission, so the only file it can open is that
- * sheet. Settings, findings, inbox drafts and path plans live in a hidden
- * "_testrun" tab of the same sheet; nothing is stored anywhere else.
+ * The host (server.mjs, or the tests) provides three globals:
+ * - SpreadsheetApp.getActiveSpreadsheet(): the open workbook, through a small
+ *   sheet API (lib/xlsx-book.mjs on real .xlsx files, dev/fake-sheets.mjs in tests);
+ * - TRStore: the workbook's sidecar store for settings, findings, inbox drafts
+ *   and path plans (sheets/.testrun/<workbook>.json), so the workbook itself
+ *   only ever holds test data;
+ * - Session / Utilities / LockService: who is testing, dates, and a lock.
  */
 
-var TR_META = '_testrun';
+var TR_META = '_testrun'; // tab name used by the earlier Google Sheets version; always hidden from the console
 var TR_SUMMARY = 'Test Run Summary';
 var TR_ROLES = ['manual', 'automation', 'ignore'];
 
@@ -19,7 +22,7 @@ function tr_err_(code, message) {
 
 function tr_ss_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw tr_err_('NO_SHEET', 'The console could not find its sheet. Add the script from inside the sheet (Extensions > Apps Script), or open it from the sheet\'s Test Run menu.');
+  if (!ss) throw tr_err_('NO_SHEET', 'No workbook is open. Pick one, or add an .xlsx file to the sheets folder.');
   return ss;
 }
 
@@ -35,7 +38,7 @@ function tr_lock_() {
   var lock = null;
   try { lock = LockService.getDocumentLock(); } catch (e) { lock = null; }
   if (!lock) lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) throw tr_err_('BUSY', 'Someone else is saving to this sheet. Try again in a moment.');
+  if (!lock.tryLock(20000)) throw tr_err_('BUSY', 'Another save is in progress. Try again in a moment.');
   return lock;
 }
 
@@ -45,65 +48,23 @@ function tr_withLock_(fn) {
 }
 
 // -----------------------------------------------------------------------------
-// Hidden store (_testrun tab): one row per item, JSON in column C
+// Sidecar store (TRStore): { list(kind), get(kind, key), put(kind, key, value, meta), remove(kind, key) }
 // -----------------------------------------------------------------------------
 
-function tr_metaSheet_(create) {
-  var ss = tr_ss_();
-  var sh = ss.getSheetByName(TR_META);
-  if (!sh && create) {
-    sh = ss.insertSheet(TR_META);
-    sh.getRange(1, 1, 1, 5).setValues([['kind', 'key', 'json', 'updated', 'by']]);
-    sh.hideSheet();
-  }
-  return sh;
-}
-
-function tr_metaRows_() {
-  var sh = tr_metaSheet_(false);
-  if (!sh) return [];
-  var last = sh.getLastRow();
-  if (last < 2) return [];
-  var vals = sh.getRange(2, 1, last - 1, 5).getValues();
-  var out = [];
-  for (var i = 0; i < vals.length; i++) {
-    if (!vals[i][0]) continue;
-    var v = null;
-    try { v = JSON.parse(vals[i][2]); } catch (e) { v = null; }
-    out.push({ row: i + 2, kind: String(vals[i][0]), key: String(vals[i][1]), value: v, updated: String(vals[i][3]), by: String(vals[i][4]) });
-  }
-  return out;
-}
-
 function tr_metaGet_(kind, key) {
-  var rows = tr_metaRows_();
-  for (var i = 0; i < rows.length; i++) if (rows[i].kind === kind && rows[i].key === key) return rows[i].value;
-  return null;
+  return TRStore.get(kind, key);
 }
 
 function tr_metaList_(kind) {
-  return tr_metaRows_().filter(function (r) { return r.kind === kind; });
+  return TRStore.list(kind);
 }
 
 function tr_metaPut_(kind, key, value) {
-  var json = JSON.stringify(value);
-  if (json.length > 49000) throw tr_err_('TOO_BIG', 'Too much to store in one place (' + json.length + ' characters). Trim it, or split it into smaller parts.');
-  var sh = tr_metaSheet_(true);
-  var rows = tr_metaRows_();
-  var line = [[kind, key, json, tr_now_(), tr_user_()]];
-  for (var i = 0; i < rows.length; i++) {
-    if (rows[i].kind === kind && rows[i].key === key) { sh.getRange(rows[i].row, 1, 1, 5).setValues(line); return; }
-  }
-  sh.getRange(Math.max(sh.getLastRow(), 1) + 1, 1, 1, 5).setValues(line);
+  TRStore.put(kind, key, value, { updated: tr_now_(), by: tr_user_() });
 }
 
 function tr_metaDelete_(kind, key) {
-  var sh = tr_metaSheet_(false);
-  if (!sh) return;
-  var rows = tr_metaRows_();
-  for (var i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].kind === kind && rows[i].key === key) sh.deleteRow(rows[i].row);
-  }
+  TRStore.remove(kind, key);
 }
 
 // -----------------------------------------------------------------------------
@@ -660,6 +621,8 @@ function tr_saveFinding(input) {
       tab: TRCore.cleanText(input.tab, 160),
       area: TRCore.cleanText(input.area, 160),
       details: TRCore.cleanText(input.details, 5000),
+      source: TRCore.cleanText(input.source || (prev && prev.source) || '', 40),
+      url: /^https?:\/\//i.test(String(input.url || '')) ? TRCore.cleanText(input.url, 500) : ((prev && prev.url) || ''),
       state: (prev && prev.state) || 'open',
       caseId: (prev && prev.caseId) || '',
       by: (prev && prev.by) || tr_user_(),

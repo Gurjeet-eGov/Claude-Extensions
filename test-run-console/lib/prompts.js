@@ -1,10 +1,9 @@
 /**
- * Test Run console: the text that "Copy for Claude" puts on the clipboard.
- *
- * Nothing here is sent anywhere by the console. The tester previews the text,
- * may trim it, and pastes it into whichever Claude they use. Claude's reply
- * comes back only when the tester pastes it into the Inbox, where it is
- * validated (TRCore.validateReply) and reviewed before anything is written.
+ * Test Run console: the message Claude gets when the tester asks it to write
+ * up findings or plan test paths. It goes to Claude Code on this computer
+ * (lib/claude-run.mjs), or onto the clipboard with "Copy prompt". It holds only
+ * what the tester selected. The reply is validated (TRCore.validateReply) and
+ * reviewed in the Inbox before anything is written to the workbook.
  *
  * prompts/*.md in the repo are generated from TEMPLATES by
  * `npm run prompts`; a unit test fails if they drift.
@@ -26,7 +25,7 @@ var TRPrompts = (function () {
 
   var TEMPLATES = {
     draftScenarios: [
-      'You are helping a QA tester turn quick findings into manual test cases for the "{{tab}}" tab of a Google Sheet.',
+      'You are helping a QA tester turn quick findings into manual test cases for the "{{tab}}" tab of a test case workbook.',
       '',
       '{{houseStyle}}',
       '',
@@ -51,7 +50,7 @@ var TRPrompts = (function () {
     ].join('\n'),
 
     planPaths: [
-      'You are helping a QA tester plan a manual test cycle for the "{{tab}}" tab of a Google Sheet.',
+      'You are helping a QA tester plan a manual test cycle for the "{{tab}}" tab of a test case workbook.',
       '',
       'Group the test cases below into ordered test paths. A path is something one tester runs in a single pass:',
       '- one persona and login (for example CSR, GRO, LME, citizen, admin), so the tester does not keep switching accounts;',

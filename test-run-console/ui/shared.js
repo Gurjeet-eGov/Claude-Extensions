@@ -1,4 +1,3 @@
-<script>
 /* Shared by the console and the summary page: calling the server, escaping, status visuals, the summary. */
 var TR = (function () {
   'use strict';
@@ -12,15 +11,26 @@ var TR = (function () {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  /** Call a server function; always resolves with { ok, ... }. */
+  /** Which workbook the page is working on (sent with every call). */
+  var state = { book: null };
+
+  /** Talk to the local server; always resolves with { ok, ... }. raw: send body as-is (file upload). */
+  function http(method, path, body, raw) {
+    var opts = { method: method, headers: { 'X-Test-Run': '1' } };
+    if (body !== undefined) {
+      if (raw) opts.body = body;
+      else { opts.headers['content-type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    }
+    return fetch(path, opts)
+      .then(function (r) { return r.json(); })
+      .then(function (res) { return res || { ok: false, code: 'ERROR', error: 'Empty response' }; })
+      .catch(function (e) { return { ok: false, code: 'OFFLINE', error: 'Test Run is not answering. Is it still running in the terminal? (' + ((e && e.message) || e) + ')' }; });
+  }
+
+  /** Call one of the server's api_* functions on the current workbook. */
   function api(fn) {
     var args = Array.prototype.slice.call(arguments, 1);
-    return new Promise(function (resolve) {
-      var runner = google.script.run
-        .withSuccessHandler(function (res) { resolve(res || { ok: false, code: 'ERROR', error: 'Empty response' }); })
-        .withFailureHandler(function (err) { resolve({ ok: false, code: 'ERROR', error: String((err && err.message) || err) }); });
-      runner[fn].apply(runner, args);
-    });
+    return http('POST', '/api/call/' + fn, { book: state.book, args: args });
   }
 
   function classify(v) {
@@ -154,9 +164,8 @@ var TR = (function () {
   };
 
   return {
-    SYM: SYM, CLS_LABEL: CLS_LABEL, esc: esc, api: api, classify: classify, counts: counts, bar: bar,
+    SYM: SYM, CLS_LABEL: CLS_LABEL, esc: esc, api: api, http: http, state: state, classify: classify, counts: counts, bar: bar,
     dot: dot, issueUrl: issueUrl, issueLink: issueLink, pct: pct, summaryHtml: summaryHtml,
     legend: legend, toast: toast, store: store
   };
 })();
-</script>

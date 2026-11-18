@@ -2,6 +2,7 @@
 // The header rows copy the layouts of the real CMS sign-off workbook (two
 // manual layouts, the automation sign-off tab, the KPI tab). Every case below
 // is made up for testing; none is copied from a real sheet.
+import ExcelJS from 'exceljs';
 import { FakeSpreadsheet } from './fake-sheets.mjs';
 
 const B = (...lines) => lines.map((l) => `• ${l}`).join('\n');
@@ -59,20 +60,48 @@ const kpiRows = [
   ['Average Resolution Time', 'time to resolve', 'Average created-to-resolved time', '', ''],
 ];
 
-/** A fresh sample workbook. */
+const SHEETS = [
+  { name: 'CMS 2.20.1', rows: [MANUAL_HEADERS, ...manualRows], validations: [{ col: 8, values: STATUS }], styled: true },
+  { name: 'CMS 2.20.1 Features', rows: [FEATURE_HEADERS, ...featureRows], validations: [{ col: 9, values: STATUS }], styled: true },
+  { name: 'CMS Automation', rows: [AUTOMATION_HEADERS, ...automationRows], validations: [] },
+  { name: 'Dashboard KPI', rows: [KPI_HEADERS, ...kpiRows], validations: [{ col: 4, values: ['Fail', 'Need more data', 'Pass'] }] },
+];
+
+/** A fresh sample workbook, in memory (the unit tests' fake sheet API). */
 export function buildSample(name = 'CMS Sign Off (sample)') {
   const ss = new FakeSpreadsheet(name);
-  ss.addSheet('CMS 2.20.1', [MANUAL_HEADERS, ...manualRows], {
-    validations: [{ col: 8, fromRow: 2, toRow: manualRows.length + 1, values: STATUS }],
-    formats: [{ row: 1, tag: 'header' }, ...manualRows.map((_, i) => ({ row: i + 2, tag: 'body' }))],
-  });
-  ss.addSheet('CMS 2.20.1 Features', [FEATURE_HEADERS, ...featureRows], {
-    validations: [{ col: 9, fromRow: 2, toRow: featureRows.length + 1, values: STATUS }],
-    formats: [{ row: 1, tag: 'header' }, ...featureRows.map((_, i) => ({ row: i + 2, tag: 'body' }))],
-  });
-  ss.addSheet('CMS Automation', [AUTOMATION_HEADERS, ...automationRows]);
-  ss.addSheet('Dashboard KPI', [KPI_HEADERS, ...kpiRows], {
-    validations: [{ col: 4, fromRow: 2, toRow: kpiRows.length + 1, values: ['Fail', 'Need more data', 'Pass'] }],
-  });
+  for (const t of SHEETS) {
+    const n = t.rows.length - 1;
+    ss.addSheet(t.name, t.rows, {
+      validations: t.validations.map((v) => ({ col: v.col, fromRow: 2, toRow: n + 1, values: v.values })),
+      formats: t.styled ? [{ row: 1, tag: 'header' }, ...t.rows.slice(1).map((_, i) => ({ row: i + 2, tag: 'body' }))] : [],
+    });
+  }
   return ss;
+}
+
+/** Cell styles standing for the fake's 'header' and 'body' format tags. */
+export const HEADER_STYLE = { font: { name: 'Arial', size: 10, bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC9DAF8' } }, alignment: { vertical: 'middle', wrapText: true } };
+export const BODY_STYLE = { font: { name: 'Arial', size: 10 }, alignment: { vertical: 'top', wrapText: true } };
+
+/** The same sample as a real .xlsx (bytes), the way a downloaded Google Sheet looks. */
+export async function buildSampleXlsx() {
+  const wb = new ExcelJS.Workbook();
+  for (const t of SHEETS) {
+    const ws = wb.addWorksheet(t.name);
+    t.rows.forEach((r, i) => {
+      const row = ws.getRow(i + 1);
+      r.forEach((v, j) => {
+        const cell = row.getCell(j + 1);
+        cell.value = v === '' ? null : v;
+        if (t.styled) cell.style = structuredClone(i === 0 ? HEADER_STYLE : BODY_STYLE);
+      });
+    });
+    for (const v of t.validations) {
+      for (let r = 2; r <= t.rows.length; r++) {
+        ws.getCell(r, v.col).dataValidation = { type: 'list', allowBlank: true, showErrorMessage: true, formulae: [`"${v.values.join(',')}"`] };
+      }
+    }
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

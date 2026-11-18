@@ -1,14 +1,14 @@
-// Writes prompts/*.md from apps-script/prompts.gs so the exact text that
+// Writes prompts/*.md from lib/prompts.js so the exact text that
 // "Copy for Claude" produces can be read and reviewed in the repo.
 //   npm run prompts
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadCore, ROOT } from '../dev/load.mjs';
+import { loadCore, ROOT } from '../lib/runtime.mjs';
 
 export function renderPromptDocs() {
   const { TRPrompts } = loadCore();
   const t = TRPrompts.TEMPLATES;
-  const doc = (title, intro, body) => `# ${title}\n\n${intro}\n\nGenerated from \`apps-script/prompts.gs\` by \`npm run prompts\`. Do not edit by hand.\n\nWords in \`{{double braces}}\` are filled in by the console from the selected items only.\n\n\`\`\`\`text\n${body}\n\`\`\`\`\n`;
+  const doc = (title, intro, body) => `# ${title}\n\n${intro}\n\nGenerated from \`lib/prompts.js\` by \`npm run prompts\`. Do not edit by hand.\n\nWords in \`{{double braces}}\` are filled in by the console from the selected items only.\n\n\`\`\`\`text\n${body}\n\`\`\`\`\n`;
   return {
     'draft-scenarios.md': doc(
       'Prompt: write up findings as test cases',

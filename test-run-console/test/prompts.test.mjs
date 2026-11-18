@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadCore, ROOT } from '../dev/load.mjs';
+import { loadCore, ROOT } from '../lib/runtime.mjs';
 import { renderPromptDocs } from '../scripts/export-prompts.mjs';
 
 const { TRPrompts, TRCore } = loadCore();
 
-test('prompts/*.md match apps-script/prompts.gs (run npm run prompts after editing)', () => {
+test('prompts/*.md match lib/prompts.js (run npm run prompts after editing)', () => {
   for (const [name, text] of Object.entries(renderPromptDocs())) {
     assert.equal(readFileSync(join(ROOT, 'prompts', name), 'utf8'), text, `prompts/${name} is out of date`);
   }

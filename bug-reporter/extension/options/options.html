@@ -23,6 +23,7 @@
         <button data-tab="recording" role="tab">Recording</button>
         <button data-tab="claude" role="tab">Claude</button>
         <button data-tab="capture" role="tab">Capture &amp; storage</button>
+        <button data-tab="testrun" role="tab">Test Run</button>
         <button data-tab="usage" role="tab">Usage</button>
       </nav>
 
@@ -174,6 +175,21 @@
         </div>
         <h3>Sites with capture enabled</h3>
         <div id="sites"></div>
+      </section>
+
+      <!-- Test Run -->
+      <section id="tab-testrun" class="tab hidden">
+        <h2>Test Run</h2>
+        <p class="muted">
+          Test Run is the local console for your manual test cases (<code>test-run-console</code> in this repo). While it is running on this computer, the review
+          screen shows <b>Also add this scenario to Test Run</b>. Tick it and, once the issue is filed, the bug is noted in Test Run as a finding, ready to be
+          written up as a test case. Only this computer is contacted (127.0.0.1).
+        </p>
+        <label class="row"><input type="checkbox" data-set="testRun.enabled" /> Offer to add filed bugs to Test Run</label>
+        <div class="grid3">
+          <label class="field"><span>Test Run port</span><input data-set="testRun.port" type="number" min="1024" max="65535" step="1" /></label>
+        </div>
+        <p><button id="trCheck">Check now</button> <span id="trState" class="muted small"></span></p>
       </section>
 
       <!-- Usage -->

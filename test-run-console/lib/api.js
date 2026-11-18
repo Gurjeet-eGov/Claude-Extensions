@@ -1,61 +1,9 @@
 /**
- * Test Run console: entry points.
- *
- * @OnlyCurrentDoc
- *
- * The annotation above, and the "spreadsheets.currentonly" scope in
- * appsscript.json, mean this script can open only the sheet it is attached
- * to. It has no access to Google Drive or to any other file.
+ * Test Run console: the functions the page calls (POST /api/call/<name>).
  *
  * Every api_* function returns { ok: true, ... } or
- * { ok: false, code, error } so the page handles every outcome the same way.
+ * { ok: false, code, error }, so the page handles every outcome the same way.
  */
-
-function doGet(e) {
-  var params = (e && e.parameter) || {};
-  var view = params.view === 'summary' ? 'summary' : 'console';
-  return tr_page_(view, params, 'webapp')
-    .setTitle(view === 'summary' ? 'Test Run summary' : 'Test Run')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Test Run')
-    .addItem('Open console (sidebar)', 'tr_openSidebar')
-    .addItem('Open summary', 'tr_openSummaryDialog')
-    .addToUi();
-}
-
-function tr_openSidebar() {
-  SpreadsheetApp.getUi().showSidebar(tr_page_('console', {}, 'sidebar').setTitle('Test Run'));
-}
-
-function tr_openSummaryDialog() {
-  SpreadsheetApp.getUi().showModalDialog(tr_page_('summary', {}, 'dialog').setWidth(1100).setHeight(760), 'Test Run summary');
-}
-
-function tr_page_(view, params, mode) {
-  var t = HtmlService.createTemplateFromFile(view);
-  t.params = tr_jsonForScript_(params);
-  t.mode = mode;
-  return t.evaluate();
-}
-
-/** Inline another HTML file (styles, shared helpers) into a page. */
-function include(name) {
-  return HtmlService.createHtmlOutputFromFile(name).getContent();
-}
-
-/** JSON that is safe to place inside a <script> element. */
-function tr_jsonForScript_(o) {
-  return JSON.stringify(o || {})
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-}
 
 function tr_errCode_(e) {
   var msg = String((e && e.message) || e);

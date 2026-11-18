@@ -12,6 +12,7 @@ import { isStatic } from '../lib/static-files.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
 import { buildComment, RESULTS } from '../lib/comment.js';
 import { costOfUsageRecord, formatUsd } from '../lib/pricing.js';
+import { testRunStatus, testRunBase, noteBugInTestRun, buildBugNote, whereLabel } from '../lib/testrun.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -810,6 +811,7 @@ function filingSummary() {
 
 function showPreview() {
   showReview();
+  refreshTestRun();
   $('filingTo').textContent = filingSummary();
   refreshTitle();
   S.bodyDirty = false;
@@ -932,12 +934,45 @@ async function fileIssue() {
     S.report.filed = filed;
     await put('reports', S.report);
     showFiled(filed);
+    if (S.testRun && $('trNoteChk').checked) noteInTestRun(filed);
   } catch (e) {
     $('result').innerHTML = `<div class="notice bad"><b>Not filed.</b> ${esc(e.message)}${fixHtml(e.fix)}</div>`;
     $('result').classList.remove('hidden');
     $('file').disabled = false;
   } finally {
     session.close();
+  }
+}
+
+// ---------- Test Run ----------
+// While the local Test Run console runs, offer to note the bug there as a test scenario.
+async function refreshTestRun() {
+  const st = await testRunStatus(S.settings);
+  S.testRun = st;
+  $('trNote').classList.toggle('hidden', !st || !!S.report?.filed);
+  if (!st) return;
+  $('trWhere').textContent = whereLabel(st) ? `(${whereLabel(st)})` : '';
+  const { testRunNote } = await chrome.storage.local.get('testRunNote');
+  $('trNoteChk').checked = testRunNote === true;
+}
+$('trNoteChk').addEventListener('change', () => chrome.storage.local.set({ testRunNote: $('trNoteChk').checked }));
+
+async function noteInTestRun(filed) {
+  $('trNote').classList.add('hidden');
+  const box = document.createElement('div');
+  box.className = 'notice small';
+  box.textContent = 'Adding the scenario to Test Run…';
+  $('result').appendChild(box);
+  try {
+    const note = buildBugNote({ title: $('title').value.trim(), filed, repo: S.project?.repo, draft: S.draft, extra: $('extra').value, module: moduleValue(), pageUrl: S.report.pageUrl });
+    const res = await noteBugInTestRun(S.settings, note);
+    box.className = 'notice ok small';
+    box.innerHTML = `Noted in Test Run as <b>${esc(res.key)}</b> (${esc(whereLabel(res))}). <a href="${esc(testRunBase(S.settings))}/?view=findings" target="_blank" rel="noopener">Open Test Run ↗</a>`;
+    S.report.filed.testRun = res;
+    await put('reports', S.report);
+  } catch (e) {
+    box.className = 'notice warn small';
+    box.textContent = `The issue is filed, but the scenario could not be added to Test Run: ${e.message}`;
   }
 }
 

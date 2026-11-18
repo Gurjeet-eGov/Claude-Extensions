@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadCore, plain } from '../dev/load.mjs';
+import { loadCore, plain } from '../lib/runtime.mjs';
 import { MANUAL_HEADERS, FEATURE_HEADERS, AUTOMATION_HEADERS, KPI_HEADERS } from '../dev/sample-workbook.mjs';
 
 const { TRCore } = loadCore();
@@ -57,6 +57,16 @@ test('cycles pair on label and keep header order', () => {
     { label: 'v2.12', status: 1, comment: 2 },
     { label: 'v2.20', status: 3, comment: 4 },
   ]);
+});
+
+test('cycle labels on their own line (as Google Sheets exports wrapped headers) are found', () => {
+  const cycles = plain(TRCore.detectCycles(['S .No', 'Scenario', 'Test Status\nv2.12', 'Comment\nv2.12', 'Test Status\r\nv2.20', 'Comments v2.20', 'Status of fix', 'Notes']));
+  assert.deepEqual(cycles, [
+    { label: 'v2.12', status: 2, comment: 3 },
+    { label: 'v2.20', status: 4, comment: 5 },
+  ]);
+  assert.deepEqual(plain(TRCore.detectCycles(['Status', 'Notes'])), [{ label: '', status: 0, comment: 1 }]);
+  assert.deepEqual(plain(TRCore.detectCycles(['Test Status R1', 'Comment R1'])), [{ label: 'R1', status: 0, comment: 1 }]);
 });
 
 test('header row is found below a title row', () => {

@@ -6,6 +6,7 @@ import { buildTitle } from '../lib/title.js';
 import { currentIteration } from '../lib/iteration.js';
 import { costOfUsageRecord, formatUsd, PRICING_SOURCE, PRICING_AS_OF } from '../lib/pricing.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
+import { testRunStatus, whereLabel } from '../lib/testrun.js';
 
 const $ = (id) => document.getElementById(id);
 let settings = await getSettings();
@@ -139,6 +140,17 @@ for (const el of document.querySelectorAll('[data-set]')) {
   });
 }
 $('openShortcuts').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+
+// ---------- Test Run ----------
+$('trCheck').addEventListener('click', async () => {
+  $('trState').textContent = 'Checking…';
+  const s = await testRunStatus(settings, { timeoutMs: 1500 });
+  $('trState').textContent = s
+    ? `Running: ${whereLabel(s) || 'no workbook open yet'}.`
+    : settings.testRun?.enabled === false
+      ? 'Switched off above.'
+      : 'Not running. Start it with npm start in test-run-console.';
+});
 
 // ---------- projects ----------
 let editing = null; // project being edited

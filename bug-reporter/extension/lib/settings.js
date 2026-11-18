@@ -27,6 +27,10 @@ export const DEFAULT_SETTINGS = {
   housekeeping: {
     tempDays: 3,
   },
+  testRun: {
+    enabled: true, // offer "Also add this scenario to Test Run" while the Test Run console runs on this computer
+    port: 5178,
+  },
 };
 
 export const MODEL_LABELS = {
