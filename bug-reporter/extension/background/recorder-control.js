@@ -96,7 +96,12 @@ export async function updateBadge(state) {
     recording: { text: 'REC', color: '#d93025' },
     paused: { text: '❚❚', color: '#e37400' },
   };
-  const b = map[state] || { text: '', color: '#5f6368' };
+  let b = map[state] || { text: '', color: '#5f6368' };
+  if (!b.text) {
+    // Not recording: show that Track Localizations is on.
+    const { locTracking } = await chrome.storage.local.get('locTracking');
+    if (locTracking?.active) b = { text: 'LOC', color: '#7e22ce' };
+  }
   await chrome.action.setBadgeText({ text: b.text });
   await chrome.action.setBadgeBackgroundColor({ color: b.color });
   await chrome.storage.session.set({ recState: state });

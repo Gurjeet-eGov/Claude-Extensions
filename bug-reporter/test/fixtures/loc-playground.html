@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Inbox</title>
+    <style>body { font: 14px system-ui, sans-serif; margin: 24px; } .hidden { display: none; }</style>
+  </head>
+  <body>
+    <div id="root">
+      <h1>Complaint inbox</h1>
+      <button>CS_COMMON_SUBMIT</button>
+      <button>Submit</button>
+      <span class="material-icons">arrow_drop_down</span>
+      <p>Azad Nagar - WARD_1</p>
+      <table><tr><td>Tenant</td><td>pb.testing</td></tr><tr><td>Complaint</td><td>PGR-2026-11-16-001234</td></tr></table>
+      <select><option>Choose</option><option>CS_COMMON_STATUS_PENDING</option></select>
+      <div class="hidden">DSS_HIDDEN_KEY</div>
+      <input placeholder="CS_SEARCH_PLACEHOLDER" />
+      <button id="menu">Open menu</button>
+      <button id="next">Next page</button>
+      <table id="late"></table>
+    </div>
+    <script>
+      // A custom dropdown that only exists after a click
+      document.getElementById('menu').onclick = () => {
+        const ul = document.createElement('ul');
+        ul.innerHTML = '<li>CS_MENU_ITEM_ONE</li><li>Normal item</li>';
+        document.getElementById('root').append(ul);
+      };
+      // Single-page-app navigation to another page
+      document.getElementById('next').onclick = () => {
+        history.pushState({}, '', '/digit-ui/employee/pgr/complaint-details/PGR-2026-11-16-001234');
+        document.getElementById('root').innerHTML = '<h1>PGR_DETAILS_TITLE</h1><p>CS_COMMON_SUBMIT</p><p>Assigned to ke.bomet</p><p>ke.bomet</p>';
+      };
+      // Rows that arrive later (lazy loading)
+      setTimeout(() => { document.getElementById('late').innerHTML = '<tr><td>DSS_TB_LATE_ROW</td></tr>'; }, 1500);
+    </script>
+  </body>
+</html>

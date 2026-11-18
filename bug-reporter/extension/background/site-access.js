@@ -6,7 +6,7 @@ import { getEnabledSites, saveEnabledSites } from '../lib/settings.js';
 const HOOK_ID = 'egov-br-hook';
 const RELAY_ID = 'egov-br-relay';
 
-async function grantedPatterns() {
+export async function grantedPatterns() {
   const sites = await getEnabledSites();
   const out = [];
   for (const p of sites) {

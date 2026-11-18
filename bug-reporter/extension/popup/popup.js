@@ -94,5 +94,54 @@ chrome.storage.local.get('lastDiagnose').then(({ lastDiagnose }) => {
     : '<span class="pill">Helper not checked</span>';
 });
 
+// ---------- Track Localizations ----------
+let loc = { active: false };
+
+async function refreshLoc() {
+  loc = (await send('loc-status')) || { active: false };
+  const btn = $('loc');
+  btn.classList.toggle('on', Boolean(loc.active));
+  btn.textContent = loc.active ? '■ Stop & save list' : 'Track localizations';
+  btn.disabled = !loc.active && !(state && state.pattern);
+  btn.title = btn.disabled ? 'Open your web app tab first' : '';
+  const info = $('locInfo');
+  const found = `${loc.count || 0} code${loc.count === 1 ? '' : 's'} on ${loc.pages || 0} page${loc.pages === 1 ? '' : 's'}`;
+  if (loc.active) {
+    info.innerHTML = `<span class="dot"></span>Tracking localizations · <b>${found}</b> · <button class="link small" id="locSaveNow">Save so far</button>`;
+    $('locSaveNow').addEventListener('click', () => send('loc-save'));
+  } else if (loc.stoppedAt) {
+    info.innerHTML = `Last list: ${found}${loc.saved ? ' · saved' : ' · <b>not saved</b>'} · <button class="link small" id="locSaveAgain">Save${loc.saved ? ' again' : ''}</button>`;
+    $('locSaveAgain').addEventListener('click', () => send('loc-save'));
+  } else {
+    info.innerHTML = '';
+  }
+  info.classList.toggle('hidden', !info.innerHTML);
+}
+
+$('loc').addEventListener('click', async () => {
+  if (loc.active) {
+    // Chrome's "Save as" dialog opens; the popup closes, the save carries on.
+    await send('loc-stop', { save: true });
+    return refreshLoc();
+  }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const pattern = originPattern(tab?.url);
+  if (!pattern) return;
+  // Tracking runs on sites you've enabled; enable this one first if needed (Chrome asks once).
+  if (!state?.enabled) {
+    const granted = await chrome.permissions.request({ origins: [pattern] });
+    if (!granted) return;
+    await send('site-enable', { pattern, tabId: tab.id });
+  }
+  if (loc.stoppedAt && !loc.saved && loc.count && !confirm(`Start a new list? The last list (${loc.count} codes) hasn't been saved.`)) return;
+  await send('loc-start', { tabUrl: tab.url });
+  await refresh();
+  await refreshLoc();
+});
+
 refresh();
-setInterval(refresh, 1000);
+refreshLoc();
+setInterval(() => {
+  refresh();
+  refreshLoc();
+}, 1000);
