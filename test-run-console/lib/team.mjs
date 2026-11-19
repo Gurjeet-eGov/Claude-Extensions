@@ -96,8 +96,18 @@ export function normalizeTeam(t = {}) {
         key: /^[\w-]{16,200}$/.test(String(p.key || '')) && hashKey(p.key) === String(p.hash) ? String(p.key) : '',
         created: clip(p.created, 40),
         lastSeen: clip(p.lastSeen, 40),
+        books: cleanBooks(p.books), // null: every workbook
       })),
   };
+}
+
+/**
+ * The workbooks a person may open: null for all of them (also for 'all', '' or nothing),
+ * else a list of workbook file names (an empty list opens none).
+ */
+export function cleanBooks(v) {
+  if (v == null || v === '' || v === 'all') return null;
+  return (Array.isArray(v) ? v : [v]).map((n) => String(n)).filter((n) => /\.xlsx$/i.test(n) && !/[\\/:\0]/.test(n) && n.length <= 200).slice(0, 50);
 }
 
 /** The person holding this key (team.admin for the owner's admin link), or null. Constant-time compare of the hashes. */
@@ -116,9 +126,9 @@ export function personForKey(team, key) {
 }
 
 /** Add a person; returns { person, key } (the key is shown to the owner once). */
-export function addPerson(team, { name, role }, now = '') {
+export function addPerson(team, { name, role, books }, now = '') {
   const key = newKey();
-  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: ROLES.includes(role) ? role : 'tester', hash: hashKey(key), key, created: now, lastSeen: '' };
+  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: ROLES.includes(role) ? role : 'tester', hash: hashKey(key), key, created: now, lastSeen: '', books: cleanBooks(books) };
   team.people.push(person);
   return { person, key };
 }
@@ -145,7 +155,7 @@ export function publicAdmin(team) {
 
 /** What the page shows about people (never keys or hashes; canCopy: the link can be copied again). */
 export function publicPeople(team) {
-  return team.people.map(({ id, name, role, created, lastSeen, key }) => ({ id, name, role, created, lastSeen, canCopy: !!key }));
+  return team.people.map(({ id, name, role, created, lastSeen, key, books }) => ({ id, name, role, created, lastSeen, canCopy: !!key, books: books || null }));
 }
 
 /**

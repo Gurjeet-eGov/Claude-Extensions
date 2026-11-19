@@ -253,10 +253,13 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await page.locator('.nav [data-view=setup]').click();
         await page.locator('[data-action=setup-part][data-part=sharing]').click();
         const priyaRow = page.locator('#team tr', { hasText: 'Priya (QA)' });
-        assert.equal(await priyaRow.locator('select option:checked').textContent(), 'Update status');
+        assert.equal(await priyaRow.locator('[data-change=team-role] option:checked').textContent(), 'Update status');
         assert.equal(await page.locator('#team th', { hasText: 'Access' }).count(), 1, 'the column is Access');
-        // Adding someone: their access starts blank ("Choose") and must be chosen
-        assert.equal(await page.locator('#teamRole option:checked').textContent(), 'Choose');
+        // Adding someone: their access starts blank ("Select access") and must be chosen; workbooks start at All
+        assert.equal(await page.locator('#teamRole option:checked').textContent(), 'Select access');
+        assert.equal(await page.locator('#teamBooks option:checked').textContent(), 'All workbooks');
+        assert.equal(await page.locator('#team th', { hasText: 'Workbooks' }).count(), 1);
+        assert.equal(await priyaRow.locator('[data-change=team-books] option:checked').textContent(), 'All workbooks');
         await page.locator('#teamName').fill('Nobody yet');
         await page.getByRole('button', { name: 'Add and make a link' }).click();
         await page.locator('.toast', { hasText: 'Choose their access first.' }).waitFor();
@@ -446,10 +449,25 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('[data-action=setup-part][data-part=publish]').click();
       await page.locator('#publish .note.warn', { hasText: 'Published workbooks are public' }).waitFor();
-      await page.locator(`#publish [data-action=publish-book][data-name="${BOOK}"]`).check();
-      page.once('dialog', (d) => d.accept()); // "this is public": confirmed once
-      await page.getByRole('button', { name: 'Publish now' }).click();
+      // Choices apply once saved; a change to the workbooks asks first
+      const save = page.getByRole('button', { name: 'Save preferences' });
+      assert.equal(await save.isDisabled(), true, 'nothing changed yet');
+      const tick = page.locator(`#publish [data-action=publish-book][data-name="${BOOK}"]`);
+      await tick.check();
+      assert.equal(await save.isDisabled(), false);
+      assert.equal(await page.getByRole('button', { name: 'Publish now' }).isDisabled(), true, 'save first');
+      await save.click();
+      await page.locator('.modal-box', { hasText: 'Update the published reports?' }).waitFor();
+      await page.locator('.modal-box').getByRole('button', { name: 'Cancel' }).click();
+      assert.equal(await tick.isChecked(), false, 'Cancel undoes the change');
+      assert.equal(await save.isDisabled(), true);
+      await tick.check();
+      await save.click();
+      await page.locator('.modal-box', { hasText: 'The workbooks you ticked are published' }).waitFor();
+      assert.equal(await page.locator('.modal-box', { hasText: 'CMS Sign Off' }).count(), 0, 'no workbook names');
+      await page.locator('.modal-box').getByRole('button', { name: 'Save and update the site' }).click();
       await page.locator('.toast', { hasText: 'Published to GitHub' }).waitFor();
+      assert.equal(await save.isDisabled(), true, 'saved');
       assert.ok(gh.readRepo().files['test-run-console/published/reports/index.json'], 'the reports are in the repository');
       // The hosted page (another origin), serving the published reports like GitHub Pages
       const ui = new URL('../ui/', import.meta.url).pathname;
@@ -510,6 +528,30 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await preview.goto(`${base}?reports=1`);
       await preview.locator('.access-card').waitFor();
       await preview.locator('.kpi', { hasText: 'executed' }).waitFor();
+      await preview.close();
+      await page.locator('.nav [data-view=run]').click();
+    });
+
+    await t.test('Publish: other choices save at once; with nothing ticked the reports come down and the page shows no data', async () => {
+      await page.locator('.nav [data-view=setup]').click();
+      await page.locator('[data-action=setup-part][data-part=publish]').click();
+      const save = page.getByRole('button', { name: 'Save preferences' });
+      await page.locator('#publish [data-action=publish-onstop]').uncheck();
+      await save.click();
+      await page.locator('.toast', { hasText: 'Preferences saved.' }).waitFor();
+      assert.equal(await page.locator('#modal .modal-box').count(), 0, 'no pop-up for these');
+      await page.locator(`#publish [data-action=publish-book][data-name="${BOOK}"]`).uncheck();
+      await page.locator('#publish', { hasText: 'None ticked: publishing takes every published report off the site.' }).waitFor();
+      await save.click();
+      await page.locator('.modal-box', { hasText: 'Every published report is taken off the site.' }).waitFor();
+      await page.locator('.modal-box').getByRole('button', { name: 'Save and update the site' }).click();
+      await page.locator('.toast', { hasText: 'taken off GitHub' }).waitFor();
+      assert.deepEqual(Object.keys(gh.readRepo().files).filter((f) => f.startsWith('test-run-console/published/')), ['test-run-console/published/reports/index.json']);
+      const preview = await browser.newPage();
+      await preview.goto(`${base}?reports=1`);
+      await preview.locator('.report-tools .updated', { hasText: 'Updated on: –' }).waitFor();
+      assert.deepEqual(await preview.locator('.kpi .v').allTextContents(), ['–', '–', '–', '–']);
+      assert.equal(await preview.locator('td.no-data', { hasText: 'No data available' }).count(), 2);
       await preview.close();
       await page.locator('.nav [data-view=run]').click();
     });

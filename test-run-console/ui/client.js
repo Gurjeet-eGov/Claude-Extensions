@@ -509,6 +509,17 @@
     return h + '</header>';
   }
 
+  /** The summary with no data (nothing is published): dashes in the figures, empty tables. */
+  function emptyReport() {
+    var none = function (cols) { return '<tr><td class="no-data" colspan="' + cols + '">No data available</td></tr>'; };
+    var kpi = function (label) { return '<div class="card kpi"><div class="v">–</div><div class="l">' + esc(label) + '</div></div>'; };
+    return '<div class="report-tools no-print"><span class="updated">Updated on: –</span><span class="grow"></span></div>' +
+      '<div class="kpis">' + kpi('executed') + kpi('pass rate (of Pass + Fail)') + kpi('failing now') + kpi('not run yet') + '</div>' +
+      '<div class="card card-pad"><div class="row" style="margin-bottom:8px"><h2>All cases</h2></div><div class="bar empty-bar"></div></div>' +
+      '<div class="section card"><div class="card-pad"><h2>By feature</h2></div><div class="table-wrap"><table><thead><tr><th>Feature</th><th style="width:30%">Progress</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Other</th><th class="num">Not run</th><th class="num">Pass rate</th></tr></thead><tbody>' + none(7) + '</tbody></table></div></div>' +
+      '<div class="section card"><div class="card-pad"><h2>Open failures</h2></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Scenario</th><th>Comment</th><th>Issue</th></tr></thead><tbody>' + none(4) + '</tbody></table></div></div>';
+  }
+
   /** The published reports, for anyone. c: why Test Run itself is not shown (or null when asked for). */
   function viewReports(c) {
     var conn = TR.conn();
@@ -526,7 +537,7 @@
         (conn.hasKey && c ? '<button class="linkish" data-action="forget-invite">Forget the access link kept in this browser</button>' : '') + '</div>' : '') + '</div>';
     if (!S.reports) { loadReports(); return h + '<div class="loading section">Loading the published reports…</div>'; }
     var pk = reportPick();
-    if (!pk) return h + '<div class="empty card section"><h3>Nothing is published yet</h3><p>Reports show here once your test lead publishes them from Test Run (Setup → Publish).</p></div>';
+    if (!pk) return h + '<div class="section">' + emptyReport() + '</div>';
     if (!pk.d) return h + '<div class="loading section">Loading ' + esc(pk.w.title) + '…</div>';
     if (pk.d.error) return h + '<div class="banner bad section">' + esc(pk.d.error) + '</div>';
     // The suite and cycle are picked above, so no title here; on paper, one line says what it is.
@@ -1679,39 +1690,43 @@
   function teamCard() {
     if (!isOwner()) return '';
     var r = S.team;
-    var h = '<section class="section card card-pad stack" id="team"><h2>Team</h2>' +
-      '<p class="small muted">Lets other testers mark results here at the same time, and managers follow the run and the summary. Each person opens their own invite link and installs nothing. Your laptop runs Test Run for everyone, so it must be on and awake while they work.</p>';
-    if (!r) { loadTeam(); return h + '<div class="loading">Loading…</div></section>'; }
+    var h = '<section class="section card card-pad stack team-card" id="team">';
+    var head = function (on) {
+      return '<div class="row team-head"><div class="grow"><h2>Team</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
+        (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share with my team</label>') + '</div>';
+    };
+    if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading…</div></section>'; }
     var t = r.team;
     var a = r.address;
-    h += '<label class="check"><input type="checkbox" data-action="team-enable"' + (t.enabled ? ' checked' : '') + '> Share this Test Run with my team</label>';
+    h += head(t.enabled);
     if (!t.enabled) return h + '<p class="small faint">Off: only this computer can open Test Run.</p></section>';
 
-    // 1. The way in
-    h += '<div class="subsection"><h3>1. How your team reaches this laptop</h3>';
+    // Connection: how the team reaches this laptop
+    h += '<div class="team-block"><h3>Connection</h3>';
     h += '<div class="way-choice" role="radiogroup" aria-label="Way in">' +
-      '<label class="way' + (t.mode === 'quick' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="quick"' + (t.mode === 'quick' ? ' checked' : '') + '><span><b>Quick tunnel</b><span class="small muted">Free, no account. Gets a <b>new address every time it starts</b>, so links only last with the hosted page below.</span></span></label>' +
-      '<label class="way' + (t.mode === 'fixed' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="fixed"' + (t.mode === 'fixed' ? ' checked' : '') + '><span><b>Fixed address</b> <span class="pill accent">best for a team</span><span class="small muted">An address that never changes, so invite links keep working. Needs a one-time setup (Tailscale or a Cloudflare named tunnel).</span></span></label></div>';
+      '<label class="way' + (t.mode === 'quick' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="quick"' + (t.mode === 'quick' ? ' checked' : '') + '><span><b>Quick tunnel</b><span class="small muted">Free, no account. A new address each time it starts.</span></span></label>' +
+      '<label class="way' + (t.mode === 'fixed' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="fixed"' + (t.mode === 'fixed' ? ' checked' : '') + '><span><b>Fixed address</b> <span class="pill accent">best for a team</span><span class="small muted">Never changes. A one-time setup (Tailscale or Cloudflare).</span></span></label></div>';
 
     if (t.mode === 'quick') {
       if (a.tunnel.running || a.tunnel.reconnectIn != null) {
-        h += '<div class="row"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
-          '<span class="mono">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><span class="grow"></span><button data-action="team-share" data-on="0">Stop sharing</button></div>';
+        h += '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
+          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop sharing</button></div>';
       } else if (a.tunnel.available) {
-        h += '<div class="row"><button class="primary" data-action="team-share" data-on="1">Start sharing over the internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
+        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start sharing over the internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
       } else {
         h += '<div class="note info">Install <span class="mono">cloudflared</span> first: <span class="mono">brew install cloudflared</span>. Then press Start here, or run <span class="mono">npm run share</span>.</div>';
       }
       if (a.tunnel.error) h += '<div class="note ' + (a.tunnel.reconnectIn != null ? 'info' : 'bad') + '">' + esc(a.tunnel.error) + '</div>';
-      h += '<p class="small faint">If the tunnel drops (sleep, Wi-Fi change), Test Run opens it again by itself. Sharing also starts again when you restart Test Run, until you press Stop.</p>';
 
-      // Links that outlive the address
+      // Links that outlive the address: the summary line, the settings folded away
       var hc = r.checks.hosted;
       var live = !!(hc && hc.ok);
-      h += '<div class="stack-s"><h4>Keep invite links working when the address changes</h4>' +
-        '<p class="small muted">Invite links open the console on GitHub Pages (the hosted page). Test Run keeps its current address in a secret GitHub gist, and the hosted page looks it up there each time. Without both, a link stops working when the address changes and you send new links.</p>' +
+      var keeps = t.publish && t.gist && live;
+      h += '<div class="links-verdict small ' + (keeps ? 'ok' : 'warn') + '">' + (keeps ? '✓ Invite links keep working when the address changes.' : 'Invite links stop working when the tunnel restarts' + (t.publish && live ? ', until the gist is written.' : '. Set up the link settings below to keep them working.')) + '</div>';
+      h += '<details class="how link-settings"' + (keeps ? '' : ' open') + '><summary class="small"><b>Link settings</b> <span class="muted">hosted page and secret gist</span></summary><div class="stack-s">' +
+        '<p class="small muted">Invite links open the console on GitHub Pages (the hosted page), which looks up this laptop’s current address in a secret GitHub gist. If the tunnel drops (sleep, Wi-Fi change), Test Run opens it again by itself and updates the gist.</p>' +
         '<label class="check"><input type="checkbox" data-action="team-publish"' + (t.publish ? ' checked' : '') + '> Keep the current address in a secret gist <span class="faint">(uses your <span class="mono">gh</span> login)</span></label>' +
-        (t.gist ? '<div class="small muted" style="margin-left:24px">Gist <a href="https://gist.github.com/' + esc(t.gist) + '" target="_blank" rel="noopener" class="mono">' + esc(t.gist.slice(0, 8)) + '…</a>' + (t.publishedUrl ? ' points at <span class="mono">' + esc(t.publishedUrl) + '</span>' : '') + (t.publishedAt ? ', updated ' + esc(t.publishedAt) : '') + '.</div>' : '') +
+        (t.gist ? '<div class="small muted" style="margin-left:24px">Gist <a href="https://gist.github.com/' + esc(t.gist) + '" target="_blank" rel="noopener" class="mono">' + esc(t.gist.slice(0, 8)) + '…</a>' + (t.publishedAt ? ', updated ' + esc(t.publishedAt) : '') + '.</div>' : '') +
         (t.publishError ? '<div class="note bad">' + esc(t.publishError) + '</div>' : '') +
         '<div class="form-grid"><div class="wide"><label for="teamHosted">Hosted page</label><div class="row"><input id="teamHosted" class="grow" type="url" data-bind="team:hostedUrl" placeholder="' + esc(r.suggest.hostedUrl || 'https://you.github.io/repo/test-run/') + '" value="' + esc(val('team:hostedUrl', t.hostedUrl)) + '">' +
         (r.suggest.hostedUrl && r.suggest.hostedUrl !== t.hostedUrl ? '<button class="ghost" data-action="team-use" data-field="hostedUrl" data-value="' + esc(r.suggest.hostedUrl) + '" title="This repository\'s GitHub Pages address">Use ' + esc(r.suggest.hostedUrl.replace(/^https:\/\//, '')) + '</button>' : '') +
@@ -1719,7 +1734,7 @@
       if (t.hostedUrl && hc && !hc.ok) {
         h += '<div class="note info stack-s"><div><b>To put the console on GitHub Pages</b> (once):</div><ol class="small"><li>In the repository on GitHub: <b>Settings → Pages → Source: GitHub Actions</b>.</li><li>Merge this branch into <span class="mono">master</span>. The <i>Test Run Pages</i> workflow then publishes the console at <span class="mono">' + esc(r.suggest.hostedUrl || 'https://<owner>.github.io/<repo>/test-run/') + '</span>.</li><li>Press <b>Check</b> here. Until it is live, new invite links name the current tunnel address instead.</li></ol><div><button data-action="team-check">Check</button></div></div>';
       }
-      h += '<div class="links-verdict small">' + (t.publish && t.gist && live ? '✓ Invite links keep working when the address changes.' : 'Invite links name the current address: when the tunnel restarts, they stop working and you make new ones' + (t.publish && live ? ' (until the gist is written).' : '.')) + '</div></div>';
+      h += '</div></details>';
     } else {
       var fc = r.checks.fixed;
       h += '<div class="form-grid"><div class="wide"><label for="teamFixed">Fixed address</label><div class="row"><input id="teamFixed" class="grow" type="url" data-bind="team:fixedUrl" placeholder="https://my-mac.tail1234.ts.net" value="' + esc(val('team:fixedUrl', t.fixedUrl)) + '">' +
@@ -1729,22 +1744,23 @@
         '<div class="row"><span class="grow"></span><button data-action="team-save">Save</button></div>';
       if (t.tunnelName) {
         h += a.tunnel.running || a.tunnel.reconnectIn != null
-          ? '<div class="row"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono">' + esc(t.tunnelName) + '</span><span class="grow"></span><button data-action="team-share" data-on="0">Stop the tunnel</button></div>'
+          ? '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono grow">' + esc(t.tunnelName) + '</span><button data-action="team-share" data-on="0">Stop the tunnel</button></div>'
           : '<div class="row"><button class="primary" data-action="team-share" data-on="1"' + (a.tunnel.available ? '' : ' disabled') + '>Start tunnel ' + esc(t.tunnelName) + '</button></div>';
         if (a.tunnel.error) h += '<div class="note ' + (a.tunnel.reconnectIn != null ? 'info' : 'bad') + '">' + esc(a.tunnel.error) + '</div>';
       }
+      h += '<div class="small muted">Reached at: ' + (a.effective ? '<span class="mono">' + esc(a.effective) + '</span>' : '<b>no address yet</b>') + '</div>';
       var port = r.suggest.port || 5178;
       h += '<details class="how"' + (t.fixedUrl ? '' : ' open') + '><summary class="small"><b>How to get a fixed address</b></summary><div class="small stack-s">' +
         '<div><b>Tailscale Funnel</b> (free, no domain needed)<ol><li>Install Tailscale on this Mac (<span class="mono">brew install --cask tailscale</span>, or from the App Store) and sign in.</li><li>In Terminal: <span class="mono">tailscale funnel --bg ' + port + '</span>. The first time, it gives you a link to allow Funnel for your account.</li><li>Your address is <span class="mono">https://&lt;this-mac&gt;.&lt;tailnet&gt;.ts.net</span> (<span class="mono">tailscale funnel status</span> shows it). Enter it above and press Check. It keeps working after restarts.</li></ol></div>' +
         '<div><b>Cloudflare named tunnel</b> (needs a domain you manage in Cloudflare)<ol><li><span class="mono">cloudflared tunnel login</span></li><li><span class="mono">cloudflared tunnel create test-run</span></li><li><span class="mono">cloudflared tunnel route dns test-run testrun.your-domain.org</span></li><li>Enter <span class="mono">https://testrun.your-domain.org</span> above and <span class="mono">test-run</span> as the tunnel name, then Start.</li></ol></div>' +
         '<div class="faint">Teammates need nothing installed for either: they just open their invite link.</div></div></details>';
     }
-    h += '<div class="small muted">Now reached at: ' + (a.effective ? '<span class="mono">' + esc(a.effective) + '</span>' : '<b>no address yet</b>') + '</div></div>';
+    h += '</div>';
 
     // Your admin link: the owner, from another computer
     var ad = r.admin || { exists: false };
     var aoff = r.canInvite ? '' : ' disabled';
-    h += '<div class="subsection"><h3>Your admin link</h3><p class="small muted">Everything you can do on this laptop (testing, Setup, Sharing, Import), from another computer or network, while this laptop runs Test Run. It works like a password: keep it to yourself.</p>' +
+    h += '<div class="team-block"><div class="row"><h3>Your admin link</h3><span class="small muted grow">Full control from another computer or network. Keep it to yourself, like a password.</span></div>' +
       (me().admin ? '<div class="note info">You are using your admin link now. Stopping sharing or making a new admin link disconnects this browser.</div>' : '') +
       '<div class="row">' + (ad.exists
         ? '<button data-action="admin-copy"' + (ad.canCopy ? aoff : ' disabled') + '>Copy admin link</button><button class="ghost" data-action="admin-new"' + aoff + ' title="Make a new admin link; the old one stops working">New admin link</button><button class="ghost danger" data-action="admin-remove">Remove</button>' +
@@ -1752,17 +1768,24 @@
         : '<button data-action="admin-new"' + aoff + '>Make my admin link</button>') + '</div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
 
-    // 2. People
-    h += '<div class="subsection"><h3>2. People</h3>';
+    // People: each with their access and the workbooks they can open
+    var books = (S.app && S.app.books || []).map(function (b) { return b.name; });
+    var bookPick = function (attrs, current) {
+      var cur = current && current.length ? current[0] : '';
+      return '<select ' + attrs + '>' + opt('', 'All workbooks', !cur) + books.map(function (n) { return opt(n, n.replace(/\.xlsx$/i, ''), n === cur); }).join('') +
+        (cur && books.indexOf(cur) < 0 ? opt(cur, cur.replace(/\.xlsx$/i, '') + ' (deleted)', true) : '') + '</select>';
+    };
+    h += '<div class="team-block"><h3>People</h3>';
     if (S.teamLink) {
       h += '<div class="note info stack-s"><span>This browser did not let Test Run copy the link for <b>' + esc(S.teamLink.name) + '</b>. Copy it from here and send it to them privately.</span>' +
         '<div class="row"><input id="teamLink" readonly value="' + esc(S.teamLink.link) + '" class="grow mono"><button class="primary" data-action="copy-link">Copy</button><button class="ghost" data-action="hide-link">Done</button></div>' +
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
     if (r.people.length) {
-      h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Access</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
+      h += '<div class="table-wrap"><table class="people"><thead><tr><th>Name</th><th>Access</th><th>Workbooks</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
         return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="Access for ' + esc(p.name) + '" data-change="team-role" data-id="' + esc(p.id) + '">' +
           opt('tester', 'Update status', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
+          '<td>' + bookPick('aria-label="Workbooks ' + esc(p.name) + ' can open" data-change="team-books" data-id="' + esc(p.id) + '"', p.books) + '</td>' +
           '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
           '<td class="num"><div class="row" style="justify-content:flex-end">' +
           '<button class="ghost" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && r.canInvite ? '' : ' disabled') +
@@ -1774,10 +1797,11 @@
       h += '<p class="small faint">Nobody yet.</p>';
     }
     var off = r.canInvite ? '' : ' disabled';
-    h += '<div class="row"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. Priya (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
+    h += '<div class="row add-person"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. Priya (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
       // No access chosen for them until you choose one
       '<label class="sr" for="teamRole">Access</label><select id="teamRole" class="choose" data-bind="team:role"' + off + '>' +
-      '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Choose</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
+      '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Select access</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
+      '<label class="sr" for="teamBooks">Workbooks</label>' + bookPick('id="teamBooks" data-bind="team:books"' + off, val('team:books') ? [val('team:books')] : null) +
       '<button data-action="team-add"' + off + '>Add and make a link</button></div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
     return h + '</section>';
@@ -1851,8 +1875,64 @@
         return;
       }
       if (!r.ok) { toast(r.error || 'Could not publish.', 'bad'); return; }
-      toast(r.result && r.result.committed ? 'Published to GitHub. The site updates in about a minute.' : 'Nothing changed since the last publish.', 'long');
+      var down = r.books && !r.books.some(function (b) { return b.on; });
+      toast(!(r.result && r.result.committed) ? 'Nothing changed since the last publish.' : down ? 'The published reports are taken off GitHub. The site updates in about a minute.' : 'Published to GitHub. The site updates in about a minute.', 'long');
     });
+  }
+
+  /** The publish choices being edited (saved ones until something is changed). */
+  function pubDraft() {
+    var r = S.publish;
+    if (!S.pubDraft) {
+      var books = {};
+      r.books.forEach(function (b) { books[b.name] = !!b.on; });
+      S.pubDraft = { books: books, nightly: !!r.settings.nightly, time: r.settings.time, onStop: !!r.settings.onStop };
+    }
+    return S.pubDraft;
+  }
+
+  /** What changed from the saved choices: { books: [{ name, on }], other: bool }. */
+  function pubChanges() {
+    var r = S.publish;
+    var d = S.pubDraft;
+    if (!r || !d) return { books: [], other: false };
+    var st = r.settings;
+    return {
+      books: r.books.filter(function (b) { return !!d.books[b.name] !== !!b.on; }).map(function (b) { return { name: b.name, on: !!d.books[b.name] }; }),
+      other: d.nightly !== !!st.nightly || d.time !== st.time || d.onStop !== !!st.onStop
+    };
+  }
+  function pubDirty() { var c = pubChanges(); return c.books.length > 0 || c.other; }
+
+  function savePublishPrefs(publishAfter) {
+    var d = S.pubDraft;
+    var body = { books: d.books, nightly: d.nightly, time: d.time, onStop: d.onStop };
+    TR.http('POST', '/api/publish/settings', body).then(function (r) {
+      if (!r.ok) { toast(r.error, 'bad'); return; }
+      S.publish = r;
+      S.pubDraft = null;
+      closeModal();
+      render();
+      if (publishAfter) publishNow({ confirmPublic: true });
+      else toast('Preferences saved.');
+    });
+  }
+
+  /** Before saving a change to which workbooks are published: what it does to the public site. */
+  function publishConfirmModal(changes) {
+    var r = S.publish;
+    var d = S.pubDraft;
+    var on = changes.some(function (c) { return c.on; });
+    var off = changes.some(function (c) { return !c.on; });
+    var none = !r.books.some(function (b) { return d.books[b.name]; });
+    openModal('<h2>Update the published reports?</h2>' +
+      '<p class="small muted" style="margin-top:6px">Saving publishes right away, so the GitHub Pages site matches your choice in about a minute.</p>' +
+      '<ul class="modal-list">' +
+      (on ? '<li><b>The workbooks you ticked are published</b>, for anyone to read.</li>' : '') +
+      (none ? '<li><b>Every published report is taken off the site.</b></li>' : off ? '<li><b>The workbooks you unticked are taken off the site.</b></li>' : '') +
+      '<li>Earlier versions stay in the public repository\'s history.</li></ul>' +
+      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="publish-cancel-books">Cancel</button>' +
+      '<button class="primary" data-action="publish-confirm">Save and update the site</button></div>');
   }
 
   function publishCard() {
@@ -1866,16 +1946,21 @@
     if (r.newer && r.remote) {
       h += '<div class="note info row"><span class="grow"><b>' + esc(r.remote.by || 'Someone') + '</b> published at ' + esc(r.remote.at) + ', after this laptop last published or got the data.</span><button data-action="publish-get">Get it</button></div>';
     }
+    var d = pubDraft();
+    var dirty = pubDirty();
     h += '<div class="subsection"><h3>Workbooks to publish</h3>' + (r.books.length ? r.books.map(function (b) {
-      return '<label class="check"><input type="checkbox" data-action="publish-book" data-name="' + esc(b.name) + '"' + (b.on ? ' checked' : '') + '> ' + esc(b.name.replace(/\.xlsx$/i, '')) + '</label>';
-    }).join('') : '<p class="small faint">No workbooks yet.</p>') + '</div>';
-    var st = r.settings;
+      return '<label class="check"><input type="checkbox" data-action="publish-book" data-name="' + esc(b.name) + '"' + (d.books[b.name] ? ' checked' : '') + '> ' + esc(b.name.replace(/\.xlsx$/i, '')) + '</label>';
+    }).join('') : '<p class="small faint">No workbooks yet.</p>') +
+      (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') + '</div>';
     h += '<div class="subsection"><h3>When</h3>' +
-      '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (st.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(st.time) + '"' + (st.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
-      '<label class="check"><input type="checkbox" data-action="publish-onstop"' + (st.onStop ? ' checked' : '') + '> When Test Run stops</label>' +
+      '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
+      '<label class="check"><input type="checkbox" data-action="publish-onstop"' + (d.onStop ? ' checked' : '') + '> When Test Run stops (Ctrl+C in its terminal)</label>' +
       (r.acknowledged ? '' : '<p class="small faint">These start after your first Publish now.</p>') + '</div>';
+    // Changes above apply only once saved
+    h += '<div class="row"><button class="primary" data-action="publish-save"' + (dirty ? '' : ' disabled') + ' title="' + (dirty ? 'Save these choices' : 'Nothing changed') + '">Save preferences</button>' +
+      (dirty ? '<span class="small muted">Unsaved changes</span><button class="ghost" data-action="publish-discard">Discard</button>' : '') + '</div>';
     var l = r.last || {};
-    h += '<div class="row"><button class="primary" data-action="publish-now"' + (S.publishBusy || r.problem ? ' disabled' : '') + '>' + (S.publishBusy ? 'Publishing…' : 'Publish now') + '</button>' +
+    h += '<div class="row publish-row"><button data-action="publish-now"' + (S.publishBusy || r.problem || dirty ? ' disabled' : '') + (dirty ? ' title="Save your preferences first"' : '') + '>' + (S.publishBusy ? 'Publishing…' : 'Publish now') + '</button>' +
       '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this laptop yet.') + '</span>' +
       '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this laptop">Preview here</a>' +
       '</div>' +
@@ -2499,9 +2584,10 @@
       if (!name) { toast('Type their name first.'); var n = $('teamName'); if (n) n.focus(); return; }
       var role = val('team:role');
       if (role !== 'tester' && role !== 'viewer') { toast('Choose their access first.'); var sel = $('teamRole'); if (sel) sel.focus(); return; }
-      teamCall('/api/team/people', { name: name, role: role }, function (r) {
+      teamCall('/api/team/people', { name: name, role: role, books: val('team:books') ? [val('team:books')] : 'all' }, function (r) {
         clearForm('team:name');
         clearForm('team:role');
+        clearForm('team:books');
         deliverLink(name, r.link, r.linkWarning, 'Added. ');
       });
     },
@@ -2519,9 +2605,23 @@
         refreshApp().then(function () { boot(S.tab, cycleLabel()); });
       });
     },
-    'publish-book': function (el) { var b = {}; b[el.getAttribute('data-name')] = el.checked; TR.http('POST', '/api/publish/settings', { books: b }).then(function (r) { if (r.ok) { S.publish = r; render(); } else toast(r.error, 'bad'); }); },
-    'publish-nightly': function (el) { TR.http('POST', '/api/publish/settings', { nightly: el.checked }).then(function (r) { if (r.ok) { S.publish = r; render(); } else toast(r.error, 'bad'); }); },
-    'publish-onstop': function (el) { TR.http('POST', '/api/publish/settings', { onStop: el.checked }).then(function (r) { if (r.ok) { S.publish = r; render(); } else toast(r.error, 'bad'); }); },
+    'publish-book': function (el) { pubDraft().books[el.getAttribute('data-name')] = el.checked; render(); },
+    'publish-nightly': function (el) { pubDraft().nightly = el.checked; render(); },
+    'publish-onstop': function (el) { pubDraft().onStop = el.checked; render(); },
+    'publish-save': function () {
+      var c = pubChanges();
+      if (c.books.length) { publishConfirmModal(c.books); return; }
+      if (c.other) savePublishPrefs(false);
+    },
+    'publish-confirm': function (el) { el.disabled = true; savePublishPrefs(true); },
+    'publish-cancel-books': function () {
+      // cancel the change to the workbooks; other unsaved choices stay
+      var r = S.publish;
+      r.books.forEach(function (b) { S.pubDraft.books[b.name] = !!b.on; });
+      closeModal();
+      render();
+    },
+    'publish-discard': function () { S.pubDraft = null; render(); },
     'start-from-published': function (el) {
       el.disabled = true;
       TR.http('POST', '/api/publish/start-from-local', {}).then(function (r) {
@@ -2689,7 +2789,7 @@
       if (suite) S.form['rCycle:' + w + ':' + suite.tab] = el.value;
       render();
     },
-    'publish-time': function (el) { TR.http('POST', '/api/publish/settings', { time: el.value }).then(function (r) { if (r.ok) { S.publish = r; render(); } else toast(r.error, 'bad'); }); },
+    'publish-time': function (el) { if (/^\d{2}:\d{2}$/.test(el.value)) { pubDraft().time = el.value; render(); } },
     cycle: function (el) {
       var c = S.model.cycles[parseInt(el.value, 10)];
       if (!c) return;
@@ -2700,7 +2800,8 @@
     },
     type: function (el) { S.filters.type = el.value; render(); },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCase; render(); },
-    'team-role': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), role: el.value }); }
+    'team-role': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), role: el.value }); },
+    'team-books': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), books: el.value ? [el.value] : 'all' }); }
   };
 
   document.addEventListener('click', function (e) {
