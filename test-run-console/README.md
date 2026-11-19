@@ -116,10 +116,11 @@ In **Setup → Team**, add each person with what they can do:
 
 | Can | Who | What they can do |
 |---|---|---|
-| Mark results | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities. Findings: write them up. Summary. *Tested by* shows their name. |
+| Update status | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities. Findings: write them up. Summary. *Tested by* shows their name. |
 | View only | managers | Run, Known issues and Summary, read-only. |
 
 - Each person gets their own invite link. Send it to them privately.
+- **Add and make a link**, **Copy link** and **New link** put the link on your clipboard (a message confirms it). Paste it to the person.
 - **Copy link** gives you the same link again if they lose it, with the current address. **New link** replaces it; the old one stops working. (People added before Copy link existed need one **New link** first.)
 - Opening the link signs them in. Their browser keeps it, so they bookmark the page.
 - **Remove** someone, or make them a **New link**: the old link stops working at once.

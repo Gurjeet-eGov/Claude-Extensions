@@ -423,7 +423,7 @@ var TR = (function () {
     el.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
     el.textContent = msg;
     box.appendChild(el);
-    setTimeout(function () { el.remove(); }, kind === 'bad' ? 7000 : 3200);
+    setTimeout(function () { el.remove(); }, kind === 'bad' || kind === 'long' ? 7000 : 3200); // 'long': a normal message with more to read
   }
 
   var store = {

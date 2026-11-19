@@ -225,13 +225,24 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         });
         await mate.reload();
         await mate.locator('.who', { hasText: 'Priya (QA)' }).waitFor(); // the invite is kept in this browser
-        // The owner copies Priya's link again from Setup → Team: the same, working link.
+        // The owner copies Priya's link again from Setup → Team: the same, working link, straight to the clipboard.
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.replace(/\/$/, '') });
+        const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         await page.reload();
         await page.locator('.nav [data-view=setup]').click();
-        await page.locator('#team tr', { hasText: 'Priya (QA)' }).getByRole('button', { name: 'Copy link' }).click();
-        await page.locator('#teamLink').waitFor();
-        assert.equal(await page.locator('#teamLink').inputValue(), inv.link);
-        await page.locator('[data-action=hide-link]').click();
+        const priyaRow = page.locator('#team tr', { hasText: 'Priya (QA)' });
+        assert.equal(await priyaRow.locator('select option:checked').textContent(), 'Update status');
+        await priyaRow.getByRole('button', { name: 'Copy link' }).click();
+        await page.locator('.toast', { hasText: "Priya (QA)'s invite link is copied" }).waitFor();
+        assert.equal(await clipboard(), inv.link);
+        assert.equal(await page.locator('#teamLink').count(), 0, 'no link box: it is on the clipboard');
+        // New link: made, copied, toast; the old link stops working
+        page.once('dialog', (d) => d.accept());
+        await priyaRow.getByRole('button', { name: 'New link' }).click();
+        await page.locator('.toast', { hasText: 'New link made' }).waitFor();
+        const fresh = await clipboard();
+        assert.ok(fresh.startsWith(hosted) && fresh !== inv.link, fresh);
+        assert.equal(await page.locator('#teamLink').count(), 0);
         const boss = await api('/api/team/people', { name: 'Manager', role: 'viewer' });
         await mate.goto(boss.link);
         await mate.locator('.banner', { hasText: 'View only.' }).waitFor();
