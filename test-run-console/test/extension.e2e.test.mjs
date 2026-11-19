@@ -146,3 +146,169 @@ test('Bug Reporter offers "Also add this to Test Run" on the form: the suite, an
     server.close();
   }
 });
+
+// Test Run Extension and the console together (in this file, after Bug Reporter, so the two
+// extension tests take turns), in Chromium with the extension loaded,
+// against the real local server on a temporary sheets folder with the sample .xlsx:
+// sign in with only a link, follow what the console has open, mark results, evidence
+// (and the rule for changing a result that has it), a recording, the host's Media
+// settings and Complete Report, and a View only link. Skipped when Playwright is not
+// installed (looked up in PLAYWRIGHT_DIR, else in the CCRS checkout).
+const TRX = join(ROOT, '..', 'test-run-extension');
+const TRX_ID = extensionIdFromKey(JSON.parse(readFileSync(join(TRX, 'manifest.json'), 'utf8')).key);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600, 9)]);
+
+test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found (set PLAYWRIGHT_DIR)' }, async (t) => {
+  const sheets = mkdtempSync(join(tmpdir(), 'testrun-ext-'));
+  writeFileSync(join(sheets, BOOK), await buildSampleXlsx());
+  const server = createServer({ sheetsDir: sheets, ghPath: '/nope/gh' });
+  const base = await server.listenOn(0);
+  const api = (method, path, body, headers = {}) => fetch(base + path.slice(1), { method, headers: { 'X-Test-Run': '1', ...(body !== undefined && !Buffer.isBuffer(body) ? { 'content-type': 'application/json' } : {}), ...headers }, body: body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body) }).then((x) => x.json());
+  const boot = await api('POST', '/api/call/api_bootstrap', { book: BOOK, args: [] });
+  await api('POST', '/api/call/api_saveSetup', { book: BOOK, args: [{ tabs: boot.tabs.map((x) => ({ name: x.name, ...x.detected })) }] });
+  const suite = () => api('GET', `/api/ext/suite?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
+  const caseIn = async (id) => (await suite()).cases.find((c) => c.id === id);
+
+  const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), 'pw-ext-')), { channel: 'chromium', headless: true, acceptDownloads: true, viewport: { width: 1200, height: 900 }, args: [`--disable-extensions-except=${TRX}`, `--load-extension=${TRX}`] });
+  const errors = [];
+  ctx.on('page', (p) => p.on('pageerror', (e) => errors.push(e.message)));
+  const popupUrl = `chrome-extension://${TRX_ID}/popup/popup.html`;
+  let popup;
+  try {
+    await t.test('signed out, the extension only asks for the access link', async () => {
+      popup = await ctx.newPage();
+      await popup.goto(popupUrl);
+      await popup.getByText('Sign in to Test Run').waitFor();
+      assert.equal(await popup.getByText('Choose Workbook/Suite').count(), 0, 'nothing else');
+      await popup.locator('#link').fill('https://example.org/just-a-page');
+      await popup.getByRole('button', { name: 'Sign in' }).click();
+      await popup.getByText('That is not an access link').waitFor();
+      await popup.locator('#link').fill(base);
+      await popup.getByRole('button', { name: 'Sign in' }).click();
+      await popup.getByRole('button', { name: 'Choose Workbook/Suite' }).waitFor();
+      await popup.getByText('Set by your test lead').waitFor();
+      await popup.getByText(/Video 1080p · 30 fps · up to about 1 min/).first().waitFor();
+    });
+
+    let consolePage;
+    await t.test('Choose Workbook/Suite opens Test Run; the case selected there shows in the extension, and follows it', async () => {
+      const [opened] = await Promise.all([ctx.waitForEvent('page'), popup.getByRole('button', { name: 'Choose Workbook/Suite' }).click()]);
+      consolePage = opened;
+      await consolePage.waitForLoadState();
+      assert.match(consolePage.url(), /^http:\/\/127\.0\.0\.1:\d+\/\?view=run$/);
+      await consolePage.locator('[data-action=show][data-show=all]').click();
+      await consolePage.locator('.case', { hasText: 'CMS/07' }).click();
+      popup = await ctx.newPage();
+      await popup.goto(popupUrl);
+      await popup.getByText('CMS Sign Off (sample)').waitFor();
+      await popup.locator('.lb', { hasText: 'CMS/07' }).waitFor();
+      await popup.getByText('v2.12').first().waitFor();
+      await consolePage.locator('.case', { hasText: 'CMS/09' }).click();
+      await popup.locator('.lb', { hasText: 'CMS/09' }).waitFor({ timeout: 6000 }); // it follows Test Run
+    });
+
+    await t.test('marking a result from the extension saves it in the workbook and moves on', async () => {
+      await popup.locator('.st button[data-value="Pass"]').click();
+      await popup.getByText('CMS/09: Pass.').waitFor();
+      assert.equal((await caseIn('CMS/09')).status, 'Pass');
+      await popup.locator('.lb', { hasText: 'CMS/10' }).waitFor();
+    });
+
+    await t.test('evidence: used by the next result; changing that result needs new evidence; removing deletes it', async () => {
+      const up = await api('POST', `/api/evidence?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12&key=CMS%2F08`, PNG);
+      assert.equal(up.ok, true, up.error);
+      await popup.locator('#find').fill('CMS/08');
+      await popup.locator('#find').press('Enter');
+      await popup.locator('.file .name', { hasText: up.evidence.name }).waitFor();
+      await popup.locator('.st button[data-value="Fail"]').click();
+      await popup.getByText('CMS/08: Fail, with evidence.').waitFor();
+      assert.match((await caseIn('CMS/08')).comment, new RegExp(`Evidence: ${up.evidence.name.replace(/\./g, '\\.')}`));
+      await popup.locator('[data-action=prev]').click();
+      await popup.locator('.lb', { hasText: 'with evidence' }).waitFor();
+      await popup.locator('.st button[data-value="Pass"]').click();
+      await popup.getByText('To change this result to Pass, attach new evidence.').waitFor();
+      assert.equal((await caseIn('CMS/08')).status, 'Fail', 'nothing saved yet');
+      await popup.getByRole('button', { name: 'Cancel' }).click();
+      await popup.locator('[data-action=remove]').click();
+      await popup.getByText(`Delete ${up.evidence.name} for good?`).waitFor();
+      await popup.getByRole('button', { name: 'Delete', exact: true }).click();
+      await popup.getByText(`Deleted ${up.evidence.name}.`).waitFor();
+      assert.equal((await caseIn('CMS/08')).evidence, null);
+      assert.equal(existsSync(join(sheets, '.testrun', 'evidence', 'CMS Sign Off (sample)', TAB, 'v2.12', up.evidence.name)), false, 'gone from the host');
+      await popup.locator('.st button[data-value="Pass"]').click();
+      await popup.getByText('CMS/08: Pass.').waitFor();
+    });
+
+    await t.test('a recording is attached and saves the result that was waiting for it', async () => {
+      const q = new URLSearchParams({ book: BOOK, tab: TAB, cycle: 'v2.12', key: 'CMS/10', id: 'CMS/10', scenario: 'Resolve with a photo', forStatus: 'Pass', test: 'pattern' });
+      const rec = await ctx.newPage();
+      await rec.goto(`chrome-extension://${TRX_ID}/recorder/recorder.html?${q}`);
+      await rec.getByText('Pass is saved when this recording is attached.').waitFor();
+      await rec.getByText(/1080p · 30 fps · up to 20 MB/).waitFor();
+      await rec.getByRole('button', { name: 'Choose what to record' }).click();
+      await rec.getByRole('button', { name: 'Stop and attach' }).waitFor();
+      await rec.waitForTimeout(2500);
+      await rec.getByRole('button', { name: 'Stop and attach' }).click();
+      await rec.getByText(/Saved CMS\/10 as Pass, with CMS-10_v2\.12_.+\.(mp4|webm) as evidence\./).waitFor({ timeout: 20000 });
+      const c = await caseIn('CMS/10');
+      assert.deepEqual([c.status, c.evidence.kind, c.evidence.usedFor], ['Pass', 'video', 'Pass']);
+      assert.ok(c.evidence.size > 1000 && c.evidence.size < 20 * 1024 * 1024);
+      await rec.close();
+      // Run in Test Run shows it, with View and Remove
+      await consolePage.reload();
+      await consolePage.locator('[data-action=show][data-show=all]').click();
+      await consolePage.locator('.case', { hasText: 'CMS/10' }).click();
+      await consolePage.locator('.evidence-row', { hasText: 'Evidence for Pass:' }).locator('.mono', { hasText: c.evidence.name }).waitFor();
+      await consolePage.locator('.evidence-row [data-action=ev-remove]').waitFor();
+    });
+
+    await t.test('the host: Media sets the limits the extension shows; Download offers a Complete Report', async () => {
+      await consolePage.locator('.nav [data-view=setup]').click();
+      await consolePage.locator('[data-action=setup-part][data-part=media]').click();
+      await consolePage.getByText('Limits for everyone').waitFor();
+      await consolePage.locator('.seg [data-quality="720p"]').click();
+      await consolePage.locator('.seg [data-quality="720p"][aria-pressed=true]').waitFor();
+      await consolePage.locator('#mediaKeep option:checked', { hasText: '1 hr' }).waitFor({ state: 'attached' });
+      await popup.reload();
+      await popup.getByText(/Video 720p · 30 fps/).first().waitFor();
+
+      await consolePage.locator('.nav [data-view=summary]').click();
+      const dl = consolePage.locator('main .report-tools [data-action=dl-menu]');
+      await dl.click();
+      await consolePage.locator('.dl-menu', { hasText: 'Summary Report' }).waitFor();
+      const box = await consolePage.locator('.dl-menu').boundingBox();
+      const kpi = await consolePage.locator('.kpi').first().boundingBox();
+      assert.ok(box.y < kpi.y + kpi.height, 'the menu floats over the page');
+      await consolePage.locator('.dl-menu [data-action=complete-report]').click();
+      const pop = consolePage.locator('.modal-box', { hasText: 'Complete Report' });
+      await pop.locator('.cr-opt.off', { hasText: 'None yet' }).waitFor();
+      await pop.getByRole('button', { name: 'Generate New' }).click();
+      await consolePage.locator('.toast', { hasText: 'Your download will be ready in less than a minute.' }).waitFor();
+      await consolePage.locator('.ready-bubble', { hasText: 'Download is ready, click here' }).waitFor({ timeout: 15000 });
+      await dl.click();
+      await consolePage.locator('.dl-menu [data-action=complete-report]').click();
+      await pop.locator('.cr-opt.off', { hasText: /Wait for \d+:\d\d/ }).waitFor();
+      await pop.getByText(/Created (just now|1 min ago)/).waitFor();
+      const [download] = await Promise.all([consolePage.waitForEvent('download'), pop.getByRole('button', { name: 'Download Existing' }).click()]);
+      assert.match(download.suggestedFilename(), /^CMS Sign Off \(sample\) - Complete Report\.zip$/);
+    });
+
+    await t.test('a View only link: just a message, with a link to the summary', async () => {
+      await api('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: base.replace(/\/$/, '') });
+      const boss = await api('POST', '/api/team/people', { name: 'Manager', role: 'viewer' });
+      await popup.getByRole('button', { name: 'Sign out' }).click();
+      await popup.getByText('Sign in to Test Run').waitFor();
+      await popup.locator('#link').fill(boss.link);
+      await popup.getByRole('button', { name: 'Sign in' }).click();
+      await popup.getByText('Only view access, click here for summary').waitFor();
+      assert.equal(await popup.getByText('Choose Workbook/Suite').count(), 0);
+      const [summary] = await Promise.all([ctx.waitForEvent('page'), popup.getByRole('link', { name: 'here' }).click()]);
+      assert.match(summary.url(), /\?view=summary#join=/);
+    });
+
+    assert.deepEqual(errors, [], 'no script errors');
+  } finally {
+    await ctx.close();
+    server.close();
+  }
+});

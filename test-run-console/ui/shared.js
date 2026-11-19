@@ -194,6 +194,14 @@ var TR = (function () {
     }, function (e) { return offline(e); });
   }
 
+  /** A file from the server (with the invite key) as a blob: { ok, blob } or { ok: false, error }. */
+  function fetchBlob(path) {
+    return fetch(conn.server + path, { headers: authHeaders() }).then(function (r) {
+      if (!r.ok) return r.json().then(function (j) { return { ok: false, error: (j && j.error) || 'Could not open it.' }; }, function () { return { ok: false, error: 'Could not open it (' + r.status + ').' }; });
+      return r.blob().then(function (b) { return { ok: true, blob: b }; });
+    }, function (e) { return offline(e); });
+  }
+
   function saveBlob(blob, name) {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -436,7 +444,7 @@ var TR = (function () {
     SYM: SYM, CLS_LABEL: CLS_LABEL, esc: esc, api: api, http: http, state: state, classify: classify, counts: counts, bar: bar,
     dot: dot, issueKeys: issueKeys, sameIssues: sameIssues, issueLinks: issueLinks, pct: pct, summaryHtml: summaryHtml,
     cellLines: cellLines, cellItems: cellItems, cellHtml: cellHtml,
-    tabLabel: tabLabel, connect: connect, reconnect: reconnect, useInvite: useInvite, forget: forget, parseInvite: parseInvite, download: download, saveBlob: saveBlob,
+    tabLabel: tabLabel, connect: connect, reconnect: reconnect, useInvite: useInvite, forget: forget, parseInvite: parseInvite, download: download, saveBlob: saveBlob, fetchBlob: fetchBlob,
     conn: function () { return { server: conn.server, gist: conn.gist, hasKey: !!conn.token }; },
     legend: legend, toast: toast, store: store
   };

@@ -328,7 +328,8 @@
     var focus = ae && ae.id ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd } : null;
     S.wide = false;
     var b = body();
-    app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>';
+    app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>' + readyBubble();
+    shareSelection();
     var tb = document.querySelector('.topbar');
     if (tb) document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
     if (focus) {
@@ -345,6 +346,34 @@
     }
   }
 
+  /** Test Run Extension follows what this person has open: workbook, suite, cycle and case. */
+  var selSent = '';
+  function shareSelection() {
+    if (!S.app || S.connect || S.reportsMode || !S.model || S.model.tab !== S.tab || S.autoMode) return;
+    var v = { book: book() || '', tab: S.tab || '', cycle: cycleLabel(), caseKey: S.selected || '' };
+    var sig = JSON.stringify(v);
+    if (sig === selSent) return;
+    selSent = sig;
+    TR.http('POST', '/api/current', v);
+  }
+
+  /** Bottom right, once a Complete Report is ready: a link that downloads it. */
+  function readyBubble() {
+    if (!S.crReady) return '';
+    return '<div class="ready-bubble" role="status"><span class="rb-ico" aria-hidden="true">⤓</span><span>Download is ready, click <a href="#" data-action="cr-download" data-book="' + esc(S.crReady.book) + '">here</a></span>' +
+      '<button class="ghost small-btn" data-action="cr-dismiss" aria-label="Dismiss">✕</button></div>';
+  }
+
+  /** Download for the host is a menu: the workbook now, or the workbook with its evidence (a zip, made in the background). */
+  function downloadButton(where, cls, label, title) {
+    if (!isOwner()) return '<button' + (cls ? ' class="' + cls + '"' : '') + ' data-action="download" title="' + esc(title) + '">' + label + '</button>';
+    var open = S.dlMenu === where;
+    return '<span class="dl-wrap"><button' + (cls ? ' class="' + cls + '"' : '') + ' data-action="dl-menu" data-where="' + where + '" aria-haspopup="menu" aria-expanded="' + open + '">' + label + ' <span class="caret" aria-hidden="true">▾</span></button>' +
+      (open ? '<div class="dl-menu" role="menu">' +
+        '<button role="menuitem" data-action="download"><b>Summary Report</b><span>The workbook (.xlsx), right away</span></button>' +
+        '<button role="menuitem" data-action="complete-report"><b>Complete Report</b><span>Workbook and its screenshots and recordings (.zip)</span></button></div>' : '') + '</span>';
+  }
+
   function topbar() {
     var h = '<header class="topbar' + (S.connect || S.reportsMode ? ' reports' : '') + '"><div class="topbar-row"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run</span></div><span class="grow"></span>';
     if (S.connect || S.reportsMode) return reportsTopbar(h);
@@ -356,7 +385,7 @@
         '<select id="bookPick" data-change="book" title="' + esc(cur.replace(/\.xlsx$/i, '') || 'Workbook') + '">' +
         (books.length ? books.map(function (x) { return opt(x.name, x.name.replace(/\.xlsx$/i, ''), x.name === cur); }).join('') : '<option value="">No workbooks yet</option>') + '</select></div>' +
         (isOwner() ? '<button class="tb-btn" data-action="import" title="Add one or more .xlsx workbooks, for example one per environment"><span aria-hidden="true">⤒</span> Import</button>' : '') +
-        (cur ? '<button class="tb-btn" data-action="download" title="Download this workbook (with a Known issues sheet), e.g. to upload it to Google Sheets"><span aria-hidden="true">⤓</span> Download</button>' : '');
+        (cur ? downloadButton('top', 'tb-btn', '<span aria-hidden="true">⤓</span> Download', 'Download this workbook (with a Known issues sheet), e.g. to upload it to Google Sheets') : '');
     }
     h += userMenu() + '</div>';
     h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
@@ -796,6 +825,13 @@
     }).join('');
     var d = S.drafts[c.key] || {};
     var a = '<div class="status-btns" role="group" aria-label="Result">' + btns + '</div>';
+    var ev = m.evidence && m.evidence[c.key];
+    if (ev) {
+      a += '<div class="evidence-row"><span class="small"><span class="muted">Evidence' + (ev.usedFor ? ' for ' + esc(ev.usedFor) : '') + ':</span> <span class="mono">' + esc(ev.name) + '</span> <span class="faint">' + fmtBytes(ev.size) + (ev.by ? ' · ' + esc(ev.by) : '') + '</span></span>' +
+        '<span class="grow"></span><button class="link-btn" data-action="ev-view" data-key="' + esc(c.key) + '">View</button>' +
+        (S.readOnly ? '' : '<button class="link-btn danger" data-action="ev-remove" data-key="' + esc(c.key) + '" title="Delete the file for good">Remove</button>') + '</div>';
+      if (ev.usedFor && !S.readOnly) a += '<div class="small faint">To change this result, attach new evidence with Test Run Extension, or remove the file first.</div>';
+    }
     if (now) a += '<div class="row small"><span class="muted">Marked <b>' + esc(now) + '</b>.</span><button class="link-btn" data-action="clear-result"' + dis + ' title="Leave the case not run, to come back to it (0)">Clear result</button></div>';
     var failing = TR.classify(now) === 'fail';
     if (cur().hasComment) {
@@ -1573,7 +1609,7 @@
     var r = S.summary;
     // The suite and cycle are picked above; on paper, one line says what it is.
     var h = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-      '<button data-action="download" title="The workbook, with a Known issues sheet">Download</button><button data-action="print">Print / PDF</button>' +
+      downloadButton('summary', '', 'Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
       (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') + '</div>' +
       '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(TR.tabLabel(r.tab)) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
     return h + TR.summaryHtml(r);
@@ -1811,11 +1847,57 @@
     var rail = '<div class="rail-group subtabs" role="tablist" aria-label="Setup"><span class="rail-title">Setup</span>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + (S.team && S.team.team && S.team.team.enabled ? ' <span class="pill pass">on</span>' : '') + '</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button></div>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
         : part === 'sharing' ? '<p class="small muted rail-note">Sharing is for all workbooks: your team can switch between them at the top right.</p>'
-          : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
-    return withRail(rail, part === 'sharing' ? youCard() + teamCard() : part === 'publish' ? publishCard() : setupWorkbook());
+          : part === 'media' ? '<p class="small muted rail-note">Media is for everyone using Test Run Extension: their screenshots and recordings follow these limits.</p>'
+            : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
+    return withRail(rail, part === 'sharing' ? youCard() + teamCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : setupWorkbook());
+  }
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n >= 1024 * 1024 * 1024) return (n / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1) + ' MB';
+    return Math.max(1, Math.round(n / 1024)) + ' KB';
+  }
+
+  /** "about 1 min", "about 1 min 50 s" */
+  function fmtClip(sec) {
+    var m = Math.floor(sec / 60);
+    var r = Math.round((sec % 60) / 10) * 10;
+    if (r === 60) { m++; r = 0; }
+    return 'about ' + (m ? m + ' min' : '') + (m && r ? ' ' : '') + (r ? r + ' s' : '');
+  }
+
+  function loadMedia() {
+    if (S.mediaLoading) return;
+    S.mediaLoading = true;
+    TR.http('GET', '/api/media').then(function (r) { S.mediaLoading = false; S.media = r.ok ? r : { error: r.error }; render(); });
+  }
+
+  function setMedia(change) {
+    TR.http('POST', '/api/media', change).then(function (r) { if (r.ok) { S.media = r; toast('Saved. Test Run Extension uses it from the next recording.'); render(); } else toast(r.error, 'bad'); });
+  }
+
+  /** Setup → Media: the limits everyone records with (host only). */
+  function mediaCard() {
+    var md = S.media;
+    if (!md) { loadMedia(); return '<div class="loading">Loading the media settings…</div>'; }
+    if (md.error) return '<div class="banner bad">' + esc(md.error) + '</div>';
+    var keep = md.keepOptions.map(function (k) { return opt(String(k), k === 60 ? '1 hr' : k + ' min', k === md.keepMinutes); }).join('');
+    return '<section class="card card-pad stack media-card"><div><h2>Media</h2><p class="small muted">Limits for everyone\'s screenshots and recordings in Test Run Extension. Testers can\'t change them.</p></div>' +
+      '<div class="kv-grid">' +
+      '<span class="kv-k">Video quality</span><span class="row"><span class="seg" role="group" aria-label="Video quality">' + md.qualities.map(function (q) {
+        return '<button data-action="media-quality" data-quality="' + q + '" aria-pressed="' + (q === md.quality) + '">' + q + '</button>';
+      }).join('') + '</span><span class="small muted">' + md.fps + ' fps · up to ' + fmtClip(md.maxSeconds) + ' per clip</span></span>' +
+      '<span class="kv-k">Each file</span><span>Up to ' + fmtBytes(md.maxBytes) + ' <span class="small muted">(recording stops just before)</span></span>' +
+      '<span class="kv-k">Photos</span><span>Up to ' + md.photo.width + '×' + md.photo.height + ', PNG</span>' +
+      '<span class="kv-k">Audio</span><span>As picked in Chrome\'s share window</span>' +
+      '<label class="kv-k" for="mediaKeep">Keep a Complete Report</label><span class="row"><select id="mediaKeep" data-change="media-keep">' + keep + '</select><span class="small muted">then it\'s deleted from this laptop</span></span>' +
+      '</div>' +
+      '<p class="small muted media-foot">Evidence stays on this laptop' + (md.used != null ? ' (' + fmtBytes(md.used) + ' used' + (me().local ? ', in <span class="mono">sheets/.testrun/evidence/</span>' : '') + ')' : '') + '. It is never published.</p></section>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1977,6 +2059,80 @@
       '<button class="danger-fill" data-action="cycle-remove-confirm" data-tab="' + esc(tab) + '" data-header="' + esc(header) + '">Remove cycle</button></div>');
   }
 
+  /** "less than a minute", "2 minutes" */
+  function etaText(sec) {
+    return sec < 60 ? 'less than a minute' : Math.ceil(sec / 60) + ' minute' + (Math.ceil(sec / 60) === 1 ? '' : 's');
+  }
+
+  function mmss(sec) {
+    sec = Math.max(0, Math.ceil(sec));
+    return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+  }
+
+  /** The Complete Report popup, from its last known state (S.cr.info, read S.cr.at). */
+  function crHtml() {
+    var i = S.cr && S.cr.info;
+    var head = '<div class="row"><h2 class="grow">Complete Report</h2><button class="ghost small-btn" data-action="modal-close" aria-label="Close">✕</button></div>' +
+      '<p class="small muted" style="margin:2px 0 14px">' + esc(String(S.cr.book).replace(/\.xlsx$/i, '')) + ': the workbook and its screenshots and recordings, as one .zip.</p>';
+    if (!i) return head + '<div class="loading" style="padding:20px">Checking…</div>';
+    if (!i.ok) return head + '<div class="banner bad">' + esc(i.error) + '</div>';
+    var gone = (Date.now() - S.cr.at) / 1000;
+    var gen = { on: false, sub: '' };
+    var dl = { on: false, sub: 'None yet' };
+    if (i.state === 'running') gen.sub = 'Ready in about ' + etaText(Math.max(1, i.readyIn - gone)).replace('less than a minute', '1 min');
+    else if (i.state === 'ready') {
+      gen.sub = 'Wait for ' + mmss(i.expiresIn - gone);
+      var ago = Math.floor((Date.now() - Date.parse(i.createdAt)) / 60000);
+      dl = { on: true, sub: 'Created ' + (ago < 1 ? 'just now' : ago + ' min ago') };
+    } else gen = { on: true, sub: 'About ' + etaText(i.estimate).replace('less than a minute', '1 min') + (i.files ? ' · ' + i.files + ' file' + (i.files === 1 ? '' : 's') : ' · no evidence yet') };
+    var opt2 = function (o, label, action, primary) {
+      return '<div class="cr-opt' + (o.on ? '' : ' off') + '"><button class="' + (o.on && primary ? 'primary' : '') + '" data-action="' + action + '"' + (o.on ? '' : ' disabled') + '>' + label + '</button><div class="small' + (o.on ? ' muted' : '') + '">' + esc(o.sub) + '</div></div>';
+    };
+    return head + (i.state === 'failed' ? '<div class="banner bad" style="margin-bottom:10px">' + esc(i.error) + '</div>' : '') +
+      '<div class="cr-opts">' + opt2(gen, 'Generate New', 'cr-generate', true) + opt2(dl, 'Download Existing', 'cr-download', true) + '</div>';
+  }
+
+  var crTimer = null;
+  function openCompleteReport() {
+    S.cr = { book: book(), info: null, at: Date.now() };
+    openModal(crHtml());
+    loadCr();
+    clearInterval(crTimer);
+    crTimer = setInterval(function () {
+      var box = document.querySelector('#modal .modal-box');
+      if (!S.cr || !box || $('modal').classList.contains('hidden')) { clearInterval(crTimer); S.cr = null; return; }
+      var i = S.cr.info;
+      var gone = (Date.now() - S.cr.at) / 1000;
+      if (i && ((i.state === 'ready' && i.expiresIn - gone <= 0) || (i.state === 'running' && gone > 3))) loadCr();
+      else box.innerHTML = crHtml();
+    }, 1000);
+  }
+
+  function loadCr() {
+    var want = S.cr && S.cr.book;
+    if (!want) return;
+    TR.http('GET', '/api/complete-report?book=' + encodeURIComponent(want)).then(function (r) {
+      if (!S.cr || S.cr.book !== want) return;
+      S.cr.info = r;
+      S.cr.at = Date.now();
+      var box = document.querySelector('#modal .modal-box');
+      if (box) box.innerHTML = crHtml();
+    });
+  }
+
+  /** While a Complete Report is being made, check every few seconds; when it is ready, the bubble shows. */
+  var crPoll = null;
+  function watchReport(bookName) {
+    clearTimeout(crPoll);
+    crPoll = setTimeout(function () {
+      TR.http('GET', '/api/complete-report?book=' + encodeURIComponent(bookName)).then(function (r) {
+        if (r.ok && r.state === 'running') { watchReport(bookName); return; }
+        if (r.ok && r.state === 'ready') { S.crReady = { book: bookName }; render(); return; }
+        if (r.ok && r.state === 'failed') toast(r.error, 'bad');
+      });
+    }, 3000);
+  }
+
   /** Asks before deleting the open workbook: it cannot be undone. */
   function deleteBookModal() {
     var name = book();
@@ -1984,7 +2140,7 @@
     openModal('<h2>Delete “' + esc(title) + '”?</h2>' +
       '<p class="banner bad" style="margin-top:10px"><b>This cannot be undone.</b></p>' +
       '<ul class="modal-list"><li>The workbook file is deleted from this laptop’s sheets folder, for everyone using this Test Run.</li>' +
-      '<li>Its Test Run setup, findings and known issues are deleted with it.</li>' +
+      '<li>Its Test Run setup, findings and known issues are deleted with it, and its screenshots and recordings.</li>' +
       '<li>Copies published to GitHub stay until the next publish.</li></ul>' +
       '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
       '<button class="danger-fill" data-action="book-delete-confirm" data-name="' + esc(name) + '">Delete workbook</button></div>');
@@ -2141,7 +2297,10 @@
             if (!r.ok && r.code === 'EXISTS' && window.confirm(r.error + ' Replace it with the file you picked?')) return send(true);
             return r;
           }).then(function (r) {
-            if (r && r.ok) done.push(r.name);
+            if (r && r.ok) {
+              done.push(r.name);
+              if (r.addedColumns && r.addedColumns.length) toast('Added Tested by and Tested on to ' + r.addedColumns.map(function (a) { return a.tab; }).join(', ') + ' in ' + r.name.replace(/\.xlsx$/i, '') + '.');
+            }
             else if (r && r.code !== 'EXISTS') failed.push(f.name + ': ' + r.error);
           });
         };
@@ -2156,6 +2315,7 @@
       input.click();
     },
     download: function () {
+      if (S.dlMenu) { S.dlMenu = null; render(); }
       TR.download('/api/books/download?name=' + encodeURIComponent(book()), book()).then(function (r) { if (!r.ok) toast(r.error, 'bad'); });
     },
     'clear-plan': function () {
@@ -2265,6 +2425,49 @@
     },
     'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
     'book-delete': function () { deleteBookModal(); },
+    'dl-menu': function (el) { var w = el.getAttribute('data-where'); S.dlMenu = S.dlMenu === w ? null : w; render(); },
+    'complete-report': function () { S.dlMenu = null; render(); openCompleteReport(); },
+    'cr-generate': function (el) {
+      var want = S.cr && S.cr.book;
+      if (!want) return;
+      el.disabled = true;
+      TR.http('POST', '/api/complete-report', { book: want }).then(function (r) {
+        if (!r.ok) { if (S.cr) { S.cr.info = r.state ? r : S.cr.info; } loadCr(); if (r.code !== 'WAIT') toast(r.error, 'bad'); return; }
+        closeModal();
+        S.crReady = null;
+        toast('Your download will be ready in ' + etaText(r.readyIn || r.estimate) + '.');
+        watchReport(want);
+        render();
+      });
+    },
+    'cr-download': function (el) {
+      var want = el.getAttribute('data-book') || (S.cr && S.cr.book) || book();
+      var name = String(want).replace(/\.xlsx$/i, '') + ' - Complete Report.zip';
+      closeModal();
+      S.crReady = null;
+      render();
+      TR.download('/api/complete-report/download?book=' + encodeURIComponent(want), name).then(function (r) { if (!r.ok) toast(r.error, 'bad'); });
+    },
+    'cr-dismiss': function () { S.crReady = null; render(); },
+    'media-quality': function (el) { setMedia({ quality: el.getAttribute('data-quality') }); },
+    'ev-view': function (el) {
+      var k = el.getAttribute('data-key');
+      var w = window.open('', '_blank');
+      TR.fetchBlob('/api/evidence/file?book=' + encodeURIComponent(book()) + '&tab=' + encodeURIComponent(S.tab) + '&cycle=' + encodeURIComponent(cycleLabel()) + '&key=' + encodeURIComponent(k)).then(function (r) {
+        if (!r.ok) { if (w) w.close(); toast(r.error, 'bad'); return; }
+        if (w) w.location = URL.createObjectURL(r.blob); else TR.saveBlob(r.blob, k);
+      });
+    },
+    'ev-remove': function (el) {
+      var k = el.getAttribute('data-key');
+      var ev = S.model.evidence && S.model.evidence[k];
+      if (!ev || !window.confirm('Delete ' + ev.name + ' for good? It cannot be brought back.')) return;
+      TR.http('POST', '/api/evidence/remove', { book: book(), tab: S.tab, cycle: cycleLabel(), key: k }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        toast('Deleted ' + r.removed + '.');
+        loadTab(cycleLabel(), true);
+      });
+    },
     'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
     'cycle-remove-confirm': function (el) {
       var tab = el.getAttribute('data-tab');
@@ -2700,12 +2903,14 @@
     },
     type: function (el) { S.filters.type = el.value; render(); },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCase; render(); },
+    'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
     'team-role': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), role: el.value }); }
   };
 
   document.addEventListener('click', function (e) {
     var modal = $('modal');
     if (modal && e.target === modal) { closeModal(); return; }
+    if (S.dlMenu && !e.target.closest('.dl-wrap')) { S.dlMenu = null; render(); }
     var el = e.target.closest('[data-action]');
     if (!el || el.disabled) return;
     if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) { ACTIONS[el.getAttribute('data-action')](el, e); return; }
@@ -2759,6 +2964,7 @@
   document.addEventListener('keydown', function (e) {
     var modalOpen = !$('modal').classList.contains('hidden');
     if (e.key === 'Escape' && modalOpen) { closeModal(); return; }
+    if (e.key === 'Escape' && S.dlMenu) { S.dlMenu = null; render(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey || modalOpen) return;
     var t = e.target && e.target.matches ? e.target : document.body;
     if (t.matches('input, textarea, select')) {
