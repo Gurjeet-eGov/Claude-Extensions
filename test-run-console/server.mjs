@@ -128,7 +128,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   function saveApp() {
     mkdirSync(join(sheetsDir, '.testrun'), { recursive: true });
     const tmp = `${appFile}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(app, null, 2));
+    writeFileSync(tmp, JSON.stringify(app, null, 2), { mode: 0o600 }); // it holds the invite keys: readable by you only
     renameSync(tmp, appFile);
   }
 
@@ -403,7 +403,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       return teamInfo();
     }
     // A link is shown once, so make one only when it can find this laptop.
-    if ((path === '/api/team/people' || body.rotate) && t.hostedUrl && !hostedLive()) await checkHosted();
+    if ((path === '/api/team/people' || path === '/api/team/people/link' || body.rotate) && t.hostedUrl && !hostedLive()) await checkHosted();
     const noLink = () => { const w = linkFor('k'); return w.link ? null : { ok: false, code: 'NO_ADDRESS', error: w.warning }; };
     if (path === '/api/team/people') {
       if (!clip(body.name, 80)) return { ok: false, code: 'BAD_INPUT', error: 'Give the person a name.' };
@@ -425,6 +425,13 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       }
       saveApp();
       return teamInfo(extra);
+    }
+    if (path === '/api/team/people/link') {
+      // The person's link again, as it is now (current address, hosted page, gist)
+      if (!p.key) return { ok: false, code: 'NO_KEY', error: `${p.name}'s link was made before links could be copied again. Make a new link once; after that it can be copied any time.` };
+      if (noLink()) return noLink();
+      const inv = linkFor(p.key);
+      return teamInfo({ link: inv.link, linkWarning: inv.warning, person: { id: p.id, name: p.name, role: p.role } });
     }
     if (path === '/api/team/people/remove') {
       t.people = t.people.filter((x) => x !== p);
