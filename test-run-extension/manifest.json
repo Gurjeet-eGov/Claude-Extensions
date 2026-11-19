@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Test Run Extension",
+  "short_name": "Test Run",
+  "version": "0.1.0",
+  "description": "Mark Test Run cases while you test, with a screenshot or a screen recording as evidence.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuHHEc6mwO1daUd9XKO7Jwf/EhEVbF+Mu3Jhpoj5osELVfwQEvfXpCo6zVctngkQHIRP2kjhE5VixAAYJTeGL7oHDdG77kcGzC7DvLB72htode/PJ6ziMzcM3BQknoU9KIKvVTXSXZmgkPZkdDkXkPt26l7qyGxcdY9s3Uy2fcGesYqpwAXy5CCWxiVt1W6OxH/TBz2FxRWnFKV3zRTzPTybkA9nqY93c7AZ7y0Np9lDgw9W2x+zgXlvDJ3UG4nm5xgopsueRkR2G/nVBBuGZsVA5d5Z9o8jMsma0rojE43dXh9tLL5ogfEu/qsQwczOIer5SpPmd72ITWcL9VmOzqQIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Test Run Extension",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+}

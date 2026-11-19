@@ -57,4 +57,6 @@ function api_saveIssueMeta(items) { return tr_call_(function () { return tr_save
 function api_removeCycle(tab, header) { return tr_call_(function () { return tr_removeCycle(tab, header); }); }
 function api_writeIssuesSheet() { return tr_call_(function () { return tr_writeIssuesSheet(); }); }
 function api_dropRetired() { return tr_call_(function () { return tr_dropRetired(); }); }
+function api_requireTestedColumns() { return tr_call_(function () { return tr_requireTestedColumns(); }); }
+function api_setEvidenceNote(req) { return tr_call_(function () { return tr_setEvidenceNote(req); }); }
 function api_automationSummary() { return tr_call_(function () { return tr_automationSummary(); }); }

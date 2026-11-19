@@ -434,7 +434,7 @@ function tr_ensureIssueColumn_(m) {
   return tr_open_(m.tab);
 }
 
-function tr_addColumns_(tabName, fields, cfg) {
+function tr_addColumns_(tabName, fields, cfg, save) {
   {
     var m = tr_open_(tabName, cfg);
     var allowed = ['testedBy', 'testedOn', 'release', 'linkedIssue', 'automatedBy'];
@@ -453,9 +453,56 @@ function tr_addColumns_(tabName, fields, cfg) {
     }
     sh.getRange(m.headerRow, at + 1, 1, add.length).setValues([labels]);
     add.forEach(function (f, i) { cfg.tabs[tabName].columns[f] = labels[i]; });
-    tr_metaPut_('config', 'global', cfg);
+    if (save !== false) tr_metaPut_('config', 'global', cfg);
     return { ok: true, added: add };
   }
+}
+
+/**
+ * Every test suite tab has Tested by and Tested on: found by their headers when the tab
+ * has them, else added at the right of the table (for a newly imported workbook). A tab
+ * not saved in Setup yet stays unsaved: Setup finds the new columns by their headers.
+ */
+function tr_requireTestedColumns() {
+  return tr_withLock_(function () {
+    var cfg = tr_config_();
+    var added = [];
+    tr_manualTabs_(cfg).forEach(function (tab) {
+      var saved = !!(cfg && cfg.tabs && cfg.tabs[tab]);
+      var c = saved ? cfg : { version: 1, tabs: {} };
+      if (!saved) {
+        c.tabs[tab] = JSON.parse(JSON.stringify(tr_open_(tab, cfg).tcfg));
+        c.tabs[tab].columns = c.tabs[tab].columns || {};
+      }
+      var r = tr_addColumns_(tab, ['testedBy', 'testedOn'], c, saved);
+      if (r.added.length) added.push({ tab: tab, added: r.added });
+    });
+    return { ok: true, added: added };
+  });
+}
+
+/**
+ * The evidence line in a case's cycle comment: "Evidence: <file name>", replacing an
+ * earlier one; file '' removes it. req: { tab, key, cycle, file }
+ */
+function tr_setEvidenceNote(req) {
+  req = req || {};
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    var c = tr_cases_(m).filter(function (x) { return x.key === req.key || (x.id && x.id === req.key); })[0];
+    if (!c) throw tr_err_('NO_CASE', 'There is no test case "' + req.key + '" in ' + m.tab + ' any more.');
+    var ci = tr_findCycle_(m, req.cycle || '', true);
+    var cy = m.cycles[ci];
+    if (!cy || cy.comment < 0) return { ok: true, comment: null };
+    var before = String(c.comments[ci] || '');
+    var lines = before.split(/\r?\n/).filter(function (l) { return !/^Evidence:\s/.test(l.trim()); });
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    var file = TRCore.cleanText(req.file, 200);
+    if (file) lines.push('Evidence: ' + file);
+    var after = lines.join('\n');
+    if (after !== before) m.sheet.getRange(c.row, cy.comment + 1).setValue(TRCore.cellSafe(after));
+    return { ok: true, comment: after };
+  });
 }
 
 // -----------------------------------------------------------------------------
