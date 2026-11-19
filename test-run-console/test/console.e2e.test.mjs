@@ -13,6 +13,7 @@ import { homedir, tmpdir } from 'node:os';
 import { createServer } from '../server.mjs';
 import { XBook } from '../lib/xlsx-book.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
+import { makeFakeGh } from '../dev/fake-tools.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium = null;
@@ -27,7 +28,8 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
   const sheets = mkdtempSync(join(tmpdir(), 'testrun-e2e-'));
   const file = join(sheets, BOOK);
   writeFileSync(file, await buildSampleXlsx());
-  const server = createServer({ sheetsDir: sheets, ghPath: '/nope/gh' }); // never the real gh in tests
+  const gh = makeFakeGh(mkdtempSync(join(tmpdir(), 'testrun-gh-'))); // a fake GitHub: nothing is published for real
+  const server = createServer({ sheetsDir: sheets, ghPath: gh.bin, repo: { owner: 'org', repo: 'tools' }, publishPrefix: 'test-run-console/', publishedDir: join(sheets, 'no-published-data') });
   const base = await server.listenOn(0);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
@@ -40,7 +42,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
     await t.test('first run opens Setup; saving it lands on Run with paths', async () => {
       await page.goto(base);
       await page.getByText('Welcome.').waitFor();
-      await page.getByRole('button', { name: 'Save setup' }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
       await page.locator('.nav [data-view=run][aria-current=page]').waitFor();
       await page.locator('.path-title', { hasText: 'CSR Employee' }).waitFor();
       assert.ok(await page.locator('.case').count() >= 8);
@@ -208,13 +210,13 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       mate.on('pageerror', (e) => errors.push(e.message));
       try {
         await mate.goto(hosted);
-        await mate.getByText('Connect to a Test Run').waitFor();
+        await mate.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
         await api('/api/team', { enabled: true, mode: 'fixed', fixedUrl: base.replace(/\/$/, ''), hostedUrl: hosted });
         await api('/api/call/api_addColumns', { book: BOOK, args: [TAB, ['testedBy']] });
         const inv = await api('/api/team/people', { name: 'Priya (QA)', role: 'tester' });
         assert.match(inv.link, new RegExp(`^${hosted}#join=[\\w-]+&server=`));
         await mate.goto(inv.link);
-        await mate.locator('.who', { hasText: 'Priya (QA) · updates status' }).waitFor();
+        await mate.locator('.user-btn[title="Priya (QA) · Updates status"]').waitFor();
         assert.equal(new URL(mate.url()).hash, '', 'the key leaves the address bar');
         assert.equal(await mate.locator('.nav [data-view=setup]').count(), 0, 'Setup is the owner\'s');
         await mate.locator('[data-action=show][data-show=all]').click();
@@ -226,7 +228,18 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
           return r[rows[0].indexOf('Test Status / v2.20.1')] === 'Pass' && r[rows[0].indexOf('Tested by')] === 'Priya (QA)';
         });
         await mate.reload();
-        await mate.locator('.who', { hasText: 'Priya (QA)' }).waitFor(); // the invite is kept in this browser
+        await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).waitFor(); // the invite is kept in this browser
+        // Hovering the name shows the role and Sign out; signing out forgets the link in this browser
+        await mate.locator('.user-btn').hover();
+        await mate.locator('.user-pop', { hasText: 'Updates status' }).waitFor();
+        mate.once('dialog', (d) => d.accept());
+        await mate.locator('.user-pop [data-action=sign-out]').click();
+        await mate.locator('.access-card', { hasText: 'You are signed out' }).waitFor();
+        await mate.reload();
+        await mate.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
+        assert.equal(await mate.locator('.user-btn').count(), 0, 'still signed out after a reload');
+        await mate.goto(inv.link);
+        await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).waitFor();
         // The owner copies Priya's link again from Setup → Team: the same, working link, straight to the clipboard.
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.replace(/\/$/, '') });
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
@@ -253,7 +266,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await mate.locator('.kpi', { hasText: 'executed' }).waitFor();
         await api('/api/team/people/remove', { id: (await fetch(base + 'api/team', { headers: { 'X-Test-Run': '1' } }).then((x) => x.json())).people.find((p) => p.name === 'Manager').id });
         await mate.reload();
-        await mate.getByText('Your invite link no longer works').waitFor();
+        await mate.locator('.access-card', { hasText: 'Your access link no longer works' }).waitFor();
       } finally {
         await mate.close();
         pages.close();
@@ -309,6 +322,39 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=show][data-show=todo]').click();
     });
 
+    await t.test('+ Add issue on Known issues: an issue logged elsewhere goes on a test case, or is kept as a finding', async () => {
+      assert.equal(await page.locator('.topbar [data-action=add-issue]').count(), 0, 'not in the top bar');
+      await page.locator('.nav [data-view=issues]').click();
+      await page.locator('.section-head', { hasText: 'Known issues' }).getByRole('button', { name: '+ Add issue' }).click();
+      await page.locator('.card h3', { hasText: 'New issue' }).waitFor();
+      await page.locator('#aiUrl').fill('https://github.com/org/repo/issues/930');
+      await page.locator('#aiTitle').fill('Reject reasons list is empty');
+      await page.locator('#aiPriority').selectOption('P2');
+      await page.locator('#aiCase').fill('CMS/09');
+      const markIt = page.locator('#aiCaseNote input[type=checkbox]');
+      await markIt.waitFor();
+      assert.equal(await markIt.isChecked(), true, 'marking it failed is the default');
+      await page.locator('[data-action=add-issue-save]').click();
+      await page.locator('.toast', { hasText: 'Linked to CMS/09 and marked failed' }).waitFor();
+      await eventually(async () => {
+        const rows = await disk();
+        const r = row(rows, 'CMS/09');
+        return r[rows[0].indexOf('Test Status / v2.20.1')] === 'Fail' && /#930/.test(r[rows[0].indexOf('Linked issue')]);
+      });
+      // Without a test case it is kept as a finding; a link that is not a GitHub issue needs a title
+      await page.locator('.section-head [data-action=add-issue]').click();
+      await page.locator('#aiUrl').fill('https://tracker.example.org/browse/CMS-55');
+      await page.locator('[data-action=add-issue-save]').click();
+      await page.locator('.toast', { hasText: 'Give it a title' }).waitFor();
+      await page.locator('#aiTitle').fill('Receipt shows the wrong ward');
+      await page.locator('[data-action=add-issue-save]').click();
+      await page.locator('.toast', { hasText: /Kept as finding F-\d+/ }).waitFor();
+      assert.equal(await page.locator('#aiUrl').count(), 0, 'the form closes');
+      await page.locator('table.issues tr', { hasText: 'Reject reasons list is empty' }).locator('[data-action=open-case]', { hasText: 'CMS/09' }).waitFor();
+      await page.locator('table.issues tr', { hasText: 'Receipt shows the wrong ward' }).waitFor();
+      await page.locator('.nav [data-view=run]').click();
+    });
+
     await t.test('Run shows the test type on each case, and adds a test case at the end of a section', async () => {
       await page.locator('.nav [data-view=run]').click();
       await page.locator('[data-action=show][data-show=all]').click();
@@ -357,10 +403,12 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
     await t.test('Automation is its own item next to the test suites: an overall summary of automated results', async () => {
       await page.locator('.nav [data-view=summary]').click();
       await page.locator('.ctx-tab.auto').click();
-      await page.locator('h1', { hasText: 'Automation' }).waitFor();
+      await page.locator('.ctx-tab.auto.on').waitFor();
+      await page.locator('main .report-tools .updated', { hasText: /^Updated on: / }).waitFor();
       await page.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
       await page.locator('table', { hasText: 'Assign button missing' }).waitFor();
-      assert.equal(await page.locator('.context .cycle-switch').count(), 0, 'no test cycle for automation');
+      await page.locator('.context .cycle-switch #autoCycle option', { hasText: 'Latest results' }).waitFor({ state: 'attached' });
+      assert.equal(await page.getByText('Pick a test suite above').count(), 0, 'no intro line');
       await page.locator('.context .progress-wrap', { hasText: 'automated tests' }).waitFor();
       await page.locator(`.ctx-tab[data-tab="${TAB}"]`).click();
       await page.locator('.kpi', { hasText: 'executed' }).waitFor();
@@ -380,17 +428,92 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=run]').click();
     });
 
-    await t.test('summary: page, export file, download', async () => {
+    await t.test('the host publishes; anyone sees the published reports on the hosted page, with a bar for their access link', async () => {
+      // Publish from Setup → Publish
+      await page.locator('.nav [data-view=setup]').click();
+      await page.locator('[data-action=setup-part][data-part=publish]').click();
+      await page.locator('#publish .note.warn', { hasText: 'Published workbooks are public' }).waitFor();
+      await page.locator(`#publish [data-action=publish-book][data-name="${BOOK}"]`).check();
+      page.once('dialog', (d) => d.accept()); // "this is public": confirmed once
+      await page.getByRole('button', { name: 'Publish now' }).click();
+      await page.locator('.toast', { hasText: 'Published to GitHub' }).waitFor();
+      assert.ok(gh.readRepo().files['test-run-console/published/reports/index.json'], 'the reports are in the repository');
+      // The hosted page (another origin), serving the published reports like GitHub Pages
+      const ui = new URL('../ui/', import.meta.url).pathname;
+      const reportsDir = join(sheets, '.testrun', 'published');
+      const pages = http.createServer((req, res) => {
+        const p = req.url.split('?')[0].replace(/^\//, '') || 'index.html';
+        const f = p.startsWith('reports/') ? join(reportsDir, p.slice('reports/'.length)) : join(ui, p);
+        if (!existsSync(f)) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200, { 'content-type': f.endsWith('.js') ? 'application/javascript' : f.endsWith('.css') ? 'text/css' : f.endsWith('.json') ? 'application/json' : 'text/html' });
+        res.end(readFileSync(f));
+      });
+      await new Promise((r) => pages.listen(0, '127.0.0.1', r));
+      const hosted = `http://127.0.0.1:${pages.address().port}/`;
+      const visitor = await (await browser.newContext()).newPage();
+      visitor.on('pageerror', (e) => errors.push(e.message));
+      try {
+        await visitor.goto(hosted);
+        await visitor.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
+        await visitor.locator('.topbar .book-switch #rBook option', { hasText: 'CMS Sign Off (sample)' }).waitFor({ state: 'attached' });
+        assert.equal(await visitor.locator('.topbar .nav').count(), 0, 'no screen tabs without an access link');
+        assert.equal(await visitor.locator('.rail-content h1, main h1').count(), 0, 'no second title: the suite is picked above');
+        await visitor.locator('.report-tools .updated', { hasText: /^Updated on: / }).waitFor();
+        await visitor.locator('.topbar .cycle-switch #rCycle').waitFor();
+        const dl = visitor.locator('.report-tools a[download]', { hasText: 'Download' });
+        assert.match(await dl.getAttribute('href'), /^reports\/.+\.xlsx$/);
+        const [download] = await Promise.all([visitor.waitForEvent('download'), dl.click()]);
+        assert.match(download.suggestedFilename(), /^CMS Sign Off \(sample\)\.xlsx$/);
+        assert.equal(await visitor.getByText('Back to Test Run').count(), 0);
+        await visitor.locator('.kpi', { hasText: 'executed' }).waitFor();
+        await visitor.locator('.ctx-tab', { hasText: 'CMS 2.20.1 Features' }).click();
+        await visitor.locator('.ctx-tab.on', { hasText: 'CMS 2.20.1 Features' }).waitFor();
+        await visitor.locator('.kpi', { hasText: 'executed (3 of 7)' }).waitFor();
+        await visitor.locator('.ctx-tab.auto').click();
+        await visitor.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
+        await visitor.locator('.topbar .cycle-switch #autoCycle option', { hasText: 'Latest results' }).waitFor({ state: 'attached' });
+        // A link whose Test Run is offline: the published reports, and a note
+        const api = (path, body) => fetch(base + path.slice(1), { method: 'POST', headers: { 'X-Test-Run': '1', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((x) => x.json());
+        await visitor.goto(`${hosted}#join=${'k'.repeat(32)}&server=${encodeURIComponent('http://127.0.0.1:9')}`);
+        await visitor.locator('.access-card', { hasText: 'Your Test Run is offline' }).waitFor();
+        await visitor.locator(`.ctx-tab[data-tab="${TAB}"]`).click();
+        await visitor.locator('.kpi', { hasText: 'executed' }).waitFor();
+        // Pasting a working access link opens Test Run
+        await api('/api/team', { enabled: true, mode: 'fixed', fixedUrl: base.replace(/\/$/, '') });
+        const inv = await api('/api/team/people', { name: 'Visitor', role: 'viewer' });
+        await visitor.locator('#inviteLink').fill(inv.link.replace(/^https?:\/\/[^/]+\//, hosted));
+        await visitor.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await visitor.locator('.user-btn[title="Visitor · View only"]').waitFor();
+        await visitor.locator('.nav [data-view=issues]').click();
+        await visitor.locator('.section-head h2', { hasText: 'Known issues' }).waitFor();
+        assert.equal(await visitor.locator('[data-action=add-issue]').count(), 0, 'viewers do not add issues');
+        await api('/api/team', { enabled: false });
+      } finally {
+        await visitor.close();
+        pages.close();
+      }
+      // The host can preview what anyone sees, from the laptop
+      const preview = await browser.newPage();
+      await preview.goto(`${base}?reports=1`);
+      await preview.locator('.access-card').waitFor();
+      await preview.locator('.kpi', { hasText: 'executed' }).waitFor();
+      await preview.close();
+      await page.locator('.nav [data-view=run]').click();
+    });
+
+    await t.test('summary: updated on, Download and Print / PDF', async () => {
       const s = await browser.newPage();
       await s.goto(`${base}summary.html?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
       await s.locator('.kpi', { hasText: 'executed' }).waitFor();
       await s.getByText('Open failures').waitFor();
       await s.close();
       await page.locator('.nav [data-view=summary]').click();
-      const [exported] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export summary' }).click()]);
-      assert.match(exported.suggestedFilename(), /\.html$/);
-      const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download' }).click()]);
+      await page.locator('.report-tools .updated', { hasText: /^Updated on: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/ }).waitFor();
+      for (const gone of ['Open summary page', 'Export summary', 'Update summary tab']) assert.equal(await page.getByText(gone).count(), 0, gone);
+      const tools = page.locator('main .report-tools');
+      const [download] = await Promise.all([page.waitForEvent('download'), tools.getByRole('button', { name: 'Download' }).click()]);
       assert.equal(download.suggestedFilename(), BOOK);
+      await tools.getByRole('button', { name: 'Print / PDF' }).waitFor();
     });
 
     await t.test('test case tabs are buttons under the screens, next to the test cycle', async () => {
@@ -424,6 +547,24 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.ok(existsSync(join(sheets, 'Bomet Test Cases.xlsx')) && existsSync(join(sheets, 'Mozambique Test Cases.xlsx')));
       assert.equal(await page.locator('#bookPick option').count(), 3);
       assert.match(await page.locator('.book-switch label').textContent(), /Workbook\s*3/);
+    });
+
+    await t.test('the host deletes a workbook from Setup, after a pop-up saying it cannot be undone', async () => {
+      await page.locator('#bookPick').selectOption('Mozambique Test Cases.xlsx');
+      await page.locator('#bookPick option:checked', { hasText: 'Mozambique Test Cases' }).waitFor({ state: 'attached' });
+      await page.locator('.nav [data-view=setup]').click();
+      const del = page.getByRole('button', { name: 'Delete', exact: true });
+      assert.equal(await del.locator('xpath=..').getByRole('button', { name: 'Save', exact: true }).count(), 1, 'beside Save');
+      await del.click();
+      await page.locator('.modal-box', { hasText: 'This cannot be undone.' }).waitFor();
+      await page.locator('.modal-box').getByRole('button', { name: 'Cancel' }).click();
+      assert.ok(existsSync(join(sheets, 'Mozambique Test Cases.xlsx')), 'Cancel keeps it');
+      await del.click();
+      await page.locator('.modal-box').getByRole('button', { name: 'Delete workbook' }).click();
+      await page.locator('.toast', { hasText: 'Deleted Mozambique Test Cases' }).waitFor();
+      assert.equal(existsSync(join(sheets, 'Mozambique Test Cases.xlsx')), false);
+      await eventually(async () => (await page.locator('#bookPick option').count()) === 2);
+      assert.equal(await page.locator('#bookPick option', { hasText: 'Mozambique' }).count(), 0);
     });
 
     await t.test('a read-only workbook file says so', async () => {

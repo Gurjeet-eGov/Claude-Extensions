@@ -858,7 +858,8 @@ function tr_saveFinding(input) {
       at: (prev && prev.at) || tr_now_()
     };
     tr_metaPut_('finding', key, v);
-    if (v.url) tr_noteIssues_([{ url: v.url, title: text, priority: input.priority, source: v.source }]);
+    // issueTitle: the issue's own title when it differs from the finding's line ('' leaves it to GitHub)
+    if (v.url) tr_noteIssues_([{ url: v.url, title: input.issueTitle != null ? input.issueTitle : text, priority: input.priority, source: v.source }]);
     v.key = key;
     return { ok: true, finding: v };
   });
@@ -886,9 +887,10 @@ function tr_deleteFinding(key) {
 // -----------------------------------------------------------------------------
 
 /**
- * A bug filed against a test case (from Bug Reporter): mark the case failed in the
- * current cycle, add the bug to its Linked issue cell, and note "Bug #12: title" in
- * the cycle's comment. req: { tab, key, url, title, priority, cycle? }
+ * A bug filed against a test case (from Bug Reporter, or added in Test Run): mark the
+ * case failed in the current cycle (unless markFailed is false), add the bug to its
+ * Linked issue cell, and note "Bug #12: title" in the cycle's comment.
+ * req: { tab, key, url, title, priority, cycle?, markFailed? }
  */
 function tr_linkBug(req) {
   req = req || {};
@@ -901,20 +903,21 @@ function tr_linkBug(req) {
     if (c.retired) throw tr_err_('RETIRED', c.id + ' is retired (struck out), so it cannot be marked. Restore it first, or note the bug as a finding.');
     var ci = tr_findCycle_(m, req.cycle, true);
     var cy = m.cycles[ci];
-    if (!cy) throw tr_err_('NO_CYCLE', m.tab + ' has no cycle to mark yet. Start one in Setup.');
-    var fail = tr_statusOptions_(m, cy).filter(function (o) { return o.cls === 'fail'; })[0];
-    if (!fail) throw tr_err_('NO_FAIL', 'The status column of cycle "' + cy.label + '" has no failing value to mark.');
+    var markFailed = req.markFailed !== false; // false: only link the issue, leave the result as it is
+    if (!cy && markFailed) throw tr_err_('NO_CYCLE', m.tab + ' has no cycle to mark yet. Start one in Setup.');
+    var fail = cy ? tr_statusOptions_(m, cy).filter(function (o) { return o.cls === 'fail'; })[0] : null;
+    if (!fail && markFailed) throw tr_err_('NO_FAIL', 'The status column of cycle "' + cy.label + '" has no failing value to mark.');
     var title = TRCore.cleanText(req.title, 300);
     var sh = m.sheet;
     var r = c.row;
-    var prev = c.statuses[ci] || '';
-    if (TRCore.classifyStatus(prev) !== 'fail') {
+    var prev = cy ? c.statuses[ci] || '' : '';
+    if (markFailed && TRCore.classifyStatus(prev) !== 'fail') {
       sh.getRange(r, cy.status + 1).setValue(TRCore.cellSafe(fail.value));
       if (m.fields.testedBy >= 0) sh.getRange(r, m.fields.testedBy + 1).setValue(TRCore.cellSafe(tr_user_()));
       if (m.fields.testedOn >= 0) sh.getRange(r, m.fields.testedOn + 1).setValue(tr_now_());
     }
     var ref = TRCore.issueRef(url);
-    if (cy.comment >= 0) {
+    if (markFailed && cy.comment >= 0) {
       var comment = String(c.comments[ci] || '').trim();
       if (comment.indexOf(url) < 0 && !new RegExp('(^|\\W)' + ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\W|$)').test(comment)) {
         var line = 'Bug ' + ref + (title ? ': ' + title : '');
@@ -923,8 +926,8 @@ function tr_linkBug(req) {
     }
     m = tr_ensureIssueColumn_(m);
     var list = tr_writeIssueCell_(sh, r, m.fields.linkedIssue, TRCore.issueValue(c.issues.concat([{ ref: ref, url: url }])),
-      { url: url, title: title, priority: req.priority, source: 'bug-reporter' });
-    return { ok: true, key: c.key, id: c.id, row: r, tab: m.tab, cycle: cy.label, status: TRCore.classifyStatus(prev) === 'fail' ? prev : fail.value, previous: prev, issues: list };
+      { url: url, title: title, priority: req.priority, source: TRCore.cleanText(req.source, 40) || 'bug-reporter' });
+    return { ok: true, key: c.key, id: c.id, row: r, tab: m.tab, cycle: cy ? cy.label : '', status: !markFailed || TRCore.classifyStatus(prev) === 'fail' ? prev : fail.value, previous: prev, issues: list };
   });
 }
 

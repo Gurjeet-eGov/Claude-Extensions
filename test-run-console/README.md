@@ -2,7 +2,7 @@
 
 A small app for **manual test runs on your test case workbooks** (`.xlsx`). It shows you what to test next, colour coded, and you mark results with one click or one key. Each result is saved straight into the workbook on your computer. Managers get a clean summary page you can print or send.
 
-The workbooks stay on your laptop, in `sheets/`, which git ignores. To test as a team, share your Test Run: teammates open an invite link and mark results at the same time, and managers follow the summary (see [Sharing with your team](#sharing-with-your-team)).
+The workbooks stay on your laptop, in `sheets/`, which git ignores. To test as a team, share your Test Run: teammates open an invite link and mark results at the same time, and managers follow the summary (see [Sharing with your team](#sharing-with-your-team)). To let anyone read the reports, even when your laptop is off, and to let someone else carry on from a clone, publish them (see [Publishing the reports](#publishing-the-reports)).
 
 | Run | Summary for management |
 |---|---|
@@ -30,6 +30,7 @@ Want to look around first? Run `npm run demo`. It uses a throwaway copy of a sam
 Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**.
 
 - **Workbooks.** Keep one workbook per environment (or however you work). **Import** (top right, for the person running Test Run) takes one or several `.xlsx` files at once. **Workbook** (top right) switches between them, for everyone, including teammates with View only links. Each browser remembers its own choice.
+- **Top right, for everyone signed in:** your name. Hover over it to see your role (Host, Admin, Update status or View only) and **Sign out**, which forgets the access link in this browser; you need the link again to come back. On the laptop itself you are always the host, so it offers **Change your name** instead.
 - **Test suites and cycles.** Under the screen names, the **Test suites** row has a button for each test case tab of the workbook (a module, say PGR or Trade License) and **Test cycle** picks the cycle. The row, with the progress bar, stays in view while you scroll.
 - **Run.** Cases are grouped into *test paths*, by Feature then Sub feature.
   - The filters sit in a column on the left that stays in view: Search, Show (To do, Failed, All, Retired) and Test type. **Collapse**, **Expand** and **?** (shortcuts) are at the top right of the list.
@@ -42,9 +43,12 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 - **Issue links.** Paste the issue's link (GitHub, GitLab, Jira or any `https://` page) in **Issue link**. Several are fine, separated by commas.
   - The workbook shows a short reference such as `#123`, linked to the issue, in the *Linked issue* column. If the tab has no such column, the first link adds one at the right of the table.
   - A cell can hold only one link in Excel, so a cell with several issues links to the first. Every issue keeps its own link in **Known issues** and its sheet.
-- **Known issues.** Every issue in the workbook: from Issue links on test cases, and bugs Bug Reporter added as findings (not in the test cases yet).
+- **Known issues.** Every issue in the workbook: from Issue links on test cases, and bugs Bug Reporter or **Add issue** added as findings (not in the test cases yet).
   - Each shows its title, priority, state (open or closed) and its test cases. Click a case to open it in Run.
   - Titles, states and priorities of GitHub issues are filled in from GitHub, with the `gh` login on the laptop running Test Run. Priority comes from the issue's project board (a *Priority* field) or a label such as `P1`. **Refresh from GitHub** gets the latest. You can also type a title or priority with **✎**.
+  - **+ Add issue** (for everyone but View only) notes an issue that was logged outside Test Run, for example straight on GitHub or in another tracker: its link, a title (read from GitHub when left blank for a GitHub issue), a priority and the test suite.
+    - With a **test case**, the issue goes in that case's *Linked issue* cell, and **Mark it failed in cycle …** (on by default) also marks the case failed with a comment line, as Bug Reporter does.
+    - Without one, it is kept as a finding until it is linked to a case. Either way it is listed here.
   - **Download** adds them to the workbook as a **Known issues** sheet: the issue (linked), title, priority, state, test cases and when it was added. The file in `sheets/` is not changed.
 - **Colour and symbol together.** ✓ pass, ✗ fail, – other, ○ not run, so results stay readable for colour-blind readers and on paper.
 - **Risk first.** Sections with cases that are new in this release, or failed last cycle, come first, and those cases are tagged.
@@ -66,9 +70,10 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **Already covered…** links it to an existing case by its ID instead.
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
-- **Summary.** Shows percent executed, pass rate, a colour strip per feature, open failures with issue links, and a comparison with the previous cycle. **Export summary** saves it as one HTML file you can send. **Update summary tab** writes it into the workbook.
-  - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation.
-- **Setup** has two parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved) and **Sharing** (your name and the team).
+- **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links, and a comparison with the previous cycle. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
+  - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation. Its **Test cycle** shows which status column the results come from (each automation tab's latest).
+- **Setup** has three parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team) and **Publish**.
+  - **Delete**, next to **Cancel** and **Save** at the bottom of Setup → Workbook (the host only, here or with the admin link), removes the open workbook for everyone: the file in `sheets/` and its Test Run data (setup, findings, known issues). A pop-up says first that this cannot be undone. The daily backups in `sheets/.testrun/backups/` stay, and copies already published to GitHub stay until the next publish.
 - **Cells on several lines.** Legacy sheets often have several lines in one cell. The console reads them the way a person would:
   - lines become a list (bullet marks dropped, numbers like `1.` or `2,` kept);
   - a line that carries on the one before (a closing quote, lower case, or after "Dear Citizen,") stays with it;
@@ -124,7 +129,7 @@ In **Setup → Sharing → Team**, add each person with what they can do:
 
 | Can | Who | What they can do |
 |---|---|---|
-| Update status | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities. Findings: write them up. Summary. *Tested by* shows their name. |
+| Update status | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities, **+ Add issue**. Findings: write them up. Summary. *Tested by* shows their name. |
 | View only | managers | Run, Known issues and Summary, read-only. |
 
 - Each person gets their own invite link. Send it to them privately.
@@ -140,7 +145,43 @@ In **Setup → Sharing → Team**, add each person with what they can do:
 - Requests from your own laptop (http://127.0.0.1:5178) need no key, as before.
 - Everything that comes through the tunnel must carry an invite key.
 - Keys are checked against a stored hash. The keys themselves are kept in `sheets/.testrun/app.json` so links can be copied again: on your laptop only, never in git, and readable only by your user account.
-- The page itself is public; the workbook, issues, findings and summary are not.
+- The page itself is public; the live workbook, issues, findings and summary are not. (What you publish is: see below.)
+
+### 3. Your admin link
+
+**Setup → Sharing → Team → Your admin link** gives you, the host, everything the laptop can do (testing, Setup, Sharing, Import, Publish) from another computer or network, through the same address as your team, while the laptop runs Test Run.
+
+- **Make my admin link** copies it; open it on the other computer. Bug Reporter takes it like any invite link.
+- It works like a password: keep it to yourself. **New admin link** replaces it; **Remove** turns it off.
+- From the other computer, stopping sharing or changing the way in cuts that browser off, so Test Run asks first.
+- Laptop paths (the sheets folder) and the export files on disk stay on the laptop.
+
+## Publishing the reports
+
+The host can publish the reports to the GitHub repository, so they can be read on the GitHub Pages site by anyone, even when no Test Run is running, and so someone else can carry on from a clone.
+
+> **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site. It stays in the repository's history even if you stop publishing it. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
+
+**Setup → Publish** (the host only; testers and viewers cannot publish):
+- **Workbooks to publish:** tick the ones that may go out.
+- **When:** every day at **17:00** (change the time there) while Test Run runs, and **when Test Run stops** (Ctrl+C). These start after your first **Publish now**, which asks once that you know it is public. **Publish** on Summary does the same.
+- **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
+  - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
+  - `reports/`: the summary of every test suite and cycle, and the automation summary, which the Pages site shows.
+- Your local checkout is not touched (the commit is made on GitHub directly), and nothing is committed when nothing changed.
+- Teammates' results are already saved on the host's laptop, so there is one copy, and that is what is published.
+- If someone else published after you last published or got the data, Test Run says so and does not overwrite theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
+
+**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite (or **Automation**) and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. **Preview here** in Setup → Publish shows the same from your laptop.
+
+### Carrying on from a clone (hand over)
+
+1. The current host publishes (or it happens at 17:00 or when their Test Run stops).
+2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`.
+3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied into `sheets/`.
+4. They turn on **Setup → Sharing** and add people (invite links belong to each host's laptop), and publish from then on.
+
+One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
 
 ## With Bug Reporter
 
@@ -159,7 +200,7 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 
 ## Your workbooks
 
-- **Where they live:** `sheets/*.xlsx`, never committed. Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
+- **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy in `test-run-console/published/`). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
@@ -178,7 +219,7 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 6. **End of day:**
    1. **Findings:** write each one up, or mark it as already covered.
    2. **Known issues:** check titles and priorities.
-   3. **Summary:** **Export summary** or print it. **Download** the workbook for the Known issues sheet.
+   3. **Summary:** print it, or **Download** the workbook (with its Known issues sheet), or publish it.
 
 ## Development
 
@@ -194,10 +235,12 @@ lib/
   team.mjs       invite keys, roles, local vs tunnelled requests, invite links
   share.mjs      the Cloudflare tunnel (quick or named), and the gist that keeps its address
   issues.mjs     GitHub issue titles, states and priorities, through gh
+  publish.mjs    publishing to the repository: one commit through gh (Git Data API)
   prompts.js     prompts from the Claude drafting there was (off for now; kept for later)
   runtime.mjs    loads the logic for the server and the tests
 ui/            the console and summary pages (also what GitHub Pages serves)
-dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh
+published/     what the host published (workbooks, sidecar files, reports); written by publishing, not by hand
+dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh (fake-gh.cjs: a small fake GitHub)
 test/          unit tests, HTTP and team tests, and browser tests (console; Bug Reporter + Test Run)
 ```
 

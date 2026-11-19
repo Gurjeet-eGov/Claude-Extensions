@@ -24,8 +24,9 @@
 
   TR.connect().then(function (c) {
     if (!c.ok) {
-      main.innerHTML = '<div class="banner bad">' + (c.code === 'NEED_KEY' || c.code === 'BAD_KEY' || c.code === 'NO_SERVER'
-        ? 'Open your invite link first, then come back to this page.' : 'The Test Run server is not answering.') + '</div>';
+      // No Test Run to ask: the published reports are on the console's page, for anyone.
+      main.innerHTML = '<div class="banner"><span>' + (c.code === 'UNREACHABLE' ? 'The Test Run server is not answering.' : 'This page shows live figures from a Test Run you have an access link for.') +
+        '</span><span class="grow"></span><a class="btn" href="./">See the published reports</a></div>';
       return null;
     }
     return TR.api('api_bootstrap');

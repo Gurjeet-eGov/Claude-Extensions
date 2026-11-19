@@ -12,7 +12,8 @@
 // laptop except in that copied link.
 //
 // Who can do what:
-//   owner  - the person at the laptop (requests from 127.0.0.1, no key needed)
+//   owner  - the person at the laptop (requests from 127.0.0.1, no key needed), or
+//            the same person elsewhere with their admin link (team.admin)
 //   tester - marks results, changes and retires cases, writes up findings
 //   viewer - follows the run and the summary (managers); changes nothing
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -77,6 +78,13 @@ export function normalizeTeam(t = {}) {
     publishedAt: clip(t.publishedAt, 40),
     publishedUrl: cleanUrl(t.publishedUrl),
     publishError: clip(t.publishError, 400),
+    // the owner's own link, for full control from another computer
+    admin: t.admin && /^[0-9a-f]{64}$/.test(String(t.admin.hash || '')) ? {
+      hash: String(t.admin.hash),
+      key: /^[\w-]{16,200}$/.test(String(t.admin.key || '')) && hashKey(t.admin.key) === String(t.admin.hash) ? String(t.admin.key) : '',
+      created: clip(t.admin.created, 40),
+      lastSeen: clip(t.admin.lastSeen, 40),
+    } : null,
     people: (Array.isArray(t.people) ? t.people : [])
       .filter((p) => p && /^[0-9a-f]{64}$/.test(String(p.hash || '')))
       .map((p) => ({
@@ -92,10 +100,14 @@ export function normalizeTeam(t = {}) {
   };
 }
 
-/** The person holding this key, or null. Constant-time compare of the hashes. */
+/** The person holding this key (team.admin for the owner's admin link), or null. Constant-time compare of the hashes. */
 export function personForKey(team, key) {
   if (!team || !team.enabled || !key) return null;
   const want = Buffer.from(hashKey(key), 'hex');
+  if (team.admin) {
+    const have = Buffer.from(team.admin.hash, 'hex');
+    if (have.length === want.length && timingSafeEqual(have, want)) return team.admin;
+  }
   for (const p of team.people) {
     const have = Buffer.from(p.hash, 'hex');
     if (have.length === want.length && timingSafeEqual(have, want)) return p;
@@ -117,6 +129,18 @@ export function rotateKey(person) {
   person.hash = hashKey(key);
   person.key = key;
   return key;
+}
+
+/** A new admin link key for the owner (the old one stops working). */
+export function newAdminKey(team, now = '') {
+  const key = newKey();
+  team.admin = { hash: hashKey(key), key, created: now, lastSeen: '' };
+  return key;
+}
+
+/** What the page shows about the admin link (never the key or hash). */
+export function publicAdmin(team) {
+  return team.admin ? { exists: true, canCopy: !!team.admin.key, created: team.admin.created, lastSeen: team.admin.lastSeen } : { exists: false };
 }
 
 /** What the page shows about people (never keys or hashes; canCopy: the link can be copied again). */
