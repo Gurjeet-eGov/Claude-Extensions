@@ -127,6 +127,15 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     assert.equal((await s.call('api_removeCycle', [TAB, 'Test Status / v2.12'], tester)).status, 403, 'starting or removing them');
     assert.equal((await s.remote('GET', '/api/team', { key: tester.key })).status, 403);
     assert.equal((await s.remote('POST', '/api/app', { key: tester.key, body: { user: 'x' } })).status, 403);
+    // Test Run Extension: testers read the media limits and keep their own selection; the host sets the limits and makes Complete Reports
+    assert.equal((await s.remote('GET', '/api/media', { key: tester.key })).quality, '1080p');
+    assert.equal((await s.remote('POST', '/api/media', { key: tester.key, body: { quality: '720p' } })).status, 403);
+    assert.equal((await s.remote('POST', '/api/complete-report', { key: tester.key, body: { book: BOOK } })).status, 403);
+    assert.equal((await s.remote('GET', `/api/complete-report?book=${encodeURIComponent(BOOK)}`, { key: tester.key })).status, 403);
+    await s.remote('POST', '/api/current', { key: tester.key, body: { book: BOOK, tab: TAB, cycle: 'v2.12', caseKey: 'CMS/04' } });
+    assert.equal((await s.remote('GET', '/api/current', { key: tester.key })).current.caseKey, 'CMS/04');
+    assert.equal((await s.local('GET', '/api/current')).current, null, 'each person has their own');
+    assert.equal((await s.remote('POST', '/api/evidence/remove', { key: viewer.key, body: { book: BOOK, tab: TAB, cycle: 'v2.12', key: 'CMS/04' } })).status, 403, 'viewers do not touch evidence');
 
     assert.equal((await s.call('api_summary', [TAB, ''], viewer)).ok, true, 'viewers see the summary');
     const vm = await s.call('api_mark', [{ tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: 'Pass', status: '' }], viewer);
@@ -182,6 +191,9 @@ test('a teammate can be given one workbook instead of all', async () => {
     assert.equal((await s.remote('GET', `/api/books/download?name=${encodeURIComponent(BOOK)}`, { key: ravi.key })).status, 403);
     assert.deepEqual((await s.remote('GET', '/api/suites', { key: ravi.key })).suites.map((x) => x.book), [OTHER], 'Bug Reporter offers only theirs');
     assert.equal((await s.remote('GET', '/api/status', { key: ravi.key })).book, null, 'the host\'s open workbook is not named');
+    assert.equal((await s.remote('GET', `/api/evidence/file?book=${encodeURIComponent(BOOK)}&tab=x&cycle=x&key=x`, { key: ravi.key })).status, 403, 'nor its evidence');
+    assert.equal((await s.remote('POST', '/api/evidence/remove', { key: ravi.key, body: { book: BOOK, tab: TAB, cycle: 'v2.12', key: 'CMS/01' } })).code, 'FORBIDDEN');
+    assert.equal((await s.remote('GET', `/api/ext/suite?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}`, { key: ravi.key })).code, 'FORBIDDEN', 'nor in Test Run Extension');
     // All workbooks again
     const id = add.people.find((p) => p.name === 'Ravi').id;
     const all = await s.local('POST', '/api/team/people/update', { id, books: 'all' });

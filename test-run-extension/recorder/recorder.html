@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Test Run Extension · Recording</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <style>
+    body { width: auto; }
+    #app { padding: 14px 16px; }
+    .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--fail); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fail); flex: none; }
+  </style>
+</head>
+<body>
+  <div id="app" aria-live="polite"></div>
+  <script type="module" src="recorder.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "test-run-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: mark Test Run cases while you test, with a screenshot or screen recording as evidence",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -531,6 +531,44 @@ select.choose option { color: var(--text); }
 .cycle-chip .chip-x { border: none; background: none; padding: 0 2px; margin-right: -4px; min-height: 0; line-height: 1; font-size: 15px; color: var(--muted); cursor: pointer; border-radius: 50%; }
 .cycle-chip .chip-x:hover, .cycle-chip .chip-x:focus-visible { color: var(--fail); background: color-mix(in srgb, var(--fail) 10%, transparent); }
 
+/* The host's Download: a menu that floats over the page */
+.dl-wrap { position: relative; display: inline-flex; }
+.dl-wrap .caret { font-size: 10px; margin-left: 2px; }
+.dl-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 45; width: 300px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.16); display: flex; flex-direction: column; }
+.dl-menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: none; background: none; padding: 8px 10px; border-radius: 6px; font-weight: 400; color: var(--text); white-space: normal; }
+.dl-menu button:hover, .dl-menu button:focus-visible { background: var(--surface-2); }
+.dl-menu button b { font-weight: 600; }
+.dl-menu button span { font-size: 12px; color: var(--muted); }
+
+/* Complete Report popup */
+.modal-box:has(.cr-opts) { width: min(440px, 100%); }
+.cr-opts { display: grid; gap: 10px; }
+.cr-opt { border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px; text-align: center; display: grid; gap: 6px; }
+.cr-opt button { width: 100%; justify-content: center; text-align: center; }
+.cr-opt.off { background: var(--surface-2); border-color: var(--border); color: var(--faint); }
+.cr-opt.off button { color: var(--faint); }
+
+/* Bottom right, when a Complete Report is ready */
+.ready-bubble { position: fixed; right: 18px; bottom: 18px; z-index: 55; display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 13.5px; }
+.ready-bubble .rb-ico { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-weak); color: var(--accent); font-weight: 700; }
+.ready-bubble a { color: var(--accent); font-weight: 600; }
+@media print { .ready-bubble, .dl-menu { display: none !important; } }
+
+/* Evidence in the case panel */
+.evidence-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px dashed var(--border-strong); border-radius: 8px; margin-top: 8px; }
+.evidence-row .mono { word-break: break-all; }
+button.link-btn.danger { color: var(--fail); }
+
+/* Setup → Media */
+.kv-grid { display: grid; grid-template-columns: 180px 1fr; gap: 12px 14px; align-items: center; }
+.kv-k { font-size: 13px; color: var(--muted); font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; background: var(--surface); padding: 6px 14px; font-weight: 600; }
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); }
+.media-foot { border-top: 1px solid var(--border); padding-top: 10px; }
+@media (max-width: 760px) { .kv-grid { grid-template-columns: 1fr; gap: 4px 0; } .kv-k { margin-top: 8px; } }
+
 /* A report with no data (nothing published) */
 td.no-data { text-align: center; color: var(--faint); padding: 28px 12px; }
 .bar.empty-bar { width: 100%; }

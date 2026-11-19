@@ -11,7 +11,7 @@
 // sheets/.testrun/. When shared (Setup → Team), teammates reach it through a
 // tunnel with their own invite key (lib/team.mjs); nothing else leaves the laptop.
 import http from 'node:http';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync, statSync, createReadStream } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { execFileSync, spawn } from 'node:child_process';
@@ -28,6 +28,7 @@ import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slug
 import { isWorkbookName } from './lib/books.mjs';
 import { randomBytes } from 'node:crypto';
 import { extensionIdFromKey } from '../bug-reporter/host/lib/extension-id.mjs';
+import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName } from './lib/evidence.mjs';
 
 const UI = join(ROOT, 'ui');
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js' };
@@ -44,13 +45,16 @@ function defaultUser() {
   try { return userInfo().username; } catch { return ''; }
 }
 
-function bugReporterExtensionId() {
-  try {
-    const manifest = JSON.parse(readFileSync(join(ROOT, '..', 'bug-reporter', 'extension', 'manifest.json'), 'utf8'));
-    return manifest.key ? extensionIdFromKey(manifest.key) : null;
-  } catch {
-    return null;
+/** The IDs of this repository's extensions (Bug Reporter, Test Run Extension): on the laptop they act as the host. */
+function ourExtensionIds() {
+  const ids = [];
+  for (const dir of [join('bug-reporter', 'extension'), 'test-run-extension']) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(ROOT, '..', dir, 'manifest.json'), 'utf8'));
+      if (manifest.key) ids.push(extensionIdFromKey(manifest.key));
+    } catch { /* not there */ }
   }
+  return ids;
 }
 
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
@@ -78,6 +82,7 @@ function normalizeApp(a = {}) {
     last: { book: clip(a.last && a.last.book, 260), tab: clip(a.last && a.last.tab, 160), cycle: clip(a.last && a.last.cycle, 60) },
     team: normalizeTeam(a.team),
     publish: normalizePublish(a.publish),
+    media: normalizeMedia(a.media),
   };
 }
 
@@ -144,7 +149,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const appFile = join(sheetsDir, '.testrun', 'app.json');
   let app = normalizeApp(existsSync(appFile) ? JSON.parse(readFileSync(appFile, 'utf8')) : {});
   if (!app.user) app.user = defaultUser();
-  const extId = bugReporterExtensionId();
+  const extIds = ourExtensionIds();
+  const evidence = new EvidenceStore(sheetsDir);
   let current = null;
   const noStore = createMemoryStore();
   const rt = createRuntime({
@@ -213,6 +219,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
           return { ok: false, code: 'SAVE_FAILED', error: `Could not save the workbook: ${e.message}` };
         }
       }
+      if (fn === 'api_loadTab' && out && out.ok) out.evidence = evidenceOut(evidence.forCycle(entry.name, out.tab, out.cycleIdx >= 0 ? out.cycles[out.cycleIdx].label : ''));
       if (fn === 'api_loadTab' && out && out.ok && isOwnerPerson(person) && person.remember !== false) {
         app.last.tab = out.tab;
         app.last.cycle = out.cycleIdx >= 0 ? out.cycles[out.cycleIdx].label : '';
@@ -898,6 +905,151 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   }
 
   // -------------------------------------------------------------------------
+  // Test Run Extension: what each person is testing, the media limits, evidence
+  // -------------------------------------------------------------------------
+
+  /** What each person has open in Test Run (workbook, suite, cycle, case), for the extension to follow. */
+  const selections = new Map();
+  const whoKey = (person) => (isOwnerPerson(person) ? 'owner' : `p:${person.id}`);
+
+  /** Evidence as the pages see it: no paths on the laptop. */
+  const evidenceOut = (map) => {
+    const out = {};
+    for (const [k, it] of Object.entries(map)) out[k] = { name: it.name, size: it.size, kind: it.kind, by: it.by, at: it.at, usedFor: it.usedFor || '' };
+    return out;
+  };
+
+  /** One suite and cycle as the extension needs it: its result values and live cases, each with its evidence. */
+  async function extSuite(q, person) {
+    const m = await callApi('api_loadTab', [q.tab, q.cycle || ''], q.book, { ...person, remember: false });
+    if (!m.ok) return m;
+    const ci = m.cycleIdx;
+    const cycle = ci >= 0 ? m.cycles[ci].label : '';
+    return {
+      ok: true,
+      book: m.book,
+      tab: m.tab,
+      cycle,
+      hasCycle: ci >= 0,
+      cycles: m.cycles.map((c) => c.label),
+      statusOptions: (m.statusOptions || []).map((o) => ({ value: o.value, cls: o.cls })),
+      cases: m.cases.filter((c) => !c.retired).map((c) => ({
+        key: c.key, id: c.id, sh: c.sh, row: c.row, scenario: clip(c.scenario, 400), group1: c.group1, group2: c.group2,
+        status: ci >= 0 ? c.statuses[ci] || '' : '', comment: ci >= 0 ? String(c.comments[ci] || '') : '',
+        evidence: m.evidence[c.key] || null,
+      })),
+    };
+  }
+
+  /** A file from the extension, for one case and cycle. Replaces the case's earlier file. */
+  async function addEvidence(q, buf, person) {
+    if (!buf.length) return { ok: false, code: 'BAD_INPUT', error: 'The file is empty.' };
+    const type = evidenceType(buf);
+    if (!type) return { ok: false, code: 'BAD_INPUT', error: 'Only PNG photos and WebM or MP4 recordings can be attached.' };
+    const s = await extSuite(q, person);
+    if (!s.ok) return s;
+    if (!s.hasCycle) return { ok: false, code: 'NO_CYCLE', error: `${s.tab} has no test cycle yet.` };
+    const c = s.cases.find((x) => x.key === q.key || (x.id && x.id === q.key));
+    if (!c) return { ok: false, code: 'NO_CASE', error: `There is no test case "${q.key}" in ${s.tab} (or it is retired).` };
+    // A file for the result the case has now backs that result at once; one for a result
+    // about to be marked (or a case not run yet) waits for that mark.
+    const forStatus = clip(q.forStatus, 60);
+    const backsNow = !!c.status && (!forStatus || forStatus === c.status);
+    const item = evidence.put(s.book, { tab: s.tab, cycle: s.cycle, caseKey: c.key, caseId: c.id, buf, type, by: person.name, usedFor: backsNow ? c.status : '' });
+    if (backsNow) await callApi('api_setEvidenceNote', [{ tab: s.tab, key: c.key, cycle: s.cycle, file: item.name }], s.book, { ...person, remember: false });
+    return { ok: true, book: s.book, tab: s.tab, cycle: s.cycle, key: c.key, evidence: evidenceOut({ [c.key]: item })[c.key] };
+  }
+
+  async function removeEvidence(body, person) {
+    const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
+    if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
+    const it = evidence.remove(book, String(body.tab || ''), String(body.cycle || ''), String(body.key || ''));
+    if (!it) return { ok: false, code: 'NO_EVIDENCE', error: 'That case has no attachment any more.' };
+    await callApi('api_setEvidenceNote', [{ tab: it.tab, key: it.caseKey, cycle: it.cycle, file: '' }], book, { ...person, remember: false });
+    return { ok: true, removed: it.name };
+  }
+
+  /**
+   * Marking a result that has evidence: a result backed by a file cannot change until the
+   * file is replaced (or removed). A file attached for the next result is used by it.
+   */
+  async function markWithEvidence(body, person) {
+    const args = Array.isArray(body.args) ? body.args : [];
+    const r = args[0] || {};
+    const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
+    if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
+    const it = book && r.tab && r.key ? evidence.get(book, r.tab, r.cycle || '', r.key) : null;
+    const next = r.status == null ? null : String(r.status).trim();
+    const changes = next != null && next !== String(r.expect == null ? '' : r.expect).trim();
+    if (it && changes && it.usedFor && next !== it.usedFor) {
+      return { ok: false, code: 'EVIDENCE', evidence: evidenceOut({ x: it }).x, error: `${it.caseId || 'This case'} is ${it.usedFor} with evidence (${it.name}). To change the result, attach new evidence with Test Run Extension (it replaces that file), or remove the file first.` };
+    }
+    const out = await callApi('api_mark', args, body.book, person);
+    if (out && out.ok && it && changes && !it.usedFor && out.status) {
+      evidence.setUsed(out.book, r.tab, r.cycle || '', r.key, out.status);
+      const note = await callApi('api_setEvidenceNote', [{ tab: r.tab, key: r.key, cycle: r.cycle || '', file: it.name }], out.book, { ...person, remember: false });
+      if (note.ok && note.comment != null) out.comment = note.comment;
+      out.evidence = evidenceOut({ x: { ...it, usedFor: out.status } }).x;
+    }
+    return out;
+  }
+
+  // The Complete Report: the workbook and every suite's evidence in one zip, made in the
+  // background one at a time, kept for the host's chosen time, then deleted.
+  const reportsDir = join(sheetsDir, '.testrun', 'complete-reports');
+  const reports = new Map(); // book -> { state: 'running'|'ready'|'failed', startedAt, eta, createdAt, expiresAt, file, size, error }
+  let reportChain = Promise.resolve();
+  try { for (const f of readdirSync(reportsDir)) unlinkSync(join(reportsDir, f)); } catch { /* none yet */ }
+
+  function expireReports(now = Date.now()) {
+    for (const [book, r] of reports) {
+      if (r.state === 'ready' && now >= r.expiresAt) {
+        try { unlinkSync(r.file); } catch { /* gone */ }
+        reports.delete(book);
+      }
+      if (r.state === 'failed' && now - r.startedAt > 10 * 60000) reports.delete(book);
+    }
+  }
+
+  function reportInfo(book) {
+    expireReports();
+    const r = reports.get(book);
+    const now = Date.now();
+    const base = { ok: true, book, keepMinutes: app.media.keepMinutes, estimate: reportSeconds(evidence.bookBytes(book)), files: evidence.all(book).length };
+    if (!r) return { ...base, state: 'none' };
+    if (r.state === 'running') return { ...base, state: 'running', readyIn: Math.max(1, Math.round((r.startedAt + r.eta * 1000 - now) / 1000)) };
+    if (r.state === 'failed') return { ...base, state: 'failed', error: r.error };
+    return { ...base, state: 'ready', createdAt: new Date(r.createdAt).toISOString(), expiresIn: Math.max(0, Math.round((r.expiresAt - now) / 1000)), size: r.size };
+  }
+
+  function startReport(book, person) {
+    expireReports();
+    const had = reports.get(book);
+    if (had && had.state === 'running') return { ...reportInfo(book), code: 'RUNNING' };
+    if (had && had.state === 'ready') return { ...reportInfo(book), ok: false, code: 'WAIT', error: 'A Complete Report was made recently. Download it, or wait until it expires to make a new one.' };
+    const items = evidence.all(book).map((it) => ({ ...it, book }));
+    const eta = reportSeconds(items.reduce((n, it) => n + (it.size || 0), 0));
+    const job = { state: 'running', startedAt: Date.now(), eta };
+    reports.set(book, job);
+    reportChain = reportChain.then(async () => {
+      try {
+        const xlsx = await downloadCopy(book, person.name);
+        const name = `${safeName(book.replace(/\.xlsx$/i, ''), 'Workbook')} - Complete Report - ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`;
+        const file = join(reportsDir, name);
+        const size = await writeCompleteZip({ out: file, xlsx, xlsxName: book, items, store: evidence });
+        Object.assign(job, { state: 'ready', file, name, size, createdAt: Date.now(), expiresAt: Date.now() + app.media.keepMinutes * 60000 });
+      } catch (e) {
+        log(e);
+        Object.assign(job, { state: 'failed', error: `The Complete Report could not be made: ${e.message}` });
+      }
+    });
+    return { ...reportInfo(book), started: true };
+  }
+
+  const reportTimer = setInterval(() => expireReports(), 30000);
+  if (reportTimer.unref) reportTimer.unref();
+
+  // -------------------------------------------------------------------------
   // HTTP
   // -------------------------------------------------------------------------
 
@@ -927,11 +1079,13 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       // anyone else must send a teammate's invite key.
       const local = isLocalRequest(req, port);
       const okOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
-      if (extId) okOrigins.push(`chrome-extension://${extId}`);
+      for (const id of extIds) okOrigins.push(`chrome-extension://${id}`);
       let person = null;
-      if (local && (!origin || okOrigins.includes(origin))) person = owner();
+      // A teammate's key says who it is, on the laptop too (a teammate testing their link there);
+      // without one, the laptop itself is the owner.
+      const p = bearer(req) ? personForKey(app.team, bearer(req)) : null;
+      if (!p && local && (!origin || okOrigins.includes(origin))) person = owner();
       else {
-        const p = personForKey(app.team, bearer(req));
         if (p) {
           person = p === app.team.admin
             ? { role: 'owner', name: app.user, id: 'admin', admin: true, local: false } // the owner's admin link
@@ -947,7 +1101,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       // The page itself is public (it is the same code as on GitHub); everything it shows needs a key.
       if (req.method === 'GET' && STATIC[path]) {
         const file = join(UI, STATIC[path]);
-        return send(200, TYPES[extname(file)], readFileSync(file), { 'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'" });
+        return send(200, TYPES[extname(file)], readFileSync(file), { 'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://api.github.com; frame-ancestors 'none'" });
       }
       // A page from another site with no invite key gets nothing on the laptop (DNS rebinding,
       // cross-site forms). One that sends a key is told whether the key works.
@@ -986,6 +1140,33 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       if (req.method === 'GET' && path === '/api/issues') return json(200, await listIssues({ book: url.searchParams.get('book') || '' }, person));
       if (req.method === 'GET' && path === '/api/team') return isOwnerPerson(person) ? json(200, teamInfo()) : ownerOnly();
       if (req.method === 'GET' && path === '/api/publish') return isOwnerPerson(person) ? json(200, await publishStatus({ refresh: url.searchParams.get('refresh') === '1' })) : json(403, { ok: false, code: 'FORBIDDEN', error: 'Only the host publishes.' });
+      if (req.method === 'GET' && path === '/api/media') return json(200, { ok: true, ...mediaLimits(app.media), used: isOwnerPerson(person) ? evidence.usedBytes() : undefined });
+      if (req.method === 'GET' && path === '/api/current') {
+        return json(200, { ok: true, current: selections.get(whoKey(person)) || null, me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin }, consoleUrl: consoleUrl(person) });
+      }
+      if (req.method === 'GET' && path === '/api/ext/suite') {
+        return json(200, await extSuite({ book: url.searchParams.get('book') || '', tab: url.searchParams.get('tab') || '', cycle: url.searchParams.get('cycle') || '' }, person));
+      }
+      if (req.method === 'GET' && path === '/api/evidence/file') {
+        const book = url.searchParams.get('book') || '';
+        if (!mayOpen(person, book)) return json(403, { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' });
+        const it = lib.list().some((b) => b.name === book) ? evidence.get(book, url.searchParams.get('tab') || '', url.searchParams.get('cycle') || '', url.searchParams.get('key') || '') : null;
+        if (!it || !existsSync(evidence.pathOf(book, it))) return json(404, { ok: false, code: 'NO_EVIDENCE', error: 'That attachment is not there any more.' });
+        return send(200, it.ext === 'png' ? 'image/png' : it.ext === 'mp4' ? 'video/mp4' : 'video/webm', readFileSync(evidence.pathOf(book, it)), { 'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(it.name)}` });
+      }
+      if (req.method === 'GET' && path === '/api/complete-report') {
+        if (!isOwnerPerson(person)) return ownerOnly();
+        return json(200, reportInfo(url.searchParams.get('book') || ''));
+      }
+      if (req.method === 'GET' && path === '/api/complete-report/download') {
+        if (!isOwnerPerson(person)) return ownerOnly();
+        expireReports();
+        const r = reports.get(url.searchParams.get('book') || '');
+        if (!r || r.state !== 'ready' || !existsSync(r.file)) return json(404, { ok: false, code: 'NO_REPORT', error: 'That Complete Report has expired. Make a new one.' });
+        res.writeHead(200, { 'content-type': 'application/zip', 'content-length': statSync(r.file).size, 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(r.name)}`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...cors });
+        createReadStream(r.file).pipe(res);
+        return undefined;
+      }
       if (req.method === 'GET' && path === '/api/books/download') {
         const name = url.searchParams.get('name') || '';
         const file = lib.path(name);
@@ -1002,10 +1183,40 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const name = await serial(() => lib.importFile(url.searchParams.get('name'), buf, { overwrite: url.searchParams.get('overwrite') === '1' }));
         app.last = { book: name, tab: '', cycle: '' };
         saveApp();
-        return json(200, { ok: true, name, books: lib.list() });
+        // Every test suite needs Tested by and Tested on: mapped when there, added when not.
+        const cols = await callApi('api_requireTestedColumns', [], name, { ...person, remember: false });
+        return json(200, { ok: true, name, books: lib.list(), addedColumns: cols.ok ? cols.added : [] });
+      }
+
+      if (path === '/api/evidence') {
+        if (person.role === 'viewer') return json(403, { ok: false, code: 'FORBIDDEN', error: 'You can view this Test Run, not change it.' });
+        const buf = await readBody(req, MAX_FILE_BYTES);
+        const q = Object.fromEntries(['book', 'tab', 'cycle', 'key', 'forStatus'].map((k) => [k, url.searchParams.get(k) || '']));
+        return json(200, await addEvidence(q, buf, person));
       }
 
       const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)).toString('utf8') || '{}');
+      if (path === '/api/current') {
+        const v = { book: clip(body.book, 260), tab: clip(body.tab, 160), cycle: clip(body.cycle, 60), caseKey: clip(body.caseKey, 200), at: Date.now() };
+        selections.set(whoKey(person), v);
+        return json(200, { ok: true, current: v });
+      }
+      if (path === '/api/media') {
+        if (!isOwnerPerson(person)) return ownerOnly();
+        app.media = normalizeMedia({ ...app.media, ...body });
+        saveApp();
+        return json(200, { ok: true, ...mediaLimits(app.media), used: evidence.usedBytes() });
+      }
+      if (path === '/api/evidence/remove') {
+        if (person.role === 'viewer') return json(403, { ok: false, code: 'FORBIDDEN', error: 'You can view this Test Run, not change it.' });
+        return json(200, await removeEvidence(body, person));
+      }
+      if (path === '/api/complete-report') {
+        if (!isOwnerPerson(person)) return ownerOnly();
+        const name = String(body.book || '');
+        if (!lib.list().some((b) => b.name === name)) return json(200, { ok: false, code: 'NO_BOOK', error: `"${name}" is not in the sheets folder any more.` });
+        return json(200, startReport(name, person));
+      }
       if (path === '/api/app') {
         if (!isOwnerPerson(person)) return ownerOnly();
         app = normalizeApp({ ...app, user: body.user != null ? body.user : app.user });
@@ -1025,6 +1236,10 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (!isOwnerPerson(person)) return ownerOnly();
         const name = String(body.name || '');
         await serial(async () => lib.remove(name));
+        evidence.removeBook(name);
+        const rep = reports.get(name);
+        if (rep && rep.file) { try { unlinkSync(rep.file); } catch { /* gone */ } }
+        reports.delete(name);
         delete app.publish.books[name];
         if (app.last.book === name) app.last = { book: '', tab: '', cycle: '' };
         saveApp();
@@ -1038,6 +1253,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const fn = path.slice('/api/call/'.length);
         if (!/^api_\w+$/.test(fn)) return json(404, { ok: false, code: 'NO_FUNCTION', error: 'Unknown function.' });
         if (!mayCall(person, fn)) return json(403, { ok: false, code: 'FORBIDDEN', error: person.role === 'viewer' ? 'You can view this Test Run, not change it.' : 'Only the person running Test Run can do that.' });
+        if (fn === 'api_mark') return json(200, await markWithEvidence(body, person));
         return json(200, await callApi(fn, Array.isArray(body.args) ? body.args : [], body.book, person));
       }
       if (path === '/api/note-bug') {
@@ -1084,7 +1300,9 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       for (const t of pub.timers) if (t.unref) t.unref();
     },
   };
-  server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); });
+  server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); clearInterval(reportTimer); });
+  server.evidence = evidence;
+  server.reports = { info: reportInfo, start: startReport, expire: expireReports, wait: () => reportChain };
   return server;
 }
 
@@ -1092,9 +1310,11 @@ function readBody(req, max) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let over = false;
     req.on('data', (c) => {
+      if (over) return; // the rest is read and dropped, so the answer (413) still reaches the sender
       size += c.length;
-      if (size > max) { reject(err('TOO_BIG', 'That is too large.')); req.destroy(); return; }
+      if (size > max) { over = true; chunks.length = 0; reject(err('TOO_BIG', `That is too large (at most ${Math.round(max / (1024 * 1024))} MB).`)); return; }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks)));

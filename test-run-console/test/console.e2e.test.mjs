@@ -569,7 +569,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(await page.locator('main', { hasText: /retired/i }).count(), 0, 'no Retired cases section');
       assert.equal(await page.locator('.context', { hasText: /retired/i }).count(), 0, 'no retired count on Summary');
       const tools = page.locator('main .report-tools');
-      const [download] = await Promise.all([page.waitForEvent('download'), tools.getByRole('button', { name: 'Download' }).click()]);
+      await tools.getByRole('button', { name: 'Download' }).click(); // for the host, a menu
+      const [download] = await Promise.all([page.waitForEvent('download'), tools.locator('.dl-menu [data-action=download]', { hasText: 'Summary Report' }).click()]);
+      assert.equal(await tools.locator('.dl-menu').count(), 0, 'the menu closes');
       assert.equal(download.suggestedFilename(), BOOK);
       const ids = (await XBook.fromFile(await download.path(), 'dl')).getSheetByName(TAB).getDataRange().getDisplayValues().map((r) => r[0]);
       assert.equal(ids.includes('CMS/13'), false, 'the downloaded workbook leaves the retired case out');

@@ -133,7 +133,7 @@ Test Run only listens on your laptop, so a tunnel gives it an internet address. 
 
 ### 2. Invite people
 
-In **Setup → Sharing → Team → People**, add each person, choose their **Access** (it starts blank, on *Select access*) and the **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads and Bug Reporter; the others are refused. Change either one at any time in their row.
+In **Setup → Sharing → Team → People**, add each person, choose their **Access** (it starts blank, on *Select access*) and the **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused. Change either one at any time in their row.
 
 | Access | Who | What they can do |
 |---|---|---|
@@ -192,6 +192,45 @@ The host can publish the reports to the GitHub repository, so they can be read o
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
 
+## With Test Run Extension
+
+[Test Run Extension](../test-run-extension/) is a Chrome extension for marking cases while you test, with a screenshot or a screen recording as evidence. It works with this Test Run, on the laptop or through an access link.
+
+- **Signing in:** it only asks for the access link your test lead sent (the host can paste `http://127.0.0.1:5178`, or their admin link). Nothing else shows until it is signed in. A **View only** link shows *Only view access, click here for summary*, which opens the Summary.
+- **What you are testing:** **Choose Workbook/Suite** opens Test Run. The workbook, suite, cycle and case you have open there are what the extension shows, and it follows as you move. **‹ ›** and **Find a case by ID** move within the suite.
+- **Results:** Pass, Fail, NA, Skip (the suite's own result values), and a comment. Marking moves on to the next case.
+- **Evidence:**
+  - **Screenshot** takes the page you are on, scaled to fit 1920×1080, as a PNG. **Record** opens a small Recorder window: **Choose what to record** (Chrome asks which screen, window or tab, and whether to share audio), then **Stop and attach**.
+  - One file per case and cycle, kept on the laptop running Test Run, in `sheets/.testrun/evidence/<workbook>/<suite>/<cycle>/`, named like `CMS-07_v2.12_2026-11-20_14-32-05.png`. **It is never published.**
+  - The file name goes in the cycle's comment: `Evidence: CMS-07_v2.12_….png`.
+  - The first time, evidence is optional. Once a result has evidence, it can only change with new evidence: pick the new result, then take a screenshot or record; it replaces the old file and the result is saved. The same rule applies in Run.
+  - Anyone who can mark results can remove a case's file (✕ in the extension, **Remove** in Run). It is deleted from the laptop for good, its comment line goes, and the result can then change freely.
+- **Run** shows a case's evidence next to its result, with **View** and **Remove**.
+
+### Setup → Media (host)
+
+The limits everyone records with. Testers can't change them.
+
+| Setting | Choices |
+|---|---|
+| Video quality | **720p** (about 1 min 50 s per clip) or **1080p** (about 1 min, the default); always 30 fps |
+| Each file | up to 20 MB; a recording stops by itself just before |
+| Photos | up to 1920×1080, PNG |
+| Audio | as picked in Chrome's share window |
+| Keep a Complete Report | 15 min, 30 min or **1 hr** (the default) |
+
+The 20 MB cap keeps every upload well under the 100 MB a Cloudflare tunnel accepts. The panel also shows how much space the evidence takes.
+
+### Download for the host: Summary Report or Complete Report
+
+For the host (on the laptop or with the admin link), **Download** (top right and on Summary) is a menu:
+
+- **Summary Report:** the workbook (.xlsx), right away, as before.
+- **Complete Report:** a popup with **Generate New** and **Download Existing**. Generate New makes a zip in the background, one at a time, of the workbook and the screenshots and recordings of every suite, in `Evidence/<suite>/<cycle>/<case>/`. A message says how long it will take, and **Download is ready, click here** shows at the bottom right when it is done.
+  - The zip is kept for the time set in Media, then deleted from the laptop. Until then, Generate New is greyed out with **Wait for mm:ss**, and Download Existing says when it was created.
+
+Others keep the plain **Download** (the workbook).
+
 ## With Bug Reporter
 
 When Test Run is reachable, Bug Reporter's **Report Issue** form has a Test Run box, above the Claude options:
@@ -213,7 +252,9 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
-  - and only when you ask: new cycle columns (and removing a cycle's columns), added rows, the optional *Tested by*, *Tested on* and *Release* columns, and the *Test Run Summary* tab.
+  - and only when you ask: new cycle columns (and removing a cycle's columns), added rows, the optional *Release* column, and the *Test Run Summary* tab.
+  - *Tested by* and *Tested on* are required: **Import** adds them at the right of each test suite tab that has none (and uses them where they are already there). For a workbook added another way, Setup → Workbook has **Add Tested by + Tested on columns**.
+  - an `Evidence: <file>` line in a cycle's comment, while that case has evidence from Test Run Extension.
 - **Safe saving:** each change is written to a temporary file first, which then replaces the workbook. The first save each day also keeps a copy in `sheets/.testrun/backups/` (14 days).
 - **Excel:** if you edit the workbook in Excel and save, Test Run reloads it and never overwrites a cell that changed. While Excel has it open, a banner reminds you to close it there.
 - **Publishing:** **Download** the workbook and upload it to Google Drive. If you keep it there as an `.xlsx` file, *Manage versions → Upload new version* keeps the same link.
@@ -245,12 +286,13 @@ lib/
   share.mjs      the Cloudflare tunnel (quick or named), and the gist that keeps its address
   issues.mjs     GitHub issue titles, states and priorities, through gh
   publish.mjs    publishing to the repository: one commit through gh (Git Data API)
+  evidence.mjs   Test Run Extension's evidence (kept on the laptop), the media limits, the Complete Report zip
   prompts.js     prompts from the Claude drafting there was (off for now; kept for later)
   runtime.mjs    loads the logic for the server and the tests
 ui/            the console and summary pages (also what GitHub Pages serves)
 published/     what the host published (workbooks, sidecar files, reports); written by publishing, not by hand
 dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh (fake-gh.cjs: a small fake GitHub)
-test/          unit tests, HTTP and team tests, and browser tests (console; Bug Reporter + Test Run)
+test/          unit tests, HTTP and team tests, and browser tests (console; Test Run Extension; Bug Reporter + Test Run)
 ```
 
 ```bash
@@ -266,8 +308,10 @@ npm run prompts   # regenerate prompts/*.md after editing lib/prompts.js
 - **Who can call it:**
   - The server listens on 127.0.0.1 only.
   - API calls must carry an `X-Test-Run` header.
-  - Without a key, only the laptop itself is let in: the Host must be 127.0.0.1 or localhost, no proxy headers, and the call must come from the console's own page or the Bug Reporter extension (its ID comes from the manifest key). Other web pages are refused.
+  - Without a key, only the laptop itself is let in: the Host must be 127.0.0.1 or localhost, no proxy headers, and the call must come from the console's own page, Bug Reporter or Test Run Extension (their IDs come from their manifest keys). Other web pages are refused.
+  - A valid key always says who is calling, on the laptop too (a teammate trying their own link there acts as that teammate, not as the host).
   - Everyone else needs an invite key (`Authorization: Bearer …`), checked against stored hashes. Testers and viewers each get a fixed list of api_* functions (`lib/team.mjs`).
   - CORS is open to any page, because no cookies are used and the key is the only credential.
+- **Evidence:** only PNG photos and WebM or MP4 recordings are taken (checked by their first bytes, not their name), at most 20 MB each; View only links can't add or remove any. Files stay in `sheets/.testrun/evidence/` and are never published; a removed or replaced file is deleted. The Complete Report zip is for the host only and is deleted after the keep time.
 - **What it writes:** text that looks like a formula (`=…`, `+…`) is stored as text; imports must be real `.xlsx` files; workbook names cannot leave the sheets folder.
 - **Claude drafting** is switched off in the console for now. The prompt and reply checks in `lib/` stay, with their tests, for when it comes back.
