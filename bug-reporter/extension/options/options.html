@@ -183,26 +183,41 @@
       <!-- Test Run -->
       <section id="tab-testrun" class="tab hidden">
         <h2>Test Run</h2>
-        <p class="muted">
-          Test Run is the console for your manual test cases (<code>test-run-console</code> in this repo). When it is reachable, the Report Issue form shows
-          <b>Also add this to Test Run</b>, with the test suite and, optionally, the test case. Once the issue is filed, a picked test case is marked
-          failed with the issue linked to it; with no test case, the bug is added as a finding, ready to be written up as a test case.
-        </p>
-        <label class="row"><input type="checkbox" data-set="testRun.enabled" /> Offer to add filed bugs to Test Run</label>
-        <label class="field">
-          <span>Invite link <span class="muted">(only for a Test Run a teammate shares)</span></span>
-          <div class="row">
-            <input id="trInvite" type="text" class="grow" placeholder="Paste the invite link your test lead sent: https://…#join=…" />
-            <button id="trUseInvite">Use link</button>
-          </div>
-          <span id="trInviteState" class="muted small"></span>
-        </label>
-        <label class="field">
-          <span>Test Run address</span>
-          <input id="trUrl" type="url" placeholder="http://127.0.0.1:5178" />
-          <span class="muted small">Leave empty for Test Run on this computer. An invite link fills this in.</span>
-        </label>
-        <p><button id="trCheck">Check now</button> <span id="trState" class="muted small"></span></p>
+        <p class="muted">Add the bugs you file to Test Run, the console for your manual test cases.</p>
+
+        <!-- Whether Test Run answers, and as whom -->
+        <div id="trStatusCard" class="tr-status">
+          <span class="tr-dot" aria-hidden="true"></span>
+          <span id="trState" class="grow small">Not checked yet.</span>
+          <button id="trCheck">Check now</button>
+        </div>
+
+        <div class="card sub tr-card">
+          <label class="row"><input type="checkbox" data-set="testRun.enabled" /> <b>Offer to add filed bugs to Test Run</b></label>
+          <p class="muted small">
+            The Report Issue form then asks for the workbook, the test suite and, if you like, the test case. A test case you pick is marked failed,
+            with the issue linked; with none, the bug becomes a finding, to write up as a test case later.
+          </p>
+        </div>
+
+        <div class="card sub tr-card">
+          <h3>Connection</h3>
+          <label class="field">
+            <span>Invite link <span class="muted">(for a Test Run a teammate shares)</span></span>
+            <div class="row">
+              <input id="trInvite" type="text" class="grow" placeholder="Paste the invite link your test lead sent: https://…#join=…" />
+              <button id="trUseInvite">Use link</button>
+            </div>
+            <span id="trInviteState" class="muted small"></span>
+          </label>
+          <details class="tr-adv">
+            <summary class="small">Test Run address <span class="muted">(filled in by the invite link)</span></summary>
+            <label class="field">
+              <input id="trUrl" type="url" aria-label="Test Run address" placeholder="http://127.0.0.1:5178" />
+              <span class="muted small">Empty: Test Run on this computer.</span>
+            </label>
+          </details>
+        </div>
       </section>
 
       <!-- Usage -->

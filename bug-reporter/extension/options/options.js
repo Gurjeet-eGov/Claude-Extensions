@@ -18,6 +18,7 @@ function showTab(name) {
   history.replaceState(null, '', `#${name}`);
   if (name === 'usage') renderUsage();
   if (name === 'capture') renderSites();
+  if (name === 'testrun' && !$('trStatusCard').dataset.state) $('trCheck').click(); // the status, without a click
 }
 for (const b of document.querySelectorAll('.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
 
@@ -173,11 +174,13 @@ $('trUseInvite').addEventListener('click', async () => {
 });
 $('trCheck').addEventListener('click', async () => {
   $('trState').textContent = 'Checking…';
+  $('trStatusCard').dataset.state = 'checking';
   const s = await testRunStatus(settings, { timeoutMs: 4000 });
   if (s && s.base !== testRunBase(settings)) { settings.testRun.url = s.base; await saveSettings(settings); showTestRun(); }
   const base = s?.base || testRunBase(settings);
+  $('trStatusCard').dataset.state = settings.testRun?.enabled === false ? 'warn' : !s ? 'bad' : s.needsKey || s.me?.role === 'viewer' ? 'warn' : 'ok';
   $('trState').textContent = settings.testRun?.enabled === false
-    ? 'Switched off above.'
+    ? 'Switched off: tick Offer to add filed bugs to Test Run below.'
     : !s
       ? (isLocalBase(base) ? 'Not running. Start it with npm start in test-run-console.' : `Not reachable at ${base}. The laptop that runs it may be asleep or offline.`)
       : s.needsKey

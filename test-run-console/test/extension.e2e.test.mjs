@@ -60,9 +60,12 @@ test('Bug Reporter offers "Also add this to Test Run" on the form: the suite, an
 
     // Options → Test Run → Check now: the extension reaches the server.
     await opts.reload();
-    await opts.locator('.tabs button[data-tab=testrun]').click();
-    await opts.locator('#trCheck').click();
+    await opts.locator('.tabs button[data-tab=testrun]').click(); // opening the tab checks by itself
     await opts.locator('#trState', { hasText: 'Connected: CMS Sign Off (sample) · CMS 2.20.1 · cycle v2.12' }).waitFor({ timeout: 5000 });
+    assert.equal(await opts.locator('#trStatusCard').getAttribute('data-state'), 'ok', 'a green status');
+    await opts.locator('#trCheck').click();
+    await opts.locator('#trState', { hasText: 'Connected: CMS Sign Off (sample)' }).waitFor({ timeout: 5000 });
+    assert.equal(await opts.locator('#trUrl').isVisible(), false, 'the address is folded away under Connection');
     assert.equal(await opts.locator('#trUrl').inputValue(), `http://127.0.0.1:${port}`, 'an old port setting shows as the address');
 
     // An invite link pasted in Settings fills in the address and keeps the key.
@@ -77,8 +80,10 @@ test('Bug Reporter offers "Also add this to Test Run" on the form: the suite, an
     const rp = await context.newPage();
     await rp.goto(`chrome-extension://${EXT_ID}/report/report.html?id=r-e2e&dry=1`);
     await rp.locator('#trBox').waitFor({ state: 'visible', timeout: 5000 });
-    assert.deepEqual(await rp.locator('#trSuite option').allTextContents(), ['CMS Sign Off (sample) › CMS 2.20.1', 'CMS Sign Off (sample) › CMS 2.20.1 Features', 'CMS Sign Off (sample) › Dashboard KPI']);
-    assert.equal(await rp.locator('#trSuite option:checked').textContent(), 'CMS Sign Off (sample) › CMS 2.20.1', 'starts on the suite open in Test Run');
+    assert.equal(await rp.locator('#trBox .tr-mark').count(), 1, 'marked as Test Run');
+    assert.deepEqual(await rp.locator('#trBook option').allTextContents(), ['CMS Sign Off (sample)'], 'the workbook, then its suites');
+    assert.deepEqual(await rp.locator('#trSuite option').allTextContents(), ['CMS 2.20.1', 'CMS 2.20.1 Features', 'Dashboard KPI']);
+    assert.equal(await rp.locator('#trSuite option:checked').textContent(), 'CMS 2.20.1', 'starts on the suite open in Test Run');
     assert.equal(await rp.locator('#trNoteChk').isChecked(), false, 'starts unticked');
     assert.equal(await rp.locator('#trCase').isVisible(), false, 'the pickers show once ticked');
     await rp.locator('#trNoteChk').check();
@@ -126,7 +131,7 @@ test('Bug Reporter offers "Also add this to Test Run" on the form: the suite, an
 
     // Another suite: the case list follows it; with no case, the bug becomes a finding there.
     await rp.locator('#back').click();
-    await rp.locator('#trSuite').selectOption({ label: 'CMS Sign Off (sample) › CMS 2.20.1 Features' });
+    await rp.locator('#trSuite').selectOption({ label: 'CMS 2.20.1 Features' });
     assert.deepEqual(await rp.evaluate(() => chrome.storage.local.get('testRunSuite').then((x) => x.testRunSuite)), { book: BOOK, tab: 'CMS 2.20.1 Features' }, 'suite remembered');
     assert.equal(await rp.locator('#trCase').inputValue(), '', 'the case picked in the other suite is cleared');
     await rp.waitForFunction(() => /^CMS\/0/.test((document.querySelector('#trCases option') || {}).value || '') && !/^CMS\/01 · Verify if the CSR/.test(document.querySelector('#trCases option').value));

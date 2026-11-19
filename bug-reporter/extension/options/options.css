@@ -95,6 +95,28 @@ header {
   background: var(--bg-soft);
   margin: 4px 0 12px;
 }
+
+/* Test Run tab: a status line, then the option and the connection, each in its card */
+.tr-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.tr-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted, #888); }
+.tr-status[data-state="ok"] { border-color: color-mix(in srgb, #188038 40%, var(--border)); }
+.tr-status[data-state="ok"] .tr-dot { background: #188038; }
+.tr-status[data-state="warn"] .tr-dot { background: #b06000; }
+.tr-status[data-state="bad"] .tr-dot { background: #b3261e; }
+.tr-card { display: flex; flex-direction: column; gap: 6px; }
+.tr-card h3 { margin: 0 0 2px; }
+.tr-card p { margin: 0; }
+.tr-adv summary { cursor: pointer; padding: 2px 0; }
+.tr-adv .field { margin-top: 6px; }
 .end {
   justify-content: flex-end;
 }
