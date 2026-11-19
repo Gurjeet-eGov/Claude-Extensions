@@ -11,8 +11,8 @@
 // sheets/.testrun/. When shared (Setup → Team), teammates reach it through a
 // tunnel with their own invite key (lib/team.mjs); nothing else leaves the laptop.
 import http from 'node:http';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs';
+import { join, extname, basename } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -21,9 +21,11 @@ import { createRuntime, ROOT } from './lib/runtime.mjs';
 import { XSheetsApi, XBook } from './lib/xlsx-book.mjs';
 import { Library } from './lib/books.mjs';
 import { createMemoryStore } from './lib/store.mjs';
-import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, ROLES, MODES } from './lib/team.mjs';
+import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, newAdminKey, publicAdmin, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, ROLES, MODES } from './lib/team.mjs';
 import { startTunnel, publishAddress, findCommand } from './lib/share.mjs';
 import { githubIssue, isGithubIssue } from './lib/issues.mjs';
+import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slugFor, newPublishId } from './lib/publish.mjs';
+import { isWorkbookName } from './lib/books.mjs';
 import { randomBytes } from 'node:crypto';
 import { extensionIdFromKey } from '../bug-reporter/host/lib/extension-id.mjs';
 
@@ -53,12 +55,39 @@ function bugReporterExtensionId() {
 
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
 
+/** Publishing to GitHub: which workbooks, when, and what was last published or fetched. */
+function normalizePublish(p = {}) {
+  const books = {};
+  for (const [k, v] of Object.entries(p.books || {})) if (v === true && isWorkbookName(k)) books[k] = true;
+  const last = p.last || {};
+  return {
+    books,
+    nightly: p.nightly !== false,
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(p.time || '')) ? String(p.time) : '17:00',
+    onStop: p.onStop !== false,
+    acknowledged: p.acknowledged === true, // the owner confirmed once that publishing makes these public
+    knownId: clip(p.knownId, 32), // the publish this laptop made or fetched last
+    autoDate: clip(p.autoDate, 10),
+    last: { at: clip(last.at, 40), by: clip(last.by, 80), commit: clip(last.commit, 64), url: clip(last.url, 300), error: clip(last.error, 400), note: clip(last.note, 200) },
+  };
+}
+
 function normalizeApp(a = {}) {
   return {
     user: clip(a.user, 80),
     last: { book: clip(a.last && a.last.book, 260), tab: clip(a.last && a.last.tab, 160), cycle: clip(a.last && a.last.cycle, 60) },
     team: normalizeTeam(a.team),
+    publish: normalizePublish(a.publish),
   };
+}
+
+/** Where this app sits in its repository ("test-run-console/"), for the paths it publishes to. */
+function repoPrefix() {
+  try {
+    return execFileSync('git', ['-C', ROOT, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || 'test-run-console/';
+  } catch {
+    return 'test-run-console/';
+  }
 }
 
 function gitRemote() {
@@ -108,7 +137,7 @@ function tailscaleUrl(bin) {
   return tailscaleCache.url;
 }
 
-export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], log = () => {} } = {}) {
+export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], publishedDir = join(ROOT, 'published'), repo: repoOverride, publishPrefix, log = () => {} } = {}) {
   const INSTANCE = randomBytes(8).toString('hex'); // tells "this Test Run" apart when checking an address
   mkdirSync(sheetsDir, { recursive: true });
   const lib = new Library(sheetsDir);
@@ -142,6 +171,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
   /** The person at the laptop. */
   const owner = () => ({ role: 'owner', name: app.user, local: true });
+  /** The owner: at the laptop, or elsewhere with the admin link. */
+  const isOwnerPerson = (person) => !!person && person.role === 'owner';
 
   async function openBook(name, person) {
     const books = lib.list();
@@ -149,7 +180,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const want = has(name) ? name : has(app.last.book) ? app.last.book : books[0] && books[0].name;
     if (!want) throw err('NO_BOOK', 'There are no workbooks yet. Put an .xlsx file in the sheets folder, or use Import.');
     const entry = await lib.get(want);
-    if (person.local && app.last.book !== want) { // only the owner's own choice is remembered
+    if (isOwnerPerson(person) && person.remember !== false && app.last.book !== want) { // only the owner's own choice is remembered
       app.last = { book: want, tab: '', cycle: '' };
       saveApp();
     }
@@ -178,7 +209,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
           return { ok: false, code: 'SAVE_FAILED', error: `Could not save the workbook: ${e.message}` };
         }
       }
-      if (fn === 'api_loadTab' && out && out.ok && person.local) {
+      if (fn === 'api_loadTab' && out && out.ok && isOwnerPerson(person) && person.remember !== false) {
         app.last.tab = out.tab;
         app.last.cycle = out.cycleIdx >= 0 ? out.cycles[out.cycleIdx].label : '';
         saveApp();
@@ -196,11 +227,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     return {
       ok: true,
       settings: { user: app.user },
-      me: { name: person.name, role: person.role, local: !!person.local },
+      me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin },
       last: app.last,
-      books: lib.list().map((b) => (person.local ? b : { name: b.name, modified: b.modified, excelOpen: b.excelOpen })),
+      books: lib.list().map((b) => (isOwnerPerson(person) ? b : { name: b.name, modified: b.modified, excelOpen: b.excelOpen })),
       sheetsDir: person.local ? sheetsDir : '',
       team: { enabled: app.team.enabled },
+      // for the host: published data to start from (a fresh clone), or a newer publish by someone else
+      published: isOwnerPerson(person) && !lib.list().length && localPublished() ? (({ by, publishedAt, workbooks }) => ({ by, at: publishedAt, workbooks: workbooks.map((w) => w.name) }))(localPublished()) : null,
+      publishNotice: isOwnerPerson(person) && pub.remote && pub.remote.id && pub.remote.id !== app.publish.knownId ? { by: pub.remote.by, at: pub.remote.publishedAt } : null,
       version: VERSION,
     };
   }
@@ -232,6 +266,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       checks: { hosted: fresh(checks.hosted, t.hostedUrl), fixed: fresh(checks.fixed, t.fixedUrl) },
       suggest: { hostedUrl: pagesUrlFromRemote(gitRemote()), tailscaleUrl: tailscaleUrl(tailscaleBin), port: server.address() ? server.address().port : 5178 },
       canInvite: !!linkFor('k').link,
+      admin: publicAdmin(t),
       people: publicPeople(t),
       ...extra,
     };
@@ -403,8 +438,18 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       return teamInfo();
     }
     // A link is shown once, so make one only when it can find this laptop.
-    if ((path === '/api/team/people' || path === '/api/team/people/link' || body.rotate) && t.hostedUrl && !hostedLive()) await checkHosted();
+    if ((path === '/api/team/people' || path === '/api/team/people/link' || path === '/api/team/admin' || body.rotate) && t.hostedUrl && !hostedLive()) await checkHosted();
     const noLink = () => { const w = linkFor('k'); return w.link ? null : { ok: false, code: 'NO_ADDRESS', error: w.warning }; };
+    if (path === '/api/team/admin') {
+      // The owner's own link: everything the laptop can do, from another computer.
+      if (body.action === 'remove') { t.admin = null; saveApp(); return teamInfo(); }
+      if (noLink()) return noLink();
+      let key = t.admin && t.admin.key;
+      if (body.action === 'new' || !key) key = newAdminKey(t, stamp());
+      saveApp();
+      const inv = linkFor(key);
+      return teamInfo({ link: inv.link, linkWarning: inv.warning });
+    }
     if (path === '/api/team/people') {
       if (!clip(body.name, 80)) return { ok: false, code: 'BAD_INPUT', error: 'Give the person a name.' };
       if (noLink()) return noLink();
@@ -441,6 +486,286 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     return { ok: false, code: 'NOT_FOUND', error: 'Unknown endpoint.' };
   }
 
+
+  // -------------------------------------------------------------------------
+  // Publishing to GitHub (the host only): the workbooks, their sidecar files and
+  // the reports, in one commit (lib/publish.mjs). Anyone can read the reports on
+  // the GitHub Pages site, and someone else can carry on from a clone.
+  // -------------------------------------------------------------------------
+
+  const pub = { running: null, remote: null, remoteAt: 0, info: null, timers: [] };
+  const PUBLISHED = `${(publishPrefix || repoPrefix()).replace(/\/?$/, '/')}published`;
+  const reportsCache = join(sheetsDir, '.testrun', 'published'); // the last published reports, served at /reports/
+  const repoOf = () => repoOverride || repoFromRemote(gitRemote());
+  const p2 = (n) => String(n).padStart(2, '0');
+
+  async function repoContext() {
+    const r = repoOf();
+    if (!r) throw err('NO_REPO', 'This copy of Test Run is not in a GitHub repository, so there is nowhere to publish.');
+    const cmd = ghCommand(ghPath);
+    if (!pub.info) pub.info = await repoInfo({ cmd, ...r });
+    return { cmd, ...r, branch: pub.info.defaultBranch, info: pub.info };
+  }
+
+  /** What is published on GitHub now (its index), or null. Never throws. */
+  async function remoteIndex() {
+    try {
+      const c = await repoContext();
+      const buf = await readRemoteFile({ ...c, path: `${PUBLISHED}/reports/index.json` });
+      pub.remote = buf ? JSON.parse(buf.toString('utf8')) : null;
+      pub.remoteAt = Date.now();
+      return pub.remote;
+    } catch {
+      return null;
+    }
+  }
+
+  const readIndex = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
+  /** The published data in this checkout (a fresh clone has it), or null. */
+  const localPublished = () => { const i = readIndex(join(publishedDir, 'reports', 'index.json')); return i && Array.isArray(i.workbooks) ? i : null; };
+  const manualTabs = (boot) => boot.tabs.filter((t) => ((t.saved && t.saved.role) || t.detected.role) === 'manual');
+  const cleanReport = (r) => { const { excelOpen, reloaded, ok, ...rest } = r; return rest; };
+
+  /** Everything one publish holds ([{ path, content }]) and its index. */
+  async function buildPublish() {
+    const me = { ...owner(), remember: false };
+    const index = { app: 'test-run', id: newPublishId(), publishedAt: stamp(), by: app.user, workbooks: [] };
+    const files = [];
+    for (const b of lib.list()) {
+      if (!app.publish.books[b.name]) continue;
+      const boot = await callApi('api_bootstrap', [], b.name, me);
+      if (!boot.ok) continue;
+      const slug = slugFor(b.name);
+      const title = b.name.replace(/\.xlsx$/i, '');
+      const suites = [];
+      for (const t of manualTabs(boot)) {
+        const cur = await callApi('api_summary', [t.name, ''], b.name, me);
+        if (!cur.ok) continue;
+        const summaries = {};
+        for (const c of cur.cycles) {
+          const one = c.label === cur.cycle ? cur : await callApi('api_summary', [t.name, c.label], b.name, me);
+          if (one.ok) summaries[c.label] = cleanReport(one);
+        }
+        suites.push({ tab: t.name, current: cur.cycle, cycles: cur.cycles.map((c) => c.label), summaries });
+      }
+      const auto = await callApi('api_automationSummary', [], b.name, me);
+      const report = { app: 'test-run', book: b.name, title, slug, sheetName: boot.sheetName, publishedAt: index.publishedAt, by: index.by, suites, automation: auto.ok && auto.tabs.length ? cleanReport(auto) : null };
+      // the workbook and its sidecar as saved (every change is saved at once), for whoever carries on
+      files.push({ path: `${PUBLISHED}/workbooks/${b.name}`, content: readFileSync(lib.path(b.name)) });
+      const side = lib.storeFile(b.name);
+      if (existsSync(side)) files.push({ path: `${PUBLISHED}/workbooks/.testrun/${basename(side)}`, content: readFileSync(side) });
+      files.push({ path: `${PUBLISHED}/reports/${slug}.json`, content: Buffer.from(JSON.stringify(report)) });
+      files.push({ path: `${PUBLISHED}/reports/${slug}.xlsx`, content: await downloadCopy(b.name) }); // the Download on the reports page
+      index.workbooks.push({ name: b.name, title, slug, suites: suites.map((x) => x.tab), automation: !!report.automation, xlsx: true });
+    }
+    files.push({ path: `${PUBLISHED}/reports/index.json`, content: Buffer.from(JSON.stringify(index, null, 1)) });
+    return { files, index };
+  }
+
+  /**
+   * The workbook as people download it: a copy as saved, with a Known issues sheet added and rows
+   * grown to fit wrapped text (a Google Sheets download keeps every row one line high). The file
+   * itself is not changed.
+   */
+  function downloadCopy(name, user) {
+    return serial(async () => {
+      const entry = await lib.get(name);
+      const copy = await XBook.fromBuffer(await entry.book.toBuffer(), entry.name);
+      current = { book: copy, store: entry.store };
+      rt.state.user = user || app.user;
+      try { rt.call('api_writeIssuesSheet'); } finally { current = null; }
+      copy.fitRowHeights();
+      return Buffer.from(await copy.toBuffer());
+    });
+  }
+
+  /** Keep the reports of the last publish on the laptop too, served at /reports/ (for visitors without a key). */
+  function writeReportsCache(files) {
+    mkdirSync(reportsCache, { recursive: true });
+    const keep = new Set();
+    for (const f of files) {
+      if (!f.path.startsWith(`${PUBLISHED}/reports/`)) continue;
+      const name = basename(f.path);
+      keep.add(name);
+      writeFileSync(join(reportsCache, name), f.content);
+    }
+    for (const f of readdirSync(reportsCache)) if (/\.(json|xlsx)$/.test(f) && !keep.has(f)) unlinkSync(join(reportsCache, f));
+  }
+
+  async function publishNow({ confirmPublic = false, force = false, auto = false } = {}) {
+    if (pub.running) return pub.running;
+    pub.running = (async () => {
+      const P = app.publish;
+      if (!lib.list().some((b) => P.books[b.name])) return { ok: false, code: 'NOTHING', error: 'Tick at least one workbook to publish.' };
+      if (!P.acknowledged && !confirmPublic) {
+        return { ok: false, code: 'CONFIRM_PUBLIC', error: 'Publishing puts the ticked workbooks, their findings and their reports in the public repository: anyone can read them, and they stay in its history.' };
+      }
+      let c;
+      try { c = await repoContext(); } catch (e) { return { ok: false, code: e.code || 'NO_REPO', error: e.message }; }
+      const remote = await remoteIndex();
+      if (!force && remote && remote.id && remote.id !== P.knownId) {
+        const res = { ok: false, code: 'NEWER_REMOTE', remote: { by: remote.by, at: remote.publishedAt }, error: `${remote.by || 'Someone'} published at ${remote.publishedAt}, after this laptop last published or got the data. Publishing now replaces their copy.` };
+        if (auto) { P.last = { ...P.last, error: `Not published by itself: ${res.error}` }; saveApp(); }
+        return res;
+      }
+      const { files, index } = await buildPublish();
+      try {
+        const res = await publishFiles({
+          ...c,
+          prefix: PUBLISHED,
+          files,
+          message: `Test Run: publish ${index.workbooks.map((w) => w.title).join(', ')} (${index.publishedAt}, ${index.by})`,
+          minor: (path) => path.startsWith(`${PUBLISHED}/reports/`), // reports differ by their time stamp alone
+        });
+        writeReportsCache(files);
+        P.acknowledged = true;
+        if (res.commit) {
+          const n = res.changed.length;
+          P.knownId = index.id;
+          pub.remote = index; // what GitHub has now is what was just published (not news to this laptop)
+          pub.remoteAt = Date.now();
+          P.last = { at: index.publishedAt, by: index.by, commit: res.commit, url: res.url, error: '', note: `${n} file${n === 1 ? '' : 's'} updated${res.removed.length ? `, ${res.removed.length} removed` : ''}${auto ? ' (by itself)' : ''}.` };
+        } else {
+          if (remote && remote.id) P.knownId = remote.id; // the same data as what is there
+          P.last = { ...P.last, error: '', note: 'Nothing changed since the last publish.' };
+        }
+        saveApp();
+        return { ok: true, committed: !!res.commit, url: res.url || '', changed: res.changed, removed: res.removed, note: P.last.note };
+      } catch (e) {
+        P.last = { ...P.last, error: `Could not publish: ${e.message}` };
+        saveApp();
+        return { ok: false, code: 'PUBLISH_FAILED', error: P.last.error };
+      }
+    })().finally(() => { pub.running = null; });
+    return pub.running;
+  }
+
+  async function publishStatus({ refresh = false } = {}) {
+    const P = app.publish;
+    const r = repoOf();
+    let ctx = null;
+    let problem = '';
+    try { ctx = await repoContext(); } catch (e) { problem = e.message; }
+    if (ctx && (refresh || Date.now() - pub.remoteAt > 5 * 60000)) await remoteIndex();
+    const remote = pub.remote;
+    return {
+      ok: true,
+      repo: r ? `${r.owner}/${r.repo}` : '',
+      branch: ctx ? ctx.branch : '',
+      isPrivate: ctx ? ctx.info.private : null,
+      problem,
+      folder: PUBLISHED,
+      pagesUrl: pagesUrlFromRemote(gitRemote()),
+      books: lib.list().map((b) => ({ name: b.name, on: !!P.books[b.name] })),
+      settings: { nightly: P.nightly, time: P.time, onStop: P.onStop },
+      acknowledged: P.acknowledged,
+      last: P.last,
+      remote: remote ? { id: remote.id || '', by: remote.by || '', at: remote.publishedAt || '', workbooks: (remote.workbooks || []).map((w) => w.name) } : null,
+      newer: !!(remote && remote.id && remote.id !== P.knownId),
+    };
+  }
+
+  /** Put a workbook (and its sidecar) into the sheets folder, keeping a copy of what was there. */
+  async function installWorkbook(name, xlsx, side) {
+    const backups = join(sheetsDir, '.testrun', 'backups');
+    const when = stamp().replace(/[: ]/g, '-');
+    const file = lib.path(name);
+    const sideFile = lib.storeFile(name);
+    mkdirSync(backups, { recursive: true });
+    if (existsSync(file)) copyFileSync(file, join(backups, `${name.replace(/\.xlsx$/i, '')} before-get ${when}.xlsx`));
+    if (existsSync(sideFile)) copyFileSync(sideFile, join(backups, `${basename(sideFile, '.json')} before-get ${when}.json`));
+    await serial(async () => {
+      await lib.importFile(name, xlsx, { overwrite: true }); // checks it is a real workbook, writes it safely, forgets the open copy
+      if (side) { JSON.parse(side.toString('utf8')); writeFileSync(sideFile, side); }
+      lib.open.delete(name);
+    });
+  }
+
+  /** Get what is published on GitHub now into the sheets folder (when someone else published since). */
+  async function getLatest() {
+    let c;
+    try { c = await repoContext(); } catch (e) { return { ok: false, code: e.code || 'NO_REPO', error: e.message }; }
+    const remote = await remoteIndex();
+    if (!remote || !(remote.workbooks || []).length) return { ok: false, code: 'NOTHING', error: 'Nothing is published on GitHub yet.' };
+    const got = [];
+    for (const w of remote.workbooks) {
+      if (!isWorkbookName(w.name)) continue;
+      const xlsx = await readRemoteFile({ ...c, path: `${PUBLISHED}/workbooks/${w.name}` });
+      if (!xlsx) continue;
+      const side = await readRemoteFile({ ...c, path: `${PUBLISHED}/workbooks/.testrun/${w.name.replace(/\.xlsx$/i, '')}.json` });
+      await installWorkbook(w.name, xlsx, side);
+      app.publish.books[w.name] = true;
+      got.push(w.name);
+    }
+    const files = [{ path: `${PUBLISHED}/reports/index.json`, content: Buffer.from(JSON.stringify(remote)) }];
+    for (const w of remote.workbooks) {
+      for (const ext of ['json', 'xlsx']) {
+        const rep = await readRemoteFile({ ...c, path: `${PUBLISHED}/reports/${w.slug}.${ext}` });
+        if (rep) files.push({ path: `${PUBLISHED}/reports/${w.slug}.${ext}`, content: rep });
+      }
+    }
+    writeReportsCache(files);
+    app.publish.knownId = remote.id || '';
+    pub.remote = remote;
+    pub.remoteAt = Date.now();
+    saveApp();
+    return { ok: true, books: got, by: remote.by, at: remote.publishedAt };
+  }
+
+  /** A fresh clone: start from the data published in it. */
+  async function startFromLocal() {
+    const idx = localPublished();
+    if (!idx || !idx.workbooks.length) return { ok: false, code: 'NOTHING', error: 'There is no published data in this copy.' };
+    const got = [];
+    for (const w of idx.workbooks) {
+      if (!isWorkbookName(w.name)) continue;
+      const file = join(publishedDir, 'workbooks', w.name);
+      if (!existsSync(file)) continue;
+      const sideFile = join(publishedDir, 'workbooks', '.testrun', `${w.name.replace(/\.xlsx$/i, '')}.json`);
+      await installWorkbook(w.name, readFileSync(file), existsSync(sideFile) ? readFileSync(sideFile) : null);
+      app.publish.books[w.name] = true;
+      got.push(w.name);
+    }
+    if (!got.length) return { ok: false, code: 'NOTHING', error: 'The published workbooks are missing from this copy.' };
+    app.publish.knownId = idx.id || '';
+    app.last = { book: got[0], tab: '', cycle: '' };
+    saveApp();
+    return { ok: true, books: got, by: idx.by, at: idx.publishedAt };
+  }
+
+  async function publishPost(path, body) {
+    const P = app.publish;
+    if (path === '/api/publish/settings') {
+      if (body.books && typeof body.books === 'object') for (const [k, v] of Object.entries(body.books)) { if (!isWorkbookName(k)) continue; if (v) P.books[k] = true; else delete P.books[k]; }
+      if (body.nightly != null) P.nightly = body.nightly === true;
+      if (body.time != null) {
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.time))) return { ok: false, code: 'BAD_INPUT', error: 'Give the time as HH:MM, for example 17:00.' };
+        P.time = String(body.time);
+      }
+      if (body.onStop != null) P.onStop = body.onStop === true;
+      saveApp();
+      return publishStatus();
+    }
+    if (path === '/api/publish/now') {
+      const r = await publishNow({ confirmPublic: body.confirmPublic === true, force: body.force === true });
+      return { ...(await publishStatus()), result: r, ok: r.ok, code: r.code, error: r.error };
+    }
+    if (path === '/api/publish/get-latest') { const r = await getLatest(); return { ...(await publishStatus()), result: r, ok: r.ok, code: r.code, error: r.error }; }
+    if (path === '/api/publish/start-from-local') return startFromLocal();
+    return { ok: false, code: 'NOT_FOUND', error: 'Unknown endpoint.' };
+  }
+
+  /** Every minute: publish by itself once a day, after the set time (only once the host has published by hand). */
+  function publishTick(now = new Date()) {
+    const P = app.publish;
+    if (!P.acknowledged || !P.nightly) return null;
+    const day = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+    if (`${p2(now.getHours())}:${p2(now.getMinutes())}` < P.time || P.autoDate === day) return null;
+    P.autoDate = day;
+    saveApp();
+    return publishNow({ auto: true });
+  }
+
   /** Where someone opens the console: the hosted page if there is one, else the shared address. */
   function consoleUrl(person) {
     if (person.local) return `http://127.0.0.1:${server.address().port}/`;
@@ -451,7 +776,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   async function suites(person) {
     const out = [];
     for (const b of lib.list()) {
-      const boot = await callApi('api_bootstrap', [], b.name, { ...person, local: false });
+      const boot = await callApi('api_bootstrap', [], b.name, { ...person, remember: false });
       if (!boot.ok) continue;
       const tabs = boot.tabs.filter((x) => ((x.saved && x.saved.role) || x.detected.role) === 'manual').map((x) => x.name);
       if (tabs.length) out.push({ book: b.name, tabs });
@@ -461,7 +786,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
   /** The test cases of one suite, for Bug Reporter's "which test case?" choice (retired ones left out). */
   async function suiteCases(book, tab, person) {
-    const res = await callApi('api_loadTab', [tab], book, { ...person, local: false });
+    const res = await callApi('api_loadTab', [tab], book, { ...person, remember: false });
     if (!res.ok) return res;
     const ci = res.cycleIdx;
     return {
@@ -501,11 +826,11 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       // A bug against a test case: the case is marked failed, with the bug linked to it.
       if (!url) return { ok: false, code: 'BAD_INPUT', error: 'The bug link is needed to link it to a test case.' };
       if (body.tab && tab !== body.tab) return { ok: false, code: 'NO_TAB', error: `The tab "${body.tab}" is not a test suite in Test Run any more.` };
-      const res = await callApi('api_linkBug', [{ tab, key: caseKey, url, title, priority }], suite.book, { ...person, local: false });
+      const res = await callApi('api_linkBug', [{ tab, key: caseKey, url, title, priority }], suite.book, { ...person, remember: false });
       if (!res.ok) return res;
       return { ok: true, kind: 'case', key: res.id || res.key, book: res.book, tab, cycle: res.cycle, status: res.status, previous: res.previous };
     }
-    const res = await callApi('api_saveFinding', [{ text: title, issue: number ? `#${number}` : '', url, tab, area: clip(body.module, 160), details, source: 'bug-reporter', priority }], suite.book, { ...person, local: false });
+    const res = await callApi('api_saveFinding', [{ text: title, issue: number ? `#${number}` : '', url, tab, area: clip(body.module, 160), details, source: 'bug-reporter', priority }], suite.book, { ...person, remember: false });
     if (!res.ok) return res;
     return { ok: true, kind: 'finding', key: res.finding.key, book: res.book, tab };
   }
@@ -526,7 +851,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         } catch (err2) {
           meta = { key: e.key, fetchedAt: stamp(), fetchError: err2.message };
         }
-        await callApi('api_saveIssueMeta', [[meta]], book, { ...owner(), local: false });
+        await callApi('api_saveIssueMeta', [[meta]], book, { ...owner(), remember: false });
       }
     })().catch((e) => log(e)).finally(() => issueFetch.delete(book));
     issueFetch.set(book, run);
@@ -534,14 +859,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   }
 
   async function listIssues(body, person, { refresh = false } = {}) {
-    const res = await callApi('api_listIssues', [], body.book, { ...person, local: false });
+    const res = await callApi('api_listIssues', [], body.book, { ...person, remember: false });
     if (!res.ok) return res;
     const n = fetchIssues(res.book, res.issues, refresh);
     return { ...res, fetching: n !== 0 || issueFetch.has(res.book), github: !!findCommand('gh', ghPath) };
   }
 
   async function exportSummary(body, person) {
-    const s = await callApi('api_summary', [body.tab, body.cycle || ''], body.book, { ...person, local: false });
+    const s = await callApi('api_summary', [body.tab, body.cycle || ''], body.book, { ...person, remember: false });
     if (!s.ok) return s;
     const when = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
     const name = `${s.sheetName} - ${s.tab}${s.cycle ? ` - ${s.cycle}` : ''} - ${when}.html`.replace(/[\\/:*?"<>|\0]/g, '_');
@@ -589,7 +914,9 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       else {
         const p = personForKey(app.team, bearer(req));
         if (p) {
-          person = { role: p.role, name: p.name, id: p.id, local: false };
+          person = p === app.team.admin
+            ? { role: 'owner', name: app.user, id: 'admin', admin: true, local: false } // the owner's admin link
+            : { role: p.role, name: p.name, id: p.id, local: false };
           const now = stamp();
           if (p.lastSeen !== now) { p.lastSeen = now; saveApp(); }
         }
@@ -613,13 +940,20 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (!existsSync(file)) return send(404, 'text/plain', 'Not found');
         return send(200, 'text/html; charset=utf-8', readFileSync(file), { 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" });
       }
+      // The published reports are public (the same files the GitHub Pages site serves).
+      if (req.method === 'GET' && /^\/reports\/[\w.-]+\.(json|xlsx)$/.test(path)) {
+        const name = path.slice('/reports/'.length);
+        const file = [join(reportsCache, name), join(publishedDir, 'reports', name)].find((f) => existsSync(f));
+        if (!file) return send(404, 'application/json; charset=utf-8', JSON.stringify({ ok: false, code: 'NOT_PUBLISHED', error: 'Nothing is published yet.' }));
+        return send(200, name.endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/json; charset=utf-8', readFileSync(file));
+      }
       if (!path.startsWith('/api/')) return send(404, 'text/plain', 'Not found');
       // A custom header: plain cross-site forms and links cannot send it.
       if (req.headers['x-test-run'] !== '1') return json(403, { ok: false, code: 'FORBIDDEN', error: 'Missing X-Test-Run header.' });
 
       if (req.method === 'GET' && path === '/api/status') {
         if (!person) return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, auth: 'required' });
-        return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, book: app.last.book || null, tab: app.last.tab || null, cycle: app.last.cycle || null, user: app.user, me: { name: person.name, role: person.role, local: !!person.local }, consoleUrl: consoleUrl(person) });
+        return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, book: app.last.book || null, tab: app.last.tab || null, cycle: app.last.cycle || null, user: app.user, me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin }, consoleUrl: consoleUrl(person) });
       }
       if (!person) {
         return json(401, { ok: false, code: 'AUTH', error: app.team.enabled ? 'This Test Run is shared by invite. Open your invite link (or paste it in Bug Reporter settings).' : 'This Test Run is not shared. Only the laptop running it can open it.' });
@@ -630,29 +964,19 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       if (req.method === 'GET' && path === '/api/suites') return json(200, await suites(person));
       if (req.method === 'GET' && path === '/api/suite-cases') return json(200, await suiteCases(url.searchParams.get('book') || '', url.searchParams.get('tab') || '', person));
       if (req.method === 'GET' && path === '/api/issues') return json(200, await listIssues({ book: url.searchParams.get('book') || '' }, person));
-      if (req.method === 'GET' && path === '/api/team') return person.local ? json(200, teamInfo()) : ownerOnly();
+      if (req.method === 'GET' && path === '/api/team') return isOwnerPerson(person) ? json(200, teamInfo()) : ownerOnly();
+      if (req.method === 'GET' && path === '/api/publish') return isOwnerPerson(person) ? json(200, await publishStatus({ refresh: url.searchParams.get('refresh') === '1' })) : json(403, { ok: false, code: 'FORBIDDEN', error: 'Only the host publishes.' });
       if (req.method === 'GET' && path === '/api/books/download') {
         const name = url.searchParams.get('name') || '';
         const file = lib.path(name);
         if (!existsSync(file)) return send(404, 'text/plain', 'Not found');
-        // A copy of the workbook as saved, with a Known issues sheet added and rows grown to fit
-        // wrapped text (a Google Sheets download keeps every row one line high). The file itself
-        // is not changed.
-        const buf = await serial(async () => {
-          const entry = await lib.get(name);
-          const copy = await XBook.fromBuffer(await entry.book.toBuffer(), entry.name);
-          current = { book: copy, store: entry.store };
-          rt.state.user = person.name;
-          try { rt.call('api_writeIssuesSheet'); } finally { current = null; }
-          copy.fitRowHeights();
-          return Buffer.from(await copy.toBuffer());
-        });
+        const buf = await downloadCopy(name, person.name);
         return send(200, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf, { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}` });
       }
       if (req.method !== 'POST') return json(405, { ok: false, code: 'METHOD', error: 'Use POST.' });
 
       if (path === '/api/books/import') {
-        if (!person.local) return ownerOnly();
+        if (!isOwnerPerson(person)) return ownerOnly();
         const buf = await readBody(req, 40 * 1024 * 1024);
         const name = await serial(() => lib.importFile(url.searchParams.get('name'), buf, { overwrite: url.searchParams.get('overwrite') === '1' }));
         app.last = { book: name, tab: '', cycle: '' };
@@ -662,13 +986,29 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
       const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)).toString('utf8') || '{}');
       if (path === '/api/app') {
-        if (!person.local) return ownerOnly();
+        if (!isOwnerPerson(person)) return ownerOnly();
         app = normalizeApp({ ...app, user: body.user != null ? body.user : app.user });
         if (!app.user) app.user = defaultUser();
         saveApp();
         return json(200, appInfo(owner()));
       }
-      if (path.startsWith('/api/team')) return person.local ? json(200, await teamPost(path, body)) : ownerOnly();
+      if (path.startsWith('/api/team')) return isOwnerPerson(person) ? json(200, await teamPost(path, body)) : ownerOnly();
+      if (path.startsWith('/api/publish')) {
+        if (!isOwnerPerson(person)) return json(403, { ok: false, code: 'FORBIDDEN', error: 'Only the host publishes.' });
+        const r = await publishPost(path, body);
+        if (path === '/api/publish/start-from-local' && r.ok) return json(200, { ...r, app: appInfo(person) });
+        return json(200, r);
+      }
+      if (path === '/api/books/delete') {
+        // The host only; the page asks first (it cannot be undone from Test Run).
+        if (!isOwnerPerson(person)) return ownerOnly();
+        const name = String(body.name || '');
+        await serial(async () => lib.remove(name));
+        delete app.publish.books[name];
+        if (app.last.book === name) app.last = { book: '', tab: '', cycle: '' };
+        saveApp();
+        return json(200, { ...appInfo(person), deleted: name });
+      }
       if (path === '/api/books/select') {
         await serial(() => openBook(body.name, person));
         return json(200, appInfo(person));
@@ -709,7 +1049,21 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     wanted: () => app.team.enabled && app.team.sharing,
   };
   server.issues = { fetching: () => issueFetch.size };
-  server.on('close', () => stopSharing({ forget: false }));
+  server.publish = {
+    now: publishNow,
+    status: publishStatus,
+    tick: publishTick,
+    /** When Test Run stops: publish what changed (if the host asked for that). */
+    onStop: () => (app.publish.acknowledged && app.publish.onStop ? publishNow({ auto: true }) : Promise.resolve(null)),
+    /** The once-a-minute check for the daily publish, and a look at GitHub for newer publishes every 30 minutes. */
+    startSchedule: () => {
+      pub.timers.push(setInterval(() => publishTick(), 60000));
+      remoteIndex();
+      pub.timers.push(setInterval(() => remoteIndex(), 30 * 60000));
+      for (const t of pub.timers) if (t.unref) t.unref();
+    },
+  };
+  server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); });
   return server;
 }
 
@@ -742,11 +1096,22 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     writeFileSync(join(sheetsDir, 'CMS Sign Off (sample).xlsx'), await buildSampleXlsx());
   }
   const port = Number(arg('--port') || process.env.PORT || 5178);
-  const server = createServer({ sheetsDir, log: (e) => console.error(e && e.stack ? e.stack : e) });
-  const quit = () => { server.share.stop({ forget: false }); process.exit(0); }; // sharing starts again with Test Run
+  // TEST_RUN_GH: another gh to use (development: dev/fake-gh.cjs, so previews publish nothing for real)
+  const server = createServer({ sheetsDir, ghPath: process.env.TEST_RUN_GH || undefined, log: (e) => console.error(e && e.stack ? e.stack : e) });
+  let quitting = false;
+  const quit = async () => {
+    if (quitting) process.exit(0); // Ctrl+C again: stop now
+    quitting = true;
+    server.share.stop({ forget: false }); // sharing starts again with Test Run
+    const late = new Promise((r) => setTimeout(r, 15000));
+    const done = server.publish.onStop().then((r) => { if (r && r.ok && r.committed) console.log(`Published to GitHub: ${r.url}`); else if (r && !r.ok) console.log(r.error); });
+    await Promise.race([done, late]);
+    process.exit(0);
+  };
   process.on('SIGINT', quit);
   process.on('SIGTERM', quit);
   server.listenOn(port).then((url) => {
+    server.publish.startSchedule();
     console.log(`Test Run is running at ${url}`);
     console.log(`Workbooks folder: ${sheetsDir}${demo ? ' (demo copy, deleted by your OS later)' : ''}`);
     if (!server.library.list().length) console.log('No workbooks yet: put an .xlsx file in that folder, or use Import in the console.');

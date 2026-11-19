@@ -3,7 +3,7 @@
 // the gist that keeps its address findable. Fake cloudflared and gh.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import http from 'node:http';
@@ -115,7 +115,7 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     assert.equal(statSync(join(s.sheets, '.testrun', 'app.json')).mode & 0o777, 0o600, 'the file holding the keys is readable by the owner only');
 
     const me = await s.remote('GET', '/api/app', { key: tester.key });
-    assert.deepEqual(me.me, { name: 'Priya (QA)', role: 'tester', local: false });
+    assert.deepEqual(me.me, { name: 'Priya (QA)', role: 'tester', local: false, admin: false });
     assert.equal(me.sheetsDir, '', 'no laptop paths for remote people');
     const d = await s.call('api_loadTab', [TAB, ''], tester);
     const c = d.cases.find((x) => x.id === 'CMS/04');
@@ -157,6 +157,50 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     assert.equal((await s.remote('GET', '/api/app', { key: keyOf(rot.link) })).status, 401);
     await s.local('POST', '/api/team', { enabled: false });
     assert.equal((await s.remote('GET', '/api/app', { key: viewer.key })).status, 401, 'turning sharing off shuts everyone out');
+  } finally { s.close(); }
+});
+
+test('the admin link: the owner from another computer can do everything the laptop can', async () => {
+  const s = await start();
+  try {
+    await s.local('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: s.fixed });
+    const made = await s.local('POST', '/api/team/admin', { action: 'new' });
+    assert.equal(made.ok, true, made.error);
+    assert.equal(made.admin.exists, true);
+    assert.equal(JSON.stringify(made.admin).includes('key'), false, 'the key is not listed');
+    const admin = { key: keyOf(made.link) };
+    const me = await s.remote('GET', '/api/app', { key: admin.key });
+    const ownerName = (await s.local('GET', '/api/app')).me.name;
+    assert.deepEqual(me.me, { name: ownerName, role: 'owner', local: false, admin: true }, 'it is the owner, under their own name');
+    assert.equal(me.sheetsDir, '', 'laptop paths stay on the laptop');
+    assert.equal((await s.remote('GET', '/api/team', { key: admin.key })).ok, true, 'team settings');
+    assert.equal((await s.call('api_saveSetup', [{ tabs: (await s.call('api_bootstrap', [], admin)).tabs.map((t) => ({ name: t.name, ...t.detected })) }], admin)).ok, true, 'Setup');
+    const imp = await new Promise((resolve, reject) => {
+      buildSampleXlsx().then((bytes) => {
+        const r = http.request({ host: '127.0.0.1', port: new URL(s.base).port, path: `/api/books/import?name=${encodeURIComponent('Remote.xlsx')}`, method: 'POST', headers: { 'X-Test-Run': '1', Host: TUNNEL_HOST, 'X-Forwarded-For': '203.0.113.7', Authorization: `Bearer ${admin.key}`, 'content-length': bytes.length } }, (res) => {
+          let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve(JSON.parse(b)));
+        });
+        r.on('error', reject);
+        r.end(bytes);
+      });
+    });
+    assert.equal(imp.ok, true, imp.error);
+    assert.equal((await s.remote('POST', '/api/app', { key: admin.key, body: { user: 'Host' } })).ok, true, 'your name');
+    const del = await s.remote('POST', '/api/books/delete', { key: admin.key, body: { name: 'Remote.xlsx' } });
+    assert.equal(del.ok, true, del.error);
+    assert.equal(existsSync(join(s.sheets, 'Remote.xlsx')), false, 'and delete a workbook');
+    // Copy gives the same link; a new one replaces it; removing it shuts it out
+    assert.equal((await s.local('POST', '/api/team/admin', { action: 'copy' })).link, made.link);
+    const fresh = await s.local('POST', '/api/team/admin', { action: 'new' });
+    assert.equal((await s.remote('GET', '/api/app', { key: admin.key })).status, 401, 'the old admin link stops working');
+    assert.equal((await s.remote('GET', '/api/app', { key: keyOf(fresh.link) })).me.role, 'owner');
+    await s.local('POST', '/api/team/admin', { action: 'remove' });
+    assert.equal((await s.remote('GET', '/api/app', { key: keyOf(fresh.link) })).status, 401);
+    // A tester still cannot touch the team
+    const t = await s.local('POST', '/api/team/people', { name: 'T', role: 'tester' });
+    assert.equal((await s.remote('POST', '/api/team/admin', { key: keyOf(t.link), body: { action: 'new' } })).status, 403);
+    assert.equal((await s.remote('POST', '/api/books/delete', { key: keyOf(t.link), body: { name: BOOK } })).status, 403, 'nor delete a workbook');
+    assert.equal(existsSync(join(s.sheets, BOOK)), true);
   } finally { s.close(); }
 });
 

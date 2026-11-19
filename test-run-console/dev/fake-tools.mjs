@@ -1,8 +1,13 @@
 // Stand-ins for `cloudflared` and `gh`, for the tests: small Node scripts that
 // behave like the real commands as far as Test Run uses them, and log what
 // they were asked to do.
-import { writeFileSync, chmodSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const FAKE_GH = fileURLToPath(new URL('./fake-gh.cjs', import.meta.url));
+const fakeGh = createRequire(import.meta.url)('./fake-gh.cjs');
 
 function script(dir, name, body) {
   const bin = join(dir, name);
@@ -41,31 +46,15 @@ process.on('SIGTERM', () => process.exit(0));`);
 }
 
 /**
- * gh whose `gh api` creates or updates a gist (prints {"id": ...}) and answers `gh api graphql`
- * for the issues given ({ url: { title, state, labels, priority } }); logs the method, path and body.
+ * gh whose `gh api` answers like GitHub for what Test Run asks (dev/fake-gh.cjs): gists,
+ * GraphQL issue lookups ({ url: { title, state, labels, priority } }), and a repository kept
+ * in a JSON file (files: its first commit; raceOnce: someone else pushes just before the first
+ * publish). Logs every call. readRepo() gives the files on the default branch now.
  */
-export function makeFakeGh(dir, { id = '0123456789abcdef0123456789abcdef', fail = false, issues = {}, log = join(dir, 'gh.log') } = {}) {
-  const bin = script(dir, 'gh', `
-const args = process.argv.slice(2);
-const fs = require('fs');
-if (args[0] === 'api' && args[1] === 'graphql') {
-  const url = (args.find((a) => a.startsWith('url=')) || '').slice(4);
-  const withProject = args.some((a) => a.includes('projectItems'));
-  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ graphql: url, withProject }) + '\\n');
-  const it = ${JSON.stringify(issues)}[url];
-  if (${fail ? 'true' : 'false'}) { process.stderr.write('HTTP 401: Bad credentials\\n'); process.exit(1); }
-  if (!it) { process.stdout.write(JSON.stringify({ data: { resource: null }, errors: [{ message: 'Could not resolve to a Resource with the URL.' }] })); process.exit(1); }
-  const resource = { __typename: 'Issue', title: it.title, state: it.state || 'OPEN', labels: { nodes: (it.labels || []).map((name) => ({ name })) } };
-  if (withProject) resource.projectItems = { nodes: it.priority ? [{ fieldValueByName: { name: it.priority } }] : [] };
-  process.stdout.write(JSON.stringify({ data: { resource } }));
-  process.exit(0);
-}
-let input = '';
-process.stdin.on('data', (c) => { input += c; });
-process.stdin.on('end', () => {
-  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, body: input ? JSON.parse(input) : null }) + '\\n');
-  if (${fail ? 'true' : 'false'}) { process.stderr.write('HTTP 401: Bad credentials\\n'); process.exit(1); }
-  process.stdout.write(JSON.stringify({ id: ${JSON.stringify(id)} }));
-});`);
-  return { bin, id, log };
+export function makeFakeGh(dir, { id = '0123456789abcdef0123456789abcdef', fail = false, issues = {}, files, raceOnce = false, log = join(dir, 'gh.log') } = {}) {
+  const repo = join(dir, 'fake-repo.json');
+  if (!existsSync(repo)) writeFileSync(repo, JSON.stringify(fakeGh.initialState(files)));
+  const cfg = { id, fail, issues, log, repo, raceOnce };
+  const bin = script(dir, 'gh', `require(${JSON.stringify(FAKE_GH)})(${JSON.stringify(cfg)});`);
+  return { bin, id, log, repo, readRepo: () => fakeGh.readFiles(repo) };
 }

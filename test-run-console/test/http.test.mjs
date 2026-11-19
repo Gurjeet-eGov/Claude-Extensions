@@ -215,6 +215,45 @@ test('import, switch and download workbooks', async () => {
   } finally { s.close(); }
 });
 
+test('delete a workbook: its file and Test Run data go, daily backups stay', async () => {
+  const s = await start();
+  try {
+    await s.call('api_saveFinding', { text: 'Something odd' });
+    const d = await s.call('api_loadTab', TAB, '');
+    const c = d.cases.find((x) => x.id === 'CMS/04');
+    assert.equal((await s.call('api_mark', { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: '', status: 'Pass' })).ok, true);
+    const side = join(s.sheets, '.testrun', BOOK.replace(/\.xlsx$/, '.json'));
+    assert.equal(existsSync(side), true, 'the workbook has Test Run data beside it');
+    const r = await s.req('POST', '/api/books/delete', { name: BOOK });
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.deleted, r.books, r.last.book], [BOOK, [], '']);
+    assert.equal(existsSync(join(s.sheets, BOOK)), false, 'the file is gone');
+    assert.equal(existsSync(side), false, 'so is its setup, findings and issue list');
+    assert.ok(readdirSync(join(s.sheets, '.testrun', 'backups')).some((f) => f.startsWith('CMS Sign Off (sample) ')), 'the daily backup stays');
+    assert.equal((await s.req('POST', '/api/books/delete', { name: BOOK })).code, 'NO_BOOK');
+    assert.equal((await s.req('POST', '/api/books/delete', { name: '../x.xlsx' })).ok, false, 'no path tricks');
+  } finally { s.close(); }
+});
+
+test('Add issue: linking a case without marking it failed leaves its result alone', async () => {
+  const s = await start();
+  try {
+    const url = 'https://github.com/example/repo/issues/91';
+    const r = await s.call('api_linkBug', { tab: TAB, key: 'CMS/12', url, title: 'Logged on GitHub', priority: 'P2', markFailed: false, source: 'manual' });
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.status, r.previous], ['', '']);
+    const row = (await s.disk()).find((x) => x[0] === 'CMS/12');
+    assert.deepEqual(row.slice(7), ['', '', '#91'], 'no status, no comment line; only the Linked issue');
+    const issue = (await s.call('api_listIssues')).issues.find((i) => i.url === url);
+    assert.deepEqual([issue.title, issue.priority, issue.source], ['Logged on GitHub', 'P2', 'manual']);
+    // Without a case: a finding, whose issue keeps no made-up title (GitHub fills it in)
+    const f = await s.call('api_saveFinding', { text: 'Issue example/repo/issues/92', issueTitle: '', url: 'https://github.com/example/repo/issues/92', tab: TAB, source: 'manual' });
+    assert.equal(f.ok, true, f.error);
+    const i2 = (await s.call('api_listIssues')).issues.find((i) => i.url.endsWith('/92'));
+    assert.deepEqual([i2.title, i2.findings.map((x) => x.key)], ['', [f.finding.key]]);
+  } finally { s.close(); }
+});
+
 test('export summary writes one standalone HTML file', async () => {
   const s = await start();
   try {
@@ -236,7 +275,7 @@ test('settings: your name is kept per computer and fills Tested by', async () =>
   try {
     const r = await s.req('POST', '/api/app', { user: 'Tester One' });
     assert.equal(r.settings.user, 'Tester One');
-    assert.deepEqual(r.me, { name: 'Tester One', role: 'owner', local: true });
+    assert.deepEqual(r.me, { name: 'Tester One', role: 'owner', local: true, admin: false });
     const d = await s.call('api_loadTab', TAB, '');
     const c = d.cases.find((x) => x.id === 'CMS/09');
     await s.call('api_addColumns', TAB, ['testedBy']);

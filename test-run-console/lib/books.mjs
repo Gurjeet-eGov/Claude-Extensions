@@ -106,6 +106,17 @@ export class Library {
     return clean;
   }
 
+  /** Remove a workbook and its Test Run data (the sidecar). Daily backups in .testrun/backups stay. */
+  remove(name) {
+    const file = this.path(name);
+    if (!existsSync(file)) throw Object.assign(new Error(`"${name}" is not in the sheets folder any more.`), { code: 'NO_BOOK' });
+    if (this.excelOpen(name)) throw Object.assign(new Error(`"${name}" is open in Excel. Close it there first.`), { code: 'EXCEL_OPEN' });
+    unlinkSync(file);
+    const side = this.storeFile(name);
+    if (existsSync(side)) unlinkSync(side);
+    this.open.delete(name);
+  }
+
   path(name) {
     if (!isWorkbookName(name)) throw Object.assign(new Error(`Not a workbook name: ${name}`), { code: 'BAD_INPUT' });
     return join(this.dir, name);

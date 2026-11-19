@@ -1,7 +1,9 @@
 # Publishes the Test Run console's page (test-run-console/ui) on GitHub Pages,
-# at https://<owner>.github.io/<repo>/test-run/. The page holds no data: it
-# talks to the Test Run server on the laptop of whoever sent the invite link,
-# and finds that server's current address in the gist the server keeps.
+# at https://<owner>.github.io/<repo>/test-run/, with the reports the host
+# published from Test Run (test-run-console/published/reports), which anyone
+# can read there, even when no Test Run is running. With an access link, the
+# page talks to the Test Run server on the host's laptop, and finds its
+# current address in the gist the server keeps.
 #
 # One-time setup in your fork: Settings → Pages → Source: "GitHub Actions".
 name: Test Run page
@@ -11,6 +13,7 @@ on:
     branches: [master]
     paths:
       - 'test-run-console/ui/**'
+      - 'test-run-console/published/reports/**'
       - '.github/workflows/test-run-pages.yml'
   workflow_dispatch:
 
@@ -35,6 +38,7 @@ jobs:
         run: |
           mkdir -p _site/test-run
           cp test-run-console/ui/index.html test-run-console/ui/summary.html test-run-console/ui/*.js test-run-console/ui/*.css _site/test-run/
+          if [ -d test-run-console/published/reports ]; then cp -R test-run-console/published/reports _site/test-run/reports; fi
           touch _site/.nojekyll
           printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=test-run/"><a href="test-run/">Test Run</a>\n' > _site/index.html
       - uses: actions/configure-pages@v5
