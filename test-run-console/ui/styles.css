@@ -379,3 +379,83 @@ details.how ol { margin: 4px 0 0 18px; padding: 0; }
 details.how li { margin: 2px 0; }
 #team h4 { margin: 6px 0 0; font-size: 13px; }
 #issue { display: block; width: 100%; margin-top: 4px; }
+
+/* Top bar: which workbook (anyone can switch), Import, Download */
+.book-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); min-width: 0; }
+.book-switch label { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.book-switch .n { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; background: var(--surface-2); color: var(--text); font-weight: 700; }
+.book-switch select { border: none; background: transparent; font-weight: 600; min-width: 180px; max-width: min(420px, 46vw); padding-left: 2px; }
+.tb-btn { border: 1px solid var(--accent); color: var(--accent); background: var(--surface); font-weight: 600; white-space: nowrap; }
+.tb-btn:hover { background: var(--accent-weak); }
+.tb-btn span { font-size: 14px; line-height: 1; }
+
+/* Under the screen tabs while testing: test case tab (module), cycle, progress; stays in view */
+.context { margin: 0 -18px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--bg); display: flex; flex-direction: column; gap: 8px; }
+.context-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ctx-label { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; }
+.ctx-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; min-width: 0; padding: 1px 1px 3px; }
+.ctx-tab { white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; padding: 5px 14px; font-weight: 550; max-width: 280px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.ctx-tab:hover { border-color: var(--accent); color: var(--accent); background: var(--surface); }
+.ctx-tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 650; }
+.cycle-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent-weak); flex: none; }
+.cycle-switch label { font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.cycle-switch select { border: none; background: transparent; font-weight: 650; color: var(--text); }
+@media (max-width: 760px) {
+  .context-row { flex-wrap: wrap; }
+  .ctx-tabs { order: 3; width: 100%; }
+  .book-switch select { min-width: 120px; }
+}
+@media print { .context-row, .book-switch, .tb-btn { display: none !important; } }
+
+/* One focus ring on the boxed pickers (the box), not a second one on the select inside */
+.book-switch select:focus, .book-switch select:focus-visible, .cycle-switch select:focus, .cycle-switch select:focus-visible { outline: none; box-shadow: none; }
+.book-switch:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+.cycle-switch:focus-within { box-shadow: 0 0 0 3px var(--accent-weak); }
+/* Test type, as a tag on each case */
+.pill.type { background: var(--surface-2); color: var(--muted); border-color: transparent; font-weight: 550; }
+
+/* Run: add a test case at the end of a section */
+.add-here { padding: 6px 14px 10px; border-top: 1px dashed var(--border); }
+.add-here > button { color: var(--accent); font-weight: 600; }
+.add-here.open { padding: 12px 14px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+/* Findings: similar test cases on a finding */
+.similar { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; }
+.similar-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.similar-row .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.finding.done { opacity: .85; }
+
+/* Setup: Workbook and Sharing, in the left rail */
+.subtab { justify-content: flex-start; border: 1px solid transparent; background: none; padding: 7px 10px; font-weight: 600; color: var(--muted); border-radius: 6px; width: 100%; }
+.subtab:hover { background: var(--surface-2); color: var(--text); }
+.subtab[aria-selected=true] { color: var(--accent); background: var(--accent-weak); }
+.rail-note { line-height: 1.5; }
+details.columns { border-top: 1px solid var(--border); padding-top: 10px; }
+details.columns > summary { cursor: pointer; }
+
+/* Screens with a filter column on the left (Run, Known issues, Findings, Setup) */
+main.wide { max-width: 1720px; }
+.with-rail { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
+.rail { position: sticky; top: calc(var(--header-h, 140px) + 14px); max-height: calc(100vh - var(--header-h, 140px) - 28px); overflow: auto; display: flex; flex-direction: column; gap: 16px; padding: 2px 2px 8px; }
+.rail-group { display: flex; flex-direction: column; gap: 6px; }
+.rail-title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+.rail .chip { justify-content: space-between; width: 100%; }
+.rail input[type=search], .rail select { width: 100%; }
+.content-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 10px; min-height: 30px; }
+.content-bar:empty { display: none; }
+@media (max-width: 900px) {
+  .with-rail { grid-template-columns: 1fr; gap: 12px; }
+  .rail { position: static; max-height: none; flex-direction: row; flex-wrap: wrap; gap: 10px 16px; }
+  .rail-group { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .rail .chip { width: auto; }
+}
+.ctx-sep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 2px 4px; flex: none; }
+.ctx-tab.auto { border-style: dashed; }
+.ctx-tab.auto.on { border-style: solid; }
+
+/* The page keeps room for the scrollbar, so short and long pages line up the same */
+html { scrollbar-gutter: stable; }
+/* A form's test suite dropdown */
+.suite-pick { display: flex; align-items: center; gap: 8px; }
+.suite-pick label { font-weight: 600; white-space: nowrap; }
+/* The first block on a screen with a left column starts level with the column (no extra gap above it) */
+.rail-content > :first-child { margin-top: 0; }

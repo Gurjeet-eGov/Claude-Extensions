@@ -172,21 +172,23 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(await scen.inputValue(), 'Citizen cannot reopen a complaint resolved 4 days ago', 'starts from the finding');
       await scen.fill('Verify that citizen can reopen a complaint resolved 4 days ago');
       await page.getByRole('button', { name: 'Add to workbook' }).click();
-      await page.locator('.toast', { hasText: 'F-001 added to the workbook as CMS/19' }).waitFor();
+      await page.locator('.toast', { hasText: `F-001 added to ${TAB} as CMS/19` }).waitFor();
       const r = row(await disk(), 'CMS/19');
       assert.equal(r[1], 'Verify that citizen can reopen a complaint resolved 4 days ago');
       assert.equal(r[6], '• Reopen offered', 'the expected result Bug Reporter noted');
       assert.equal(r[7], 'Fail', 'a finding with a bug number starts as Fail');
       const hdr = (await disk())[0];
       assert.equal(r[hdr.indexOf('Linked issue')], '#77', 'its bug, in a Linked issue column added for it');
-      await page.getByText('Done: 1 written up or already covered').waitFor();
+      await page.locator('[data-action=findings-show][data-show=done]', { hasText: 'Done 1' }).waitFor();
     });
 
     await t.test('start a new cycle from Setup', async () => {
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('#newCycle0').fill('v2.20.1');
       await page.locator('[data-action=start-cycle][data-index="0"]').click();
-      await page.locator('#cyclePick option:checked', { hasText: 'v2.20.1' }).waitFor({ state: 'attached' });
+      await page.locator('.toast', { hasText: 'v2.20.1' }).first().waitFor();
+      await page.locator('.nav [data-view=run]').click();
+      await page.locator('.cycle-switch #cyclePick option:checked', { hasText: 'v2.20.1' }).waitFor({ state: 'attached' });
       assert.deepEqual((await disk())[0].slice(7, 11), ['Test Status / v2.12', 'Comment / v2.12', 'Test Status / v2.20.1', 'Comment / v2.20.1']);
     });
 
@@ -212,7 +214,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         const inv = await api('/api/team/people', { name: 'Priya (QA)', role: 'tester' });
         assert.match(inv.link, new RegExp(`^${hosted}#join=[\\w-]+&server=`));
         await mate.goto(inv.link);
-        await mate.locator('.who', { hasText: 'Priya (QA) · tester' }).waitFor();
+        await mate.locator('.who', { hasText: 'Priya (QA) · updates status' }).waitFor();
         assert.equal(new URL(mate.url()).hash, '', 'the key leaves the address bar');
         assert.equal(await mate.locator('.nav [data-view=setup]').count(), 0, 'Setup is the owner\'s');
         await mate.locator('[data-action=show][data-show=all]').click();
@@ -230,6 +232,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         await page.reload();
         await page.locator('.nav [data-view=setup]').click();
+        await page.locator('[data-action=setup-part][data-part=sharing]').click();
         const priyaRow = page.locator('#team tr', { hasText: 'Priya (QA)' });
         assert.equal(await priyaRow.locator('select option:checked').textContent(), 'Update status');
         await priyaRow.getByRole('button', { name: 'Copy link' }).click();
@@ -306,6 +309,77 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=show][data-show=todo]').click();
     });
 
+    await t.test('Run shows the test type on each case, and adds a test case at the end of a section', async () => {
+      await page.locator('.nav [data-view=run]').click();
+      await page.locator('[data-action=show][data-show=all]').click();
+      assert.equal(await page.locator('.case[data-key="CMS/01"] .pill.type').textContent(), 'UI');
+      const section = page.locator('section.path', { hasText: 'CMS/01' });
+      await section.getByRole('button', { name: '+ Add a test case here' }).click();
+      const editor = section.locator('.add-here.open');
+      assert.equal(await editor.locator('input[data-bind$=":subFeature"]').inputValue(), 'CSR Employee', 'starts in this section');
+      await editor.locator('textarea[data-bind$=":scenario"]').fill('Verify if the CSR sees a hint under the mobile number field');
+      await editor.getByRole('button', { name: 'Add to workbook' }).click();
+      await page.locator('.toast', { hasText: 'Added to the workbook as CMS/' }).waitFor();
+      await eventually(async () => (await disk()).some((r) => r[1] === 'Verify if the CSR sees a hint under the mobile number field' && r[2] === 'CSR Employee'));
+      await page.locator('.case', { hasText: 'hint under the mobile number' }).waitFor();
+      await page.locator('[data-action=show][data-show=todo]').click();
+    });
+
+    await t.test('Findings: Add finding, similar test cases suggested, covered in one click', async () => {
+      await page.locator('.nav [data-view=findings]').click();
+      assert.equal(await page.locator('.context').count(), 0, 'Findings lists every suite: no suite strip');
+      await page.getByRole('button', { name: '+ Add finding' }).click();
+      assert.equal(await page.locator('#fTab').inputValue(), TAB, 'the form asks which test suite');
+      await page.locator('#fText').fill('The employee can clear a search from the inbox only once');
+      await page.getByRole('button', { name: 'Save finding' }).click();
+      const card = page.locator('.finding', { hasText: 'clear a search from the inbox only once' });
+      await card.locator('.similar-row', { hasText: 'CMS/07' }).waitFor();
+      await card.locator('.similar-row', { hasText: 'CMS/07' }).getByRole('button', { name: 'Covered by this' }).click();
+      await page.locator('.toast', { hasText: 'covered by CMS/07' }).waitFor();
+      await page.locator('[data-action=findings-show][data-show=done]').click();
+      await page.locator('.finding.done', { hasText: 'Covered by CMS/07' }).waitFor();
+      await page.locator('[data-action=findings-show][data-show=open]').click();
+      // + New test case opens one form; pressed again, it closes
+      const newCase = page.getByRole('button', { name: '+ New test case' });
+      await newCase.click();
+      await newCase.click();
+      assert.equal(await page.locator('h3', { hasText: 'New test case' }).count(), 0);
+      await newCase.click();
+      assert.equal(await page.locator('h3', { hasText: 'New test case' }).count(), 1);
+      // ... for any test suite: the form follows the suite picked
+      await page.locator('#manTab').selectOption('Dashboard KPI');
+      await page.locator('.loading').first().waitFor({ state: 'detached' }).catch(() => {});
+      await page.locator('#manTab option:checked', { hasText: 'Dashboard KPI' }).waitFor({ state: 'attached' });
+      await page.locator('[data-bind="man:0:scenario"]').waitFor();
+      await newCase.click();
+    });
+
+    await t.test('Automation is its own item next to the test suites: an overall summary of automated results', async () => {
+      await page.locator('.nav [data-view=summary]').click();
+      await page.locator('.ctx-tab.auto').click();
+      await page.locator('h1', { hasText: 'Automation' }).waitFor();
+      await page.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
+      await page.locator('table', { hasText: 'Assign button missing' }).waitFor();
+      assert.equal(await page.locator('.context .cycle-switch').count(), 0, 'no test cycle for automation');
+      await page.locator('.context .progress-wrap', { hasText: 'automated tests' }).waitFor();
+      await page.locator(`.ctx-tab[data-tab="${TAB}"]`).click();
+      await page.locator('.kpi', { hasText: 'executed' }).waitFor();
+    });
+
+    await t.test('Setup has Workbook and Sharing parts; cycles come before the columns', async () => {
+      await page.locator('.nav [data-view=setup]').click();
+      await page.locator('[data-action=setup-part][data-part=workbook]').click();
+      const card = page.locator('section.card', { hasText: 'Test cycles' }).first();
+      const order = await card.evaluate((el) => [...el.querySelectorAll('h3, details.columns > summary')].map((x) => x.textContent.trim().split(' ')[0]));
+      assert.deepEqual(order.slice(0, 2), ['Test', 'Columns'], 'cycles first, then the folded columns');
+      assert.equal(await card.locator('details.columns').evaluate((d) => d.open), false, 'columns folded once saved');
+      assert.equal(await page.locator('#team').count(), 0);
+      await page.locator('[data-action=setup-part][data-part=sharing]').click();
+      await page.locator('#team').waitFor();
+      await page.locator('[data-action=setup-part][data-part=workbook]').click();
+      await page.locator('.nav [data-view=run]').click();
+    });
+
     await t.test('summary: page, export file, download', async () => {
       const s = await browser.newPage();
       await s.goto(`${base}summary.html?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
@@ -319,14 +393,37 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(download.suggestedFilename(), BOOK);
     });
 
-    await t.test('import another workbook and switch to it', async () => {
-      const other = join(mkdtempSync(join(tmpdir(), 'testrun-imp-')), 'Bomet Test Cases.xlsx');
-      writeFileSync(other, await buildSampleXlsx());
+    await t.test('test case tabs are buttons under the screens, next to the test cycle', async () => {
+      await page.locator('.nav [data-view=run]').click();
+      const tabs = await page.locator('.context .ctx-tab:not(.auto)').allTextContents();
+      assert.deepEqual(tabs, [TAB, 'CMS 2.20.1 Features', 'Dashboard KPI']);
+      assert.equal(await page.locator('.context .ctx-tab.auto').count(), 0, 'Automation only shows in Summary');
+      assert.equal(await page.locator('.rail #search').count(), 1, 'filters in the left column');
+      assert.equal(await page.locator('.rail [data-action=tier]').count(), 0, 'no Focus filter');
+      assert.equal(await page.locator('.ctx-tab.on').textContent(), TAB);
+      await page.locator('.ctx-tab', { hasText: 'Dashboard KPI' }).click();
+      await page.locator('.ctx-tab.on', { hasText: 'Dashboard KPI' }).waitFor();
+      await page.locator('.case').first().waitFor();
+      await page.locator('.ctx-tab', { hasText: TAB }).first().click();
+      await page.locator(`.ctx-tab.on[data-tab="${TAB}"]`).waitFor();
+      await page.locator('.topbar .context .cycle-switch #cyclePick').waitFor(); // the cycle sits with the tabs, in the sticky header
+      await page.locator('.nav [data-view=issues]').click();
+      assert.equal(await page.locator('.context').count(), 0, 'Known issues spans the whole workbook: no tab strip');
+      await page.locator('.nav [data-view=run]').click();
+    });
+
+    await t.test('import several workbooks at once (one per environment), then switch between them', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'testrun-imp-'));
+      const files = ['Bomet Test Cases.xlsx', 'Mozambique Test Cases.xlsx'].map((n) => join(dir, n));
+      for (const f of files) writeFileSync(f, await buildSampleXlsx());
       const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import' }).first().click()]);
-      await chooser.setFiles(other);
+      assert.equal(chooser.isMultiple(), true);
+      await chooser.setFiles(files);
       await page.locator('#bookPick option:checked', { hasText: 'Bomet Test Cases' }).waitFor({ state: 'attached' });
       await page.getByText('Welcome.').waitFor();
-      assert.ok(existsSync(join(sheets, 'Bomet Test Cases.xlsx')));
+      assert.ok(existsSync(join(sheets, 'Bomet Test Cases.xlsx')) && existsSync(join(sheets, 'Mozambique Test Cases.xlsx')));
+      assert.equal(await page.locator('#bookPick option').count(), 3);
+      assert.match(await page.locator('.book-switch label').textContent(), /Workbook\s*3/);
     });
 
     await t.test('a read-only workbook file says so', async () => {
@@ -334,7 +431,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.path-title').first().waitFor();
       chmodSync(file, 0o444);
       server.library.open.delete(BOOK);
-      await page.getByRole('button', { name: 'All', exact: true }).click();
+      await page.locator('[data-action=show][data-show=all]').click();
       await page.locator('.case', { hasText: 'CMS/12' }).click();
       await page.keyboard.press('p');
       await page.locator('.banner', { hasText: 'View only.' }).waitFor();

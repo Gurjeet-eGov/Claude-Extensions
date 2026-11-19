@@ -42,6 +42,8 @@
     writeUp: {}, // finding key -> draft test case being written up
     covering: null, // finding key being marked as already covered
     issues: null, // Known issues: { issues, tabs, fetching, github } from the server
+    suites: {}, // other test suites of the workbook, read for Findings: tab -> { fields, statusOptions, cycle, cases, ... }
+    suiteLoading: {},
     issueEdit: null, // key of the issue whose title/priority is being edited
     teamLink: null, // { name, link } just made in Setup → Team, shown once
     team: null, // Setup → Team, for the owner
@@ -85,6 +87,36 @@
     return S.model.cases.filter(function (c) { return (c.id && c.id.toLowerCase() === q) || c.key.toLowerCase() === q; })[0] || null;
   }
 
+  /**
+   * What a form or a finding needs from a test suite: its columns, result values, cycle and
+   * cases. The open suite comes from the page; another is read once (null until it arrives).
+   */
+  function suiteOf(tab) {
+    if (!tab || tab === S.tab) {
+      if (!S.model) return null;
+      var cy = cur();
+      return { tab: S.tab, fields: S.model.fields, statusOptions: S.model.statusOptions, cycle: cy ? cy.label : '', hasCycle: !!cy, hasComment: !!(cy && cy.hasComment), cases: liveCases() };
+    }
+    if (S.suites[tab]) return S.suites[tab];
+    if (!S.suiteLoading[tab]) {
+      S.suiteLoading[tab] = true;
+      TR.http('GET', '/api/suite-cases?book=' + encodeURIComponent(book()) + '&tab=' + encodeURIComponent(tab)).then(function (r) {
+        delete S.suiteLoading[tab];
+        if (r.ok) S.suites[tab] = { tab: r.tab, fields: r.fields || {}, statusOptions: r.statusOptions || [], cycle: r.cycle || '', hasCycle: !!r.hasCycle, hasComment: !!r.hasComment, cases: r.cases || [] };
+        else toast(r.error, 'bad');
+        render();
+      });
+    }
+    return null;
+  }
+
+  /** A case of a suite by its ID or key. */
+  function findIn(cases, text) {
+    var q = String(text || '').trim().toLowerCase();
+    if (!q) return null;
+    return (cases || []).filter(function (c) { return (c.id && c.id.toLowerCase() === q) || c.key.toLowerCase() === q; })[0] || null;
+  }
+
   // Similar scenarios, for "Duplicate of…" suggestions (same idea as the server's duplicate hints).
   var STOP = ('verify if that whether the a an of in on for and or to is are be able user users shall should when with by from it its as at this then').split(' ');
   function tokens(s) {
@@ -98,6 +130,15 @@
     for (k in tb) { if (!ta[k]) union++; }
     return union ? inter / union : 0;
   }
+  /** Cases whose scenario is like this text: [{ c, score }], best first. */
+  function similarIn(cases, text, n) {
+    return (cases || [])
+      .map(function (x) { return { c: x, score: similarity(text, x.scenario) }; })
+      .filter(function (x) { return x.score >= 0.2; })
+      .sort(function (a, b) { return b.score - a.score; })
+      .slice(0, n);
+  }
+
   function similarCases(c, n) {
     return liveCases()
       .filter(function (x) { return x !== c; })
@@ -187,7 +228,9 @@
         S.app = a;
         S.readOnly = a.me && a.me.role === 'viewer';
         var names = a.books.map(function (b) { return b.name; });
-        var want = names.indexOf(PARAMS.book) >= 0 ? PARAMS.book : (names.indexOf(a.last.book) >= 0 ? a.last.book : names[0]);
+        // The workbook this browser had open last (each person keeps their own), else the owner's.
+        var mine = TR.store.get('book');
+        var want = names.indexOf(PARAMS.book) >= 0 ? PARAMS.book : names.indexOf(mine) >= 0 ? mine : (names.indexOf(a.last.book) >= 0 ? a.last.book : names[0]);
         TR.state.book = want || null;
         if (!want) { S.loading = false; render(); return; }
         boot(PARAMS.tab || TR.store.get('tab:' + want) || a.last.tab, PARAMS.cycle || '');
@@ -281,7 +324,11 @@
     if (!app) return;
     var ae = document.activeElement;
     var focus = ae && ae.id ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd } : null;
-    app.innerHTML = topbar() + '<main id="main">' + body() + '</main>';
+    S.wide = false;
+    var b = body();
+    app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>';
+    var tb = document.querySelector('.topbar');
+    if (tb) document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
     if (focus) {
       var el = $(focus.id);
       if (el) {
@@ -297,41 +344,67 @@
   }
 
   function topbar() {
-    var m = S.model;
-    var h = '<header class="topbar"><div class="topbar-row"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run</span></div><span class="grow"></span><div class="pickers">';
+    var h = '<header class="topbar"><div class="topbar-row"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Test Run</span></div><span class="grow"></span>';
     if (S.app) {
-      h += '<label class="sr" for="bookPick">Workbook</label><select id="bookPick" data-change="book" title="Workbook">' +
-        (S.app.books.length ? S.app.books.map(function (x) { return opt(x.name, x.name.replace(/\.xlsx$/i, ''), x.name === book()); }).join('') : '<option value="">No workbooks yet</option>') + '</select>' +
-        (isOwner() ? '<button class="ghost" data-action="import" title="Add an .xlsx workbook to the sheets folder">Import</button>' : '') +
-        (book() ? '<button class="ghost" data-action="download" title="Download this workbook, e.g. to upload it to Google Sheets">Download</button>' : '');
-    }
-    var tabs = runTabs();
-    if (tabs.length) {
-      h += '<label class="sr" for="tabPick">Tab</label><select id="tabPick" data-change="tab" title="Test case tab">' +
-        tabs.map(function (t) { return opt(t.name, t.name, t.name === S.tab); }).join('') + '</select>';
-    }
-    if (m && m.cycles.length) {
-      h += '<label class="sr" for="cyclePick">Cycle</label><select id="cyclePick" data-change="cycle" title="Test cycle (status column)">' +
-        m.cycles.map(function (c, i) { return opt(i, c.label ? 'Cycle ' + c.label : 'Status', i === m.cycleIdx); }).join('') + '</select>';
+      var books = S.app.books;
+      var cur = book() || '';
+      // The workbook (one per environment, say): anyone signed in can switch.
+      h += '<div class="book-switch"><label for="bookPick">Workbook' + (books.length > 1 ? ' <span class="n">' + books.length + '</span>' : '') + '</label>' +
+        '<select id="bookPick" data-change="book" title="' + esc(cur.replace(/\.xlsx$/i, '') || 'Workbook') + '">' +
+        (books.length ? books.map(function (x) { return opt(x.name, x.name.replace(/\.xlsx$/i, ''), x.name === cur); }).join('') : '<option value="">No workbooks yet</option>') + '</select></div>' +
+        (isOwner() ? '<button class="tb-btn" data-action="import" title="Add one or more .xlsx workbooks, for example one per environment"><span aria-hidden="true">⤒</span> Import</button>' : '') +
+        (cur ? '<button class="tb-btn" data-action="download" title="Download this workbook (with a Known issues sheet), e.g. to upload it to Google Sheets"><span aria-hidden="true">⤓</span> Download</button>' : '');
     }
     var who = me();
-    h += '</div>' + (who.name ? '<span class="who" title="' + (who.local ? 'Results are marked as tested by this name (change it in Setup)' : 'Signed in with your invite link') + '">' + esc(who.name) +
-      (who.local ? '' : ' · ' + (who.role === 'viewer' ? 'viewer' : 'tester')) + '</span>' : '') + '</div>';
+    h += (who.name ? '<span class="who" title="' + (who.local ? 'Results are marked as tested by this name (change it in Setup)' : 'Signed in with your invite link') + '">' + esc(who.name) +
+      (who.local ? '' : ' · ' + (who.role === 'viewer' ? 'view only' : 'updates status')) + '</span>' : '') + '</div>';
+    h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
+      var n = v.id === 'findings' ? S.findings.filter(function (f) { return f.state === 'open'; }).length
+        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length : 0;
+      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count">' + n + '</span>' : '') + '</button>';
+    }).join('') + '</nav>';
+    return h + contextBar() + '</header>';
+  }
+
+  /**
+   * Under the screen tabs, while testing: which test case tab (a module, say PGR or
+   * Trade License) and which cycle, and how far the run is. Stays in view while scrolling.
+   */
+  function contextBar() {
+    if (!S.boot || S.connect || ['run', 'summary'].indexOf(S.view) < 0) return '';
+    var tabs = runTabs();
+    if (!tabs.length) return '';
+    var m = S.model;
+    var h = '<div class="context"><div class="context-row">';
+    var hasAuto = S.view === 'summary' && S.boot.tabs.some(function (t) { return roleOf(t) === 'automation'; }); // automation is a summary, not something to run
+    h += '<span class="ctx-label" id="tabsLabel">Test suites</span><div class="ctx-tabs" role="tablist" aria-labelledby="tabsLabel">' + tabs.map(function (t) {
+      var on = t.name === S.tab && !S.autoMode;
+      return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="pick-tab" data-tab="' + esc(t.name) + '" title="' + esc(t.name) + '">' + esc(t.name) + '</button>';
+    }).join('') +
+      (hasAuto ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (S.autoMode ? ' on' : '') + '" role="tab" aria-selected="' + !!S.autoMode + '" data-action="pick-auto" title="Overall summary of the automated test results in this workbook">Automation</button>' : '') +
+      '</div><span class="grow"></span>';
+    if (S.autoMode) {
+      var a = autoTotals();
+      h += '</div>' + (a ? '<div class="progress-wrap">' + TR.bar(a) + TR.legend(a) + '<span class="small muted"><b>' + a.total + '</b> automated tests</span></div>' : '');
+      return h + '</div>';
+    }
+    if (m && m.cycles.length) {
+      h += '<div class="cycle-switch"><label for="cyclePick">Test cycle</label><select id="cyclePick" data-change="cycle" title="Test cycle (a status and comment column pair)">' +
+        m.cycles.map(function (c, i) { return opt(i, c.label ? 'Cycle ' + c.label : 'Status', i === m.cycleIdx); }).join('') + '</select></div>';
+    } else if (m) {
+      h += '<span class="small muted">No test cycle yet' + (isOwner() ? ': <button class="linkish" data-action="view" data-view="setup">start one in Setup</button>' : '') + '</span>';
+    }
+    h += '</div>';
     if (m && m.cases.length && m.cycles.length) {
       var live = liveCases();
       var c = TR.counts(live.map(clsOf));
       var done = Math.round(((c.total - c.none) / (c.total || 1)) * 100);
       var nRet = m.cases.length - live.length;
-      h += '<div class="topbar-row progress-wrap">' + TR.bar(c) + TR.legend(c) +
+      h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) +
         (nRet ? '<span class="small muted" title="Deprecated or duplicate cases: struck out in the workbook and left out of these figures"><span class="sym-none">⊘</span> <b>' + nRet + '</b> retired</span>' : '') +
         '<span class="small muted"><b>' + done + '%</b> done</span></div>';
     }
-    h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
-      var n = v.id === 'findings' ? S.findings.filter(function (f) { return f.state === 'open' && (!f.tab || f.tab === S.tab); }).length
-        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length : 0;
-      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count">' + n + '</span>' : '') + '</button>';
-    }).join('') + '</nav></header>';
-    return h;
+    return h + '</div>';
   }
 
   /** Shown when the page cannot reach a Test Run server, or needs an invite link to. */
@@ -375,6 +448,7 @@
     var m = S.model;
     if (!m.configured && isOwner()) banners += '<div class="banner"><span>Columns for this tab were detected automatically.</span><span class="grow"></span><button data-action="view" data-view="setup">Check Setup</button></div>';
     if (m.missing && m.missing.length) banners += '<div class="banner bad"><span>These columns were renamed or removed in the workbook: <b>' + esc(m.missing.map(function (f) { return S.boot.labels[f]; }).join(', ')) + '</b>.</span><span class="grow"></span>' + (isOwner() ? '<button data-action="view" data-view="setup">Fix in Setup</button>' : '') + '</div>';
+    if (S.autoMode && S.view === 'summary') return banners + viewAutomation();
     switch (S.view) {
       case 'issues': return banners + viewIssues();
       case 'findings': return banners + viewFindings();
@@ -440,27 +514,21 @@
         : '<p>Your test lead has not started a test cycle on this tab yet.</p>') + '</div>';
     }
     var f = S.filters;
-    var tierCounts = {};
-    m.cases.forEach(function (c) { if (passes(c, true)) tierCounts[c.tier] = (tierCounts[c.tier] || 0) + 1; });
     var types = distinct('testType');
     var nRetired = m.cases.length - liveCases().length;
-    var h = '<div class="toolbar">' +
-      '<label class="sr" for="search">Search</label><input type="search" id="search" placeholder="Search ID, scenario, feature…  ( / )" value="' + esc(f.search) + '">' +
-      '<div class="row" role="group" aria-label="Show">' +
+    var counts = TR.counts(liveCases().map(clsOf));
+    var showN = { todo: counts.none, failed: counts.fail, all: liveCases().length, retired: nRetired };
+    // Left: the filters, in view while scrolling. Right of the list: collapse, expand, help.
+    var rail = '<div class="rail-group"><label class="rail-title" for="search">Search</label><input type="search" id="search" placeholder="ID, scenario, feature…  ( / )" value="' + esc(f.search) + '"></div>' +
+      '<div class="rail-group" role="group" aria-label="Show"><span class="rail-title">Show</span>' +
       ['todo', 'failed', 'all'].concat(nRetired || f.show === 'retired' ? ['retired'] : []).map(function (s) {
-        var label = { todo: 'To do', failed: 'Failed', all: 'All', retired: 'Retired <span class="n">' + nRetired + '</span>' }[s];
+        var label = { todo: 'To do', failed: 'Failed', all: 'All', retired: 'Retired' }[s];
         var tip = s === 'retired' ? ' title="Deprecated and duplicate cases: struck out in the workbook, left out of the run"' : '';
-        return '<button class="chip" data-action="show" data-show="' + s + '" aria-pressed="' + (f.show === s) + '"' + tip + '>' + label + '</button>';
+        return '<button class="chip" data-action="show" data-show="' + s + '" aria-pressed="' + (f.show === s) + '"' + tip + '>' + label + ' <span class="n">' + showN[s] + '</span></button>';
       }).join('') + '</div>' +
-      (types.length > 1 ? '<label class="sr" for="typePick">Test type</label><select id="typePick" data-change="type"><option value="">All types</option>' + types.map(function (t) { return opt(t, t, t === f.type); }).join('') + '</select>' : '') +
-      '<span class="grow"></span>' +
-      '<button class="ghost" data-action="collapse-all" title="Collapse all paths">Collapse</button><button class="ghost" data-action="expand-all" title="Expand all paths">Expand</button>' +
+      (types.length > 1 ? '<div class="rail-group"><label class="rail-title" for="typePick">Test type</label><select id="typePick" data-change="type"><option value="">All types</option>' + types.map(function (t) { return opt(t, t, t === f.type); }).join('') + '</select></div>' : '');
+    var h = '<div class="content-bar"><button class="ghost" data-action="collapse-all" title="Collapse all paths">Collapse</button><button class="ghost" data-action="expand-all" title="Expand all paths">Expand</button>' +
       '<button class="ghost" data-action="help" title="Keyboard shortcuts"><kbd>?</kbd></button></div>';
-    h += '<div class="toolbar" role="group" aria-label="Risk filter"><span class="small muted" title="Untested cases, in the order worth running them">Focus:</span>' + S.boot.tiers.map(function (t) {
-      var on = f.tiers.indexOf(t.id) >= 0;
-      var label = t.id === 0 && m.release ? 'New in ' + m.release : t.label;
-      return '<button class="chip" data-action="tier" data-tier="' + t.id + '" aria-pressed="' + on + '" title="' + esc(tierHelp(t.id)) + '">' + esc(label) + ' <span class="n">' + (tierCounts[t.id] || 0) + '</span></button>';
-    }).join('') + '</div>';
     if (m.plan.source === 'plan') {
       h += '<div class="banner"><span>Paths follow a saved path plan' + (m.plan.savedAt ? ' from ' + esc(m.plan.savedAt) : '') + '.</span><span class="grow"></span>' +
         (isOwner() ? '<button data-action="clear-plan">Use automatic paths</button>' : '') + '</div>';
@@ -471,8 +539,8 @@
       var all = TR.counts(liveCases().map(clsOf));
       var msg = f.show === 'todo' && all.none === 0 ? '<h3>Everything in this cycle has a result 🎉</h3><p>Switch to <b>All</b> to review, or open the Summary.</p>'
         : f.show === 'retired' && !nRetired ? '<h3>No retired cases</h3><p>Cases you deprecate or mark as a duplicate show up here, struck out.</p>'
-        : '<h3>Nothing matches</h3><p>Clear the search or the focus filters.</p>';
-      return h + '<div class="empty card">' + msg + '</div>';
+        : '<h3>Nothing matches</h3><p>Clear the search, or pick another filter on the left.</p>';
+      return withRail(rail, h + '<div class="empty card">' + msg + '</div>');
     }
     if (S.caseTool) h += datalists() + casesDatalist();
     vps.forEach(function (vp) {
@@ -492,11 +560,29 @@
           if (s.label) h += '<div class="step">' + esc(s.label) + '</div>';
           s.keys.forEach(function (k) { h += caseRow(S.byKey[k]); });
         });
-        h += '</div>';
+        h += addHere(vp) + '</div>';
       }
       h += '</section>';
     });
-    return h;
+    return withRail(rail, h);
+  }
+
+  /** A screen with its filters in a column on the left (in view while scrolling) and its content on the right. */
+  function withRail(rail, content) {
+    S.wide = true;
+    return '<div class="with-rail"><aside class="rail" aria-label="Filters">' + rail + '</aside><div class="rail-content">' + content + '</div></div>';
+  }
+
+  /** At the end of a section: add a test case found while testing, with the section's feature and sub feature. */
+  function addHere(vp) {
+    if (S.readOnly) return '';
+    var id = vp.p.id;
+    if (!S.addHere || S.addHere.path !== id) {
+      return '<div class="add-here"><button class="ghost" data-action="add-here" data-path="' + esc(id) + '" title="A scenario you found while testing this section: add it to the workbook as a test case">+ Add a test case here</button></div>';
+    }
+    var dis = S.readOnly ? ' disabled' : '';
+    return '<div class="add-here open">' + datalists() + '<div class="tool-title">New test case in ' + esc(vp.p.name) + '</div>' +
+      scenarioEditor(S.addHere.draft, 'ah:' + id, '<span class="small faint grow">Added after the last case in the workbook, with the next ID.</span><button class="ghost" data-action="add-here-cancel">Cancel</button><button class="primary" data-action="add-here-save"' + dis + '>Add to workbook</button>') + '</div>';
   }
 
   function autoPill(a) {
@@ -510,6 +596,7 @@
     var k = clsOf(c);
     var sel = S.selected === c.key;
     var badges = [];
+    if (c.testType) badges.push('<span class="pill type" title="Test type">' + esc(c.testType) + '</span>');
     if (c.retired) badges.push(pill('none', '⊘ ' + retiredLabel(c.retired), c.retired.reason || 'Struck out in the workbook'));
     if (c.tier === 0 && !c.retired) badges.push(pill('accent', S.model.release ? 'New in ' + S.model.release : 'New'));
     if (c.tier === 1) badges.push(pill('fail', 'Failed last'));
@@ -669,8 +756,8 @@
     return t && !isRetireNote(t) ? t : '';
   }
 
-  function casesDatalist() {
-    return '<datalist id="dl_cases">' + liveCases().map(function (x) { return '<option value="' + esc(x.id || x.key) + '">' + esc(x.scenario.slice(0, 120)) + '</option>'; }).join('') + '</datalist>';
+  function casesDatalist(cases) {
+    return '<datalist id="dl_cases">' + (cases || liveCases()).map(function (x) { return '<option value="' + esc(x.id || x.key) + '">' + esc(x.scenario.slice(0, 120)) + '</option>'; }).join('') + '</datalist>';
   }
 
   function keptPreview(c, text) {
@@ -1037,17 +1124,17 @@
     var nOpen = all.filter(function (e) { return e.state !== 'closed'; }).length;
     var many = (r.tabs || []).length > 1;
     var dis = S.readOnly ? ' disabled' : '';
-    var h = '<div class="toolbar"><label class="sr" for="issueQ">Search issues</label><input type="search" id="issueQ" data-bind="issueQ" data-live="1" placeholder="Search issue, title, test case…" value="' + esc(val('issueQ', '')) + '">' +
-      '<div class="row" role="group" aria-label="Show">' +
+    var rail = '<div class="rail-group"><label class="rail-title" for="issueQ">Search</label><input type="search" id="issueQ" data-bind="issueQ" data-live="1" placeholder="Issue, title, test case…" value="' + esc(val('issueQ', '')) + '"></div>' +
+      '<div class="rail-group" role="group" aria-label="Show"><span class="rail-title">Show</span>' +
       '<button class="chip" data-action="issue-show" data-show="open" aria-pressed="' + (show === 'open') + '">Open <span class="n">' + nOpen + '</span></button>' +
-      '<button class="chip" data-action="issue-show" data-show="all" aria-pressed="' + (show === 'all') + '">All <span class="n">' + all.length + '</span></button></div>' +
-      '<span class="grow"></span>' +
+      '<button class="chip" data-action="issue-show" data-show="all" aria-pressed="' + (show === 'all') + '">All <span class="n">' + all.length + '</span></button></div>';
+    var h = '<div class="content-bar">' +
       (r.fetching ? '<span class="small muted">Getting titles from GitHub…</span>' : '') +
       (r.github && !S.readOnly && all.some(function (e) { return /^https:\/\/github\.com\//i.test(e.url); }) ? '<button class="ghost" data-action="issues-refresh"' + (r.fetching ? ' disabled' : '') + ' title="Get the latest title, state and priority of every GitHub issue">Refresh from GitHub</button>' : '') + '</div>';
     if (!all.length) {
-      return h + '<div class="empty card"><h3>No known issues yet</h3><p>Paste an issue link on a test case in <b>Run</b>, or tick <b>Also add to Test Run</b> in Bug Reporter when you file a bug.<br>Each issue shows here with its title, priority and test cases.</p></div>';
+      return withRail(rail, h + '<div class="empty card"><h3>No known issues yet</h3><p>Paste an issue link on a test case in <b>Run</b>, or tick <b>Also add to Test Run</b> in Bug Reporter when you file a bug.<br>Each issue shows here with its title, priority and test cases.</p></div>');
     }
-    if (!list.length) return h + '<div class="empty card"><h3>Nothing matches</h3><p>' + (show === 'open' && nOpen === 0 ? 'Every known issue is closed. Choose <b>All</b> to see them.' : 'Clear the search.') + '</p></div>';
+    if (!list.length) return withRail(rail, h + '<div class="empty card"><h3>Nothing matches</h3><p>' + (show === 'open' && nOpen === 0 ? 'Every known issue is closed. Choose <b>All</b> to see them.' : 'Clear the search.') + '</p></div>');
     h += '<div class="card"><div class="table-wrap"><table class="issues"><thead><tr><th>Issue</th><th>Title</th><th>Priority</th><th>State</th><th>Test cases</th><th></th></tr></thead><tbody>';
     list.forEach(function (e) {
       var ref = e.url ? '<a class="mono" href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.ref) + ' ↗</a>' : '<span class="mono">' + esc(e.ref) + '</span>';
@@ -1069,7 +1156,7 @@
     h += '</tbody></table></div></div>';
     h += '<p class="small faint section">Downloading the workbook adds these as a <b>Known issues</b> sheet. ' +
       (r.github ? 'Titles, states and priorities of GitHub issues come from GitHub, through the <span class="mono">gh</span> login on the laptop running Test Run; you can also type them.' : 'Type titles and priorities here, or install the GitHub CLI (<span class="mono">gh</span>) on the laptop running Test Run to fill them in from GitHub.') + '</p>';
-    return h;
+    return withRail(rail, h);
   }
 
   // ---------------------------------------------------------------------------
@@ -1083,38 +1170,58 @@
   }
 
   /** A first draft of the test case for a finding: its text, bug, area and the expected result Bug Reporter noted. */
-  function draftFromFinding(f) {
+  function draftFromFinding(f, sm) {
     var expected = [];
     String(f.details || '').split(/\r?\n/).forEach(function (l) {
       var m = l.match(/^Expected:\s*(.+)$/);
       if (m) expected.push(m[1].trim());
     });
-    var area = String(f.area || '');
-    var sub = distinct('group2').filter(function (x) { return x.toLowerCase() === area.toLowerCase(); })[0] || '';
-    var feat = distinct('group1').filter(function (x) { return x.toLowerCase() === area.toLowerCase(); })[0] || '';
+    var area = String(f.area || '').toLowerCase();
+    var pick = function (k) { var hit = ((sm && sm.cases) || []).filter(function (c) { return String(c[k] || '').toLowerCase() === area; })[0]; return hit ? hit[k] : ''; };
+    var sub = area ? pick('group2') : '';
+    var feat = area ? pick('group1') : '';
     return { scenario: f.text, issue: f.url || f.issue || '', fromFinding: f.key, subFeature: sub, feature: feat, testData: '', preCondition: '', expected: expected };
   }
 
   function findingCard(f, dis) {
+    var tab = f.tab || S.tab;
+    var sm = suiteOf(tab);
     var h = '<div class="item finding"><div class="row"><span class="mono faint">' + esc(f.key) + '</span><b class="grow">' + esc(f.text) + '</b>' +
+      '<span class="pill outline" title="Test suite">' + esc(tab) + '</span>' +
       (f.source === 'bug-reporter' ? '<span class="pill accent" title="Noted by the Bug Reporter extension when the issue was filed">from Bug Reporter</span>' : '') +
       (f.url ? '<a class="pill outline" href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.issue || 'issue') + ' ↗</a>' : (f.issue ? '<span class="pill outline">' + esc(f.issue) + '</span>' : '')) + '</div>' +
       (f.area ? '<div class="small muted">' + esc(f.area) + '</div>' : '') +
       (f.details ? '<div class="small ml finding-details">' + esc(TR.cellLines(f.details).join('\n')) + '</div>' : '') +
       '<div class="small faint">' + esc([f.by, f.at].filter(Boolean).join(' · ')) + '</div>';
+    if (!sm) return h + '<div class="small faint" style="margin-top:6px">Reading ' + esc(tab) + '…</div></div>';
     var draft = S.writeUp[f.key];
     if (draft) {
-      return h + '<div class="writeup">' + scenarioEditor(draft, 'wu:' + f.key,
-        '<button class="ghost" data-action="writeup-cancel" data-key="' + esc(f.key) + '">Cancel</button><button class="primary" data-action="writeup-add" data-key="' + esc(f.key) + '"' + dis + '>Add to workbook</button>') + '</div></div>';
+      return h + '<div class="writeup">' + datalists(sm) + scenarioEditor(draft, 'wu:' + f.key,
+        '<span class="small faint grow">Added to ' + esc(tab) + '.</span><button class="ghost" data-action="writeup-cancel" data-key="' + esc(f.key) + '">Cancel</button><button class="primary" data-action="writeup-add" data-key="' + esc(f.key) + '"' + dis + '>Add to workbook</button>', sm) + '</div></div>';
     }
     if (S.covering === f.key) {
-      return h + '<div class="row" style="margin-top:8px"><label for="covId">Already covered by case</label><input id="covId" list="dl_cases" data-bind="cov:' + esc(f.key) + '" placeholder="e.g. ' + esc((liveCases()[0] || {}).id || 'CMS/12') + '" value="' + esc(val('cov:' + f.key)) + '">' +
+      return h + casesDatalist(sm.cases) + '<div class="row" style="margin-top:8px"><label for="covId">Already covered by case</label><input id="covId" list="dl_cases" data-bind="cov:' + esc(f.key) + '" placeholder="e.g. ' + esc((sm.cases[0] || {}).id || 'CMS/12') + '" value="' + esc(val('cov:' + f.key)) + '">' +
         '<button class="ghost" data-action="cover-cancel">Cancel</button><button class="primary" data-action="cover-save" data-key="' + esc(f.key) + '"' + dis + '>Mark covered</button></div></div>';
+    }
+    var sims = similarIn(sm.cases, [f.text, f.details].filter(Boolean).join(' '), 3);
+    if (sims.length) {
+      h += '<div class="similar"><div class="small muted">Similar test cases already in ' + esc(tab) + ':</div>' + sims.map(function (x) {
+        return '<div class="similar-row"><button class="linkish mono" data-action="open-case" data-tab="' + esc(tab) + '" data-key="' + esc(x.c.key) + '" title="Open it in Run">' + esc(x.c.id || x.c.key) + '</button>' +
+          '<span class="grow small">' + esc(oneLine(x.c.scenario)) + '</span><span class="small faint">' + Math.round(x.score * 100) + '% alike</span>' +
+          (S.readOnly ? '' : '<button class="small-btn" data-action="cover-with" data-key="' + esc(f.key) + '" data-case="' + esc(x.c.id || x.c.key) + '" title="This finding is covered by that case: move it to Done">Covered by this</button>') + '</div>';
+      }).join('') + '</div>';
     }
     if (S.readOnly) return h + '</div>';
     return h + '<div class="row" style="margin-top:8px"><button class="primary" data-action="writeup" data-key="' + esc(f.key) + '"' + dis + '>Write up as test case</button>' +
       '<button data-action="cover" data-key="' + esc(f.key) + '"' + dis + '>Already covered…</button><span class="grow"></span>' +
       '<button class="ghost danger" data-action="del-finding" data-key="' + esc(f.key) + '"' + dis + '>Delete</button></div></div>';
+  }
+
+  /** A test suite dropdown for a form (which suite a new finding or case goes to). */
+  function suitePicker(id, bind, value, change) {
+    var tabs = runTabs();
+    return '<div class="suite-pick"><label for="' + id + '">Test suite</label><select id="' + id + '" ' + (change ? 'data-change="' + change + '"' : 'data-bind="' + bind + '"') + '>' +
+      tabs.map(function (t) { return opt(t.name, t.name, t.name === value); }).join('') + '</select></div>';
   }
 
   /**
@@ -1124,38 +1231,50 @@
    */
   function viewFindings() {
     var dis = S.readOnly ? ' disabled' : '';
-    var list = S.findings.filter(function (f) { return !f.tab || f.tab === S.tab; });
+    var only = val('findingsSuite', '');
+    var list = S.findings.filter(function (f) { return !only || (f.tab || S.tab) === only; });
     var open = list.filter(function (f) { return f.state === 'open'; });
     var done = list.filter(function (f) { return f.state !== 'open'; });
-    var h = datalists() + casesDatalist();
-    h += '<div class="row section-head"><div class="grow"><h2>Findings in ' + esc(S.tab) + '</h2><p class="small muted">Bugs and scenarios found while testing that are not in the test cases yet. Write each one up: it is added to the workbook as a test case. Or mark it as already covered.</p></div>' +
-      (S.readOnly ? '' : '<button data-action="new-case"' + dis + '>+ New test case</button>') + '</div>';
-    S.manual.forEach(function (it, i) {
-      h += '<div class="section"><div class="small muted" style="margin-bottom:4px">New test case</div>' +
-        scenarioEditor(it, 'man:' + i, '<button class="ghost" data-action="discard-manual" data-index="' + i + '">Discard</button><button class="primary" data-action="add-manual" data-index="' + i + '"' + dis + '>Add to workbook</button>') + '</div>';
-    });
-    if (!S.readOnly) {
-      h += '<details class="card card-pad section"' + (val('noteOpen') ? ' open' : '') + '><summary class="small"><b>Note a finding by hand</b> <span class="muted">(Bug Reporter adds them for you when you tick the Test Run box while filing)</span></summary>' +
-        '<div class="form-grid" style="margin-top:10px"><div class="wide"><label for="fText">What did you find?</label><input id="fText" data-bind="fText" placeholder="e.g. Citizen cannot reopen a complaint resolved 4 days ago" value="' + esc(val('fText')) + '"' + dis + '></div>' +
+    var show = val('findingsShow', 'open');
+    var tabs = runTabs();
+    var rail = '<div class="rail-group" role="group" aria-label="Show"><span class="rail-title">Show</span>' +
+      '<button class="chip" data-action="findings-show" data-show="open" aria-pressed="' + (show === 'open') + '">Open <span class="n">' + open.length + '</span></button>' +
+      '<button class="chip" data-action="findings-show" data-show="done" aria-pressed="' + (show === 'done') + '" title="Written up as test cases, or covered by one">Done <span class="n">' + done.length + '</span></button></div>' +
+      (tabs.length > 1 ? '<div class="rail-group"><label class="rail-title" for="findingsSuite">Test suite</label><select id="findingsSuite" data-change="findings-suite"><option value="">All test suites</option>' +
+        tabs.map(function (t) { return opt(t.name, t.name, t.name === only); }).join('') + '</select></div>' : '');
+    var h = '<div class="row section-head"><div class="grow"><h2>Findings</h2><p class="small muted">Things found while testing that are not test cases yet. Write each one up as a test case, or mark it covered by one.</p></div>' +
+      (S.readOnly ? '' : '<button data-action="note-toggle" aria-expanded="' + !!val('noteOpen') + '" title="Note something you found, to write up later (Bug Reporter adds them when you tick its Test Run box)"' + dis + '>+ Add finding</button>' +
+        '<button data-action="new-case" aria-expanded="' + (S.manual.length > 0) + '" title="Add a test case to the workbook now"' + dis + '>+ New test case</button>') + '</div>';
+    if (S.manual.length) {
+      var mtab = val('man:tab', only || S.tab);
+      var msm = suiteOf(mtab);
+      h += '<div class="card card-pad section"><div class="row" style="margin-bottom:8px"><h3 class="grow">New test case</h3>' + suitePicker('manTab', 'man:tab', mtab, 'man-suite') + '</div>' +
+        (msm ? datalists(msm) + scenarioEditor(S.manual[0], 'man:0', '<button class="ghost" data-action="discard-manual">Discard</button><button class="primary" data-action="add-manual" data-index="0"' + dis + '>Add to workbook</button>', msm)
+          : '<div class="loading">Reading ' + esc(mtab) + '…</div>') + '</div>';
+    }
+    if (!S.readOnly && val('noteOpen')) {
+      h += '<div class="card card-pad section"><div class="row"><h3 class="grow">New finding</h3>' + suitePicker('fTab', 'fTab', val('fTab', only || S.tab)) + '</div>' +
+        '<div class="form-grid" style="margin-top:8px"><div class="wide"><label for="fText">What did you find?</label><input id="fText" data-bind="fText" placeholder="e.g. Citizen cannot reopen a complaint resolved 4 days ago" value="' + esc(val('fText')) + '"' + dis + '></div>' +
         '<div><label for="fIssue">Issue link <span class="faint">(optional)</span></label><input id="fIssue" data-bind="fIssue" placeholder="https://…/issues/123" value="' + esc(val('fIssue')) + '"' + dis + '></div>' +
-        '<div><label for="fArea">Area</label><select id="fArea" data-bind="fArea"' + dis + '><option value="">Not sure</option>' + areas().map(function (a) { return opt(a, a, val('fArea') === a); }).join('') + '</select></div>' +
+        '<div><label for="fArea">Area</label><input id="fArea" data-bind="fArea" list="dl_group2" placeholder="Not sure" value="' + esc(val('fArea')) + '"' + dis + '></div>' +
         '<div class="wide"><label for="fDetails">Details (optional)</label><textarea id="fDetails" data-bind="fDetails" rows="2"' + dis + '>' + esc(val('fDetails')) + '</textarea></div></div>' +
-        '<div class="row" style="margin-top:8px"><span class="grow"></span><button class="primary" data-action="add-finding"' + dis + '>Save finding</button></div></details>';
+        datalists(suiteOf(val('fTab', only || S.tab))) +
+        '<div class="row" style="margin-top:8px"><span class="grow"></span><button class="ghost" data-action="note-toggle">Cancel</button><button class="primary" data-action="add-finding"' + dis + '>Save finding</button></div></div>';
     }
     h += '<div class="section stack">';
-    if (!open.length) h += '<div class="empty card"><p>Nothing waiting. Findings from Bug Reporter show up here.</p></div>';
-    open.forEach(function (f) { h += findingCard(f, dis); });
-    h += '</div>';
-    if (done.length) {
-      h += '<details class="section"><summary class="small muted">Done: ' + done.length + ' written up or already covered</summary><div class="card table-wrap" style="margin-top:8px"><table><tbody>' +
-        done.map(function (f) {
-          var st = f.state === 'written' ? pill('pass', 'Written up' + (f.caseId ? ' as ' + f.caseId : '')) : pill('none', 'Covered' + (f.caseId ? ' by ' + f.caseId : ''));
-          return '<tr><td class="mono faint">' + esc(f.key) + '</td><td>' + esc(f.text) + '</td><td>' + st + '</td><td class="num">' + (S.readOnly ? '' : '<button class="ghost" data-action="reopen-finding" data-key="' + esc(f.key) + '">Reopen</button>') + '</td></tr>';
-        }).join('') + '</tbody></table></div></details>';
+    if (show === 'open') {
+      if (!open.length) h += '<div class="empty card"><p>Nothing waiting. Findings you add, or Bug Reporter adds, show up here.</p></div>';
+      open.forEach(function (f) { h += findingCard(f, dis); });
+    } else {
+      if (!done.length) h += '<div class="empty card"><p>Nothing done yet. Findings written up as test cases, or covered by one, move here.</p></div>';
+      done.forEach(function (f) {
+        var st = f.state === 'written' ? pill('pass', 'Written up' + (f.caseId ? ' as ' + f.caseId : '')) : pill('none', 'Covered' + (f.caseId ? ' by ' + f.caseId : ''));
+        h += '<div class="item finding done"><div class="row"><span class="mono faint">' + esc(f.key) + '</span><span class="grow">' + esc(f.text) + '</span><span class="pill outline">' + esc(f.tab || S.tab) + '</span>' + st +
+          (S.readOnly ? '' : '<button class="ghost" data-action="reopen-finding" data-key="' + esc(f.key) + '">Reopen</button>') + '</div></div>';
+      });
     }
-    var elsewhere = S.findings.filter(function (f) { return f.tab && f.tab !== S.tab && f.state === 'open'; });
-    if (elsewhere.length) h += '<p class="small muted section">' + elsewhere.length + ' more open finding' + (elsewhere.length === 1 ? ' is' : 's are') + ' in other tabs.</p>';
-    return h;
+    h += '</div>';
+    return withRail(rail, h);
   }
 
   // ---------------------------------------------------------------------------
@@ -1180,40 +1299,42 @@
     return val(prefix + ':' + f, base == null ? '' : base);
   }
 
-  function collectDraft(prefix, it) {
+  function collectDraft(prefix, it, sm) {
     var out = {};
     DRAFT_FIELDS.forEach(function (d) { out[d.f] = draftValue(prefix, it, d.f); });
     out.expected = String(out.expected).split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
-    out.status = val(prefix + ':status', defaultStatus(it));
+    out.status = val(prefix + ':status', defaultStatus(it, sm));
     out.comment = val(prefix + ':comment', '');
     out.fromFinding = it.fromFinding || '';
     return out;
   }
 
-  function defaultStatus(it) {
+  function defaultStatus(it, sm) {
     if (!it.issue) return '';
-    var fail = S.model.statusOptions.filter(function (o) { return o.cls === 'fail'; })[0];
+    var fail = ((sm || suiteOf(S.tab) || {}).statusOptions || []).filter(function (o) { return o.cls === 'fail'; })[0];
     return fail ? fail.value : '';
   }
 
-  function scenarioEditor(it, prefix, actionsHtml) {
+  /** The fields of a new test case, for the suite sm (the open one by default). */
+  function scenarioEditor(it, prefix, actionsHtml, sm) {
+    sm = sm || suiteOf(S.tab);
     var dis = S.readOnly ? ' disabled' : '';
     var h = '<div class="form-grid">';
     var unmapped = [];
     DRAFT_FIELDS.forEach(function (d) {
       var v = draftValue(prefix, it, d.f);
-      if (!d.always && !hasField(d.col)) { if (String(v).trim()) unmapped.push(d.label.replace(/ \(.*\)$/, '') + ': "' + String(v).slice(0, 60) + '"'); return; }
+      if (!d.always && !(sm.fields && sm.fields[d.col] >= 0)) { if (String(v).trim()) unmapped.push(d.label.replace(/ \(.*\)$/, '') + ': "' + String(v).slice(0, 60) + '"'); return; }
       var id = prefix.replace(/[^\w-]/g, '_') + '_' + d.f;
       var listId = d.list ? 'dl_' + d.list : '';
       h += '<div' + (d.wide ? ' class="wide"' : '') + '><label for="' + id + '">' + esc(d.label) + '</label>' +
         (d.rows ? '<textarea id="' + id + '" data-bind="' + esc(prefix + ':' + d.f) + '" rows="' + d.rows + '"' + dis + '>' + esc(v) + '</textarea>'
           : '<input id="' + id + '" data-bind="' + esc(prefix + ':' + d.f) + '" value="' + esc(v) + '"' + (listId ? ' list="' + listId + '"' : '') + dis + '>') + '</div>';
     });
-    if (cur()) {
-      var st = val(prefix + ':status', defaultStatus(it));
-      h += '<div><label for="' + prefix.replace(/[^\w-]/g, '_') + '_status">Result in cycle ' + esc(cycleLabel() || '') + '</label><select id="' + prefix.replace(/[^\w-]/g, '_') + '_status" data-bind="' + esc(prefix + ':status') + '"' + dis + '><option value="">Not run yet</option>' +
-        S.model.statusOptions.map(function (o) { return opt(o.value, o.value, o.value === st); }).join('') + '</select></div>';
-      if (cur().hasComment) h += '<div><label>Comment</label><input data-bind="' + esc(prefix + ':comment') + '" value="' + esc(val(prefix + ':comment', '')) + '"' + dis + '></div>';
+    if (sm.hasCycle) {
+      var st = val(prefix + ':status', defaultStatus(it, sm));
+      h += '<div><label for="' + prefix.replace(/[^\w-]/g, '_') + '_status">Result' + (sm.cycle ? ' in cycle ' + esc(sm.cycle) : '') + '</label><select id="' + prefix.replace(/[^\w-]/g, '_') + '_status" data-bind="' + esc(prefix + ':status') + '"' + dis + '><option value="">Not run yet</option>' +
+        sm.statusOptions.map(function (o) { return opt(o.value, o.value, o.value === st); }).join('') + '</select></div>';
+      if (sm.hasComment) h += '<div><label>Comment</label><input data-bind="' + esc(prefix + ':comment') + '" value="' + esc(val(prefix + ':comment', '')) + '"' + dis + '></div>';
     }
     h += '</div>';
     var notes = '';
@@ -1223,13 +1344,16 @@
     if (it.duplicates && it.duplicates.length) {
       notes += '<div class="note">Looks similar to ' + it.duplicates.map(function (d) { return '<b>' + esc(d.id || d.key) + '</b> (' + esc(d.scenario.slice(0, 90)) + ')'; }).join(', ') + '. Check it is not a duplicate.</div>';
     }
-    if (unmapped.length) notes += '<div class="note info">This tab has no column for: ' + esc(unmapped.join('; ')) + '. That part will not be saved.</div>';
+    if (unmapped.length) notes += '<div class="note info">This test suite has no column for: ' + esc(unmapped.join('; ')) + '. That part will not be saved.</div>';
     return '<div class="item">' + (notes ? '<div class="stack" style="margin-bottom:8px">' + notes + '</div>' : '') + h + '<div class="row" style="margin-top:10px"><span class="grow"></span>' + actionsHtml + '</div></div>';
   }
 
-  function datalists() {
+  function datalists(sm) {
+    var cases = sm ? sm.cases : (S.model ? S.model.cases : []);
     return ['group1', 'group2', 'testType'].map(function (k) {
-      return '<datalist id="dl_' + k + '">' + distinct(k).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>';
+      var vals = [];
+      cases.forEach(function (c) { var v = String(c[k] || '').trim(); if (v && vals.indexOf(v) < 0) vals.push(v); });
+      return '<datalist id="dl_' + k + '">' + vals.map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>';
     }).join('');
   }
 
@@ -1237,7 +1361,74 @@
   // Summary
   // ---------------------------------------------------------------------------
 
+  /** Summary of the test suite and cycle open. (Automation has its own place in the Test suites strip.) */
   function viewSummary() {
+    return viewManualSummary();
+  }
+
+  /** Pass, fail, other and not-run counts over every automation tab ({..., total}), or null before they are read. */
+  function autoTotals() {
+    var r = S.autoSummary;
+    if (!r || r.book !== book() || r.error) return null;
+    var all = { pass: 0, fail: 0, other: 0, none: 0, total: 0 };
+    r.tabs.forEach(function (t) { if (!t.error) ['pass', 'fail', 'other', 'none', 'total'].forEach(function (k) { all[k] += t.counts[k]; }); });
+    return all;
+  }
+
+  function autoKpi(cls, value, label) {
+    return '<div class="card kpi ' + cls + '"><div class="v">' + esc(value) + '</div><div class="l">' + esc(label) + '</div></div>';
+  }
+
+  /** Automated: the latest results of each automation tab, by test file, and what is failing. */
+  function viewAutomation() {
+    var r = S.autoSummary;
+    if (!r || r.book !== book()) {
+      if (!S.autoLoading) {
+        S.autoLoading = true;
+        api('api_automationSummary').then(function (x) {
+          S.autoLoading = false;
+          S.autoSummary = x.ok ? x : { book: book(), error: x.error, tabs: [] };
+          S.autoSummary.book = x.book || book();
+          render();
+        });
+      }
+      return '<div class="loading">Reading the automation results…</div>';
+    }
+    if (r.error) return '<div class="banner bad">' + esc(r.error) + '</div>';
+    var tabs = r.tabs.filter(function (t) { return !t.error; });
+    if (!r.tabs.length) {
+      return '<div class="empty card"><h3>No automation results in this workbook</h3><p>' + (isOwner() ? 'In <b>Setup</b>, mark the tab that holds your automated test results as <b>Automation results</b>.' : 'This workbook has no tab of automated test results.') + '</p></div>';
+    }
+    var all = autoTotals();
+    var ran = all.pass + all.fail;
+    var h = '<p class="small muted no-print" style="margin-bottom:10px">Overall results of the automated tests in this workbook, read from its automation results tab' + (tabs.length > 1 ? 's' : '') + '. Pick a test suite above to go back to testing.</p>' +
+      '<div class="summary-head"><h1>Automation</h1><span class="muted">' + esc(tabs.map(function (t) { return t.tab + (t.cycle ? ' · ' + t.cycle : ''); }).join(', ')) + ' · as of ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
+      '<div class="row no-print"><button data-action="auto-refresh">Refresh</button><button data-action="print">Print / PDF</button></div></div>';
+    h += '<div class="kpis">' + autoKpi('', String(all.total), 'automated tests') + autoKpi('pass', ran ? Math.round((all.pass / ran) * 100) + '%' : '–', 'pass rate (of Pass + Fail)') +
+      autoKpi('fail', String(all.fail), 'failing') + autoKpi('', String(all.other), 'skipped or other') + '</div>';
+    r.tabs.forEach(function (t) {
+      if (t.error) { h += '<div class="banner warn section"><b>' + esc(t.tab) + ':</b> ' + esc(t.error) + '</div>'; return; }
+      h += '<div class="section card"><div class="card-pad"><div class="row" style="margin-bottom:8px"><h2>' + esc(t.tab) + '</h2><span class="small muted">' + esc(t.cycle ? 'status column ' + t.cycle : 'latest status column') + '</span><span class="grow"></span>' + TR.legend(t.counts) + '</div>' + TR.bar(t.counts) + '</div>';
+      h += '<div class="table-wrap"><table><thead><tr><th>Test file</th><th style="width:28%">Progress</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Other</th><th class="num">Not run</th></tr></thead><tbody>' +
+        t.files.map(function (f) {
+          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + TR.bar(f, true) + '</td><td class="num">' + f.pass + '</td><td class="num">' + f.fail + '</td><td class="num">' + f.other + '</td><td class="num">' + f.none + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+      h += '<div class="section card"><div class="card-pad"><h2>Failing in ' + esc(t.tab) + ' <span class="pill fail">' + t.failures.length + '</span></h2></div>' +
+        (t.failures.length ? '<div class="table-wrap"><table><thead><tr><th>Test file</th><th>Test</th><th>Note</th></tr></thead><tbody>' + t.failures.map(function (f) {
+          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + esc(f.test) + (f.group ? '<div class="small faint">' + esc(f.group) + '</div>' : '') + '</td><td class="ml">' + esc(f.note) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '<div class="card-pad muted" style="padding-top:0">No failing automated tests.</div>') + '</div>';
+    });
+    if (S.summary && S.summary.tab === S.tab && S.summary.summary && S.summary.summary.automation) {
+      var a = S.summary.summary.automation;
+      h += '<div class="section card card-pad"><h2>Manual cases in ' + esc(S.tab) + ' linked to automation</h2><table style="margin-top:8px"><tbody>' +
+        '<tr><td>Linked to a test file</td><td class="num"><b>' + a.linked + '</b> of ' + S.summary.summary.counts.total + '</td></tr>' +
+        '<tr><td>Their automation passing</td><td class="num"><b class="sym-pass">' + a.pass + '</b></td></tr>' +
+        '<tr><td>Their automation failing</td><td class="num"><b class="sym-fail">' + a.fail + '</b></td></tr></tbody></table></div>';
+    }
+    return h;
+  }
+
+  function viewManualSummary() {
     var label = cycleLabel();
     if (!S.summary || S.summary.tab !== S.tab || S.summary.cycle !== label) {
       if (!S.summaryLoading) {
@@ -1453,23 +1644,37 @@
     return h + '</div>';
   }
 
+  /** Setup, in two parts: Workbook (test suites, cycles, columns) and Sharing (you and your team). */
   function viewSetup() {
+    var part = S.cfg ? val('setupPart', 'workbook') : 'workbook'; // a workbook not set up yet opens on its tabs
+    var rail = '<div class="rail-group subtabs" role="tablist" aria-label="Setup"><span class="rail-title">Setup</span>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + (S.team && S.team.team && S.team.team.enabled ? ' <span class="pill pass">on</span>' : '') + '</button></div>' +
+      (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
+        : '<p class="small muted rail-note">Sharing is for all workbooks: your team can switch between them at the top right.</p>');
+    return withRail(rail, part === 'sharing' ? youCard() + teamCard() : setupWorkbook());
+  }
+
+  /** Each tab of the workbook: what it holds, its test cycles first, then its columns (set once, folded away). */
+  function setupWorkbook() {
     var d = setupDraft();
     var dis = S.readOnly ? ' disabled' : '';
     var h = '';
     if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read, then save. Settings are kept beside the workbook in <span class="mono">sheets/.testrun/</span>; the workbook itself does not change.</div></div>';
-    h += youCard() + teamCard();
-
     d.tabs.forEach(function (t, ti) {
       var headers = (t.top && t.top[t.headerRow - 1]) || [];
       h += '<section class="section card card-pad stack"><div class="row"><h2>' + esc(t.name) + '</h2><span class="small muted">' + t.rows + ' rows</span><span class="grow"></span>' +
         '<label for="role' + ti + '" class="sr">Role</label><select id="role' + ti + '" data-setup-tab="' + ti + '" data-key="role"' + dis + '>' +
-        opt('manual', 'Test cases', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
+        opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
       if (t.role === 'automation') {
-        h += '<p class="small muted">Results here feed the <b>Auto</b> badges on manual cases. Manual cases link to a spec when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
+        h += '<p class="small muted">Results here feed <b>Automation</b> (next to the test suites, at the top), and the <b>Auto</b> badges on manual cases. Manual cases link to a test file when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
         return;
       }
+      h += cycleSetup(t, ti);
+      var mapped = S.boot.fields.filter(function (f) { return t.columns[f]; }).length;
+      var openCols = !t.saved || val('colsOpen:' + ti);
+      h += '<details class="columns"' + (openCols ? ' open' : '') + ' data-cols="' + ti + '"><summary><b>Columns</b> <span class="small muted">' + mapped + ' of ' + S.boot.fields.length + ' fields found · header row ' + esc(t.headerRow) + '</span></summary><div class="stack" style="margin-top:10px">';
       h += '<div class="row"><label for="hr' + ti + '">Header row</label><input id="hr' + ti + '" type="text" inputmode="numeric" size="3" data-setup-tab="' + ti + '" data-key="headerRow" value="' + esc(t.headerRow) + '"' + dis + '>' +
         '<button class="ghost" data-action="redetect" data-index="' + ti + '"' + dis + '>Detect columns again</button>' +
         '<span class="grow"></span><label class="check"><input type="checkbox" data-setup-tab="' + ti + '" data-key="fillDown"' + (t.fillDown ? ' checked' : '') + dis + '> Blank Feature / Sub feature continues the row above</label></div>';
@@ -1489,7 +1694,7 @@
         if (!t.columns.linkedIssue) adds.push('<button data-action="add-cols" data-tab="' + esc(t.name) + '" data-fields="linkedIssue"' + dis + '>Add Linked issue column</button>');
         if (adds.length) h += '<div class="row"><span class="small muted">Optional columns, added at the right of the table:</span>' + adds.join('') + '</div>';
       }
-      h += cycleSetup(t, ti) + '</section>';
+      h += '</div></details></section>';
     });
     h += '<div class="row section"><span class="grow"></span>' + (S.cfg ? '<button data-action="view" data-view="run">Cancel</button>' : '') + '<button class="primary" data-action="save-setup"' + dis + '>Save setup</button></div>';
     return h;
@@ -1545,6 +1750,8 @@
   var ACTIONS = {
     view: function (el) {
       S.view = el.getAttribute('data-view');
+      if (S.view !== 'summary') S.autoMode = false;
+      if (S.view === 'findings') S.suites = {}; // read the other suites afresh
       if (S.view === 'setup') S.setup = null;
       if (S.view === 'issues') { S.issueEdit = null; loadIssues(); }
       render();
@@ -1626,23 +1833,34 @@
       });
     },
     import: function () {
+      // One or more .xlsx files: each becomes a workbook to switch to (one per environment, say).
       var input = document.createElement('input');
       input.type = 'file';
+      input.multiple = true;
       input.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       input.addEventListener('change', function () {
-        var f = input.files && input.files[0];
-        if (!f) return;
-        var send = function (overwrite) {
-          return TR.http('POST', '/api/books/import?name=' + encodeURIComponent(f.name) + (overwrite ? '&overwrite=1' : ''), f, true);
+        var files = Array.prototype.slice.call(input.files || []);
+        if (!files.length) return;
+        var done = [];
+        var failed = [];
+        var one = function (f) {
+          var send = function (overwrite) {
+            return TR.http('POST', '/api/books/import?name=' + encodeURIComponent(f.name) + (overwrite ? '&overwrite=1' : ''), f, true);
+          };
+          return send(false).then(function (r) {
+            if (!r.ok && r.code === 'EXISTS' && window.confirm(r.error + ' Replace it with the file you picked?')) return send(true);
+            return r;
+          }).then(function (r) {
+            if (r && r.ok) done.push(r.name);
+            else if (r && r.code !== 'EXISTS') failed.push(f.name + ': ' + r.error);
+          });
         };
-        send(false).then(function (r) {
-          if (!r.ok && r.code === 'EXISTS' && window.confirm(r.error + ' Replace it with the file you picked?')) return send(true);
-          return r;
-        }).then(function (r) {
-          if (!r) return;
-          if (!r.ok) { toast(r.error, 'bad'); return; }
-          toast('Imported ' + r.name + '.');
-          switchBook(r.name);
+        if (files.length > 1) toast('Importing ' + files.length + ' workbooks…');
+        files.reduce(function (p, f) { return p.then(function () { return one(f); }); }, Promise.resolve()).then(function () {
+          failed.forEach(function (m) { toast(m, 'bad'); });
+          if (!done.length) return;
+          toast(done.length === 1 ? 'Imported ' + done[0] + '.' : 'Imported ' + done.length + ' workbooks: ' + done.join(', ') + '. Switch between them with Workbook, top right.', done.length > 1 ? 'long' : '');
+          switchBook(done[0]);
         });
       });
       input.click();
@@ -1669,7 +1887,7 @@
       if (!text) { toast('Write one line about what you found.'); var f = $('fText'); if (f) f.focus(); return; }
       var typed = String(val('fIssue')).trim();
       var link = /^https?:\/\/\S+$/i.test(typed) ? typed : '';
-      var input = { text: text, issue: link ? '' : typed, url: link, area: val('fArea'), details: val('fDetails'), tab: S.tab };
+      var input = { text: text, issue: link ? '' : typed, url: link, area: val('fArea'), details: val('fDetails'), tab: val('fTab', val('findingsSuite', '') || S.tab) };
       queueWrite(function () { return api('api_saveFinding', input); }).then(function (r) {
         if (!r.ok) { writeError(r); return; }
         S.findings.push(r.finding);
@@ -1691,7 +1909,7 @@
     writeup: function (el) {
       var f = S.findings.filter(function (x) { return x.key === el.getAttribute('data-key'); })[0];
       if (!f) return;
-      S.writeUp[f.key] = draftFromFinding(f);
+      S.writeUp[f.key] = draftFromFinding(f, suiteOf(f.tab || S.tab));
       S.covering = null;
       render();
       var first = document.querySelector('.writeup textarea, .writeup input');
@@ -1700,15 +1918,19 @@
     'writeup-cancel': function (el) { var k = el.getAttribute('data-key'); delete S.writeUp[k]; clearForm('wu:' + k + ':'); render(); },
     'writeup-add': function (el) {
       var k = el.getAttribute('data-key');
-      var d = collectDraft('wu:' + k, S.writeUp[k]);
+      var f = S.findings.filter(function (x) { return x.key === k; })[0] || {};
+      var tab = f.tab || S.tab;
+      var sm = suiteOf(tab);
+      if (!sm) return;
+      var d = collectDraft('wu:' + k, S.writeUp[k], sm);
       if (!String(d.scenario).trim()) { toast('The scenario cannot be empty.', 'bad'); return; }
       el.disabled = true;
-      queueWrite(function () { return api('api_addCases', S.tab, [d], cycleLabel()); }).then(function (r) {
+      queueWrite(function () { return api('api_addCases', tab, [d], sm.cycle); }).then(function (r) {
         if (!r.ok) { el.disabled = false; writeError(r); return; }
         delete S.writeUp[k];
         clearForm('wu:' + k + ':');
-        toast(k + ' added to the workbook as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
-        loadTab(cycleLabel(), true);
+        toast(k + ' added to ' + tab + ' as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
+        if (tab === S.tab) loadTab(cycleLabel(), true); else delete S.suites[tab];
         loadSide();
       });
     },
@@ -1716,8 +1938,10 @@
     'cover-cancel': function () { S.covering = null; render(); },
     'cover-save': function (el) {
       var k = el.getAttribute('data-key');
-      var c = findCase(val('cov:' + k));
-      if (!c) { toast('Type the ID of a case in this tab, e.g. ' + ((liveCases()[0] || {}).id || 'CMS/12') + '.', 'bad'); return; }
+      var fd = S.findings.filter(function (x) { return x.key === k; })[0] || {};
+      var csm = suiteOf(fd.tab || S.tab);
+      var c = findIn(csm ? csm.cases : [], val('cov:' + k));
+      if (!c) { toast('Type the ID of a case in ' + (fd.tab || S.tab) + ', e.g. ' + (((csm && csm.cases[0]) || {}).id || 'CMS/12') + '.', 'bad'); return; }
       queueWrite(function () { return api('api_setFindingState', k, 'covered', c.id || c.key); }).then(function (r) {
         if (!r.ok) { writeError(r); return; }
         S.covering = null;
@@ -1726,23 +1950,75 @@
         loadSide();
       });
     },
+    'add-here': function (el) {
+      var id = el.getAttribute('data-path');
+      var p = S.model.paths.filter(function (x) { return x.id === id; })[0];
+      if (!p) return;
+      var keys = [];
+      p.steps.forEach(function (st) { keys = keys.concat(st.cases); });
+      var last = S.byKey[keys[keys.length - 1]] || {};
+      clearForm('ah:');
+      S.addHere = { path: id, draft: { scenario: '', feature: last.group1 || '', subFeature: last.group2 || '', testType: last.testType || '', testData: '', preCondition: '', expected: [] } };
+      render();
+      var f = document.querySelector('.add-here.open textarea');
+      if (f) f.focus();
+    },
+    'add-here-cancel': function () { S.addHere = null; clearForm('ah:'); render(); },
+    'add-here-save': function (el) {
+      var a = S.addHere;
+      if (!a) return;
+      var d = collectDraft('ah:' + a.path, a.draft);
+      if (!d.scenario.trim()) { toast('Write the scenario first.', 'bad'); return; }
+      el.disabled = true;
+      queueWrite(function () { return api('api_addCases', S.tab, [d], cycleLabel()); }).then(function (r) {
+        if (!r.ok) { el.disabled = false; writeError(r); return; }
+        var added = r.added[0];
+        S.addHere = null;
+        clearForm('ah:');
+        toast('Added to the workbook as ' + (added.id || 'row ' + added.row) + '.');
+        if (added.id) S.keep[added.id] = true;
+        loadTab(cycleLabel(), true);
+      });
+    },
+    'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
+    'pick-auto': function () { S.autoMode = true; S.selected = null; S.caseTool = null; render(); window.scrollTo(0, 0); },
+    'auto-refresh': function () { S.autoSummary = null; render(); },
+    'findings-show': function (el) { S.form.findingsShow = el.getAttribute('data-show'); render(); },
+    'note-toggle': function () { S.form.noteOpen = !val('noteOpen'); render(); var t = $('fText'); if (t) t.focus(); },
+    'cover-with': function (el) {
+      var k = el.getAttribute('data-key');
+      var id = el.getAttribute('data-case');
+      queueWrite(function () { return api('api_setFindingState', k, 'covered', id); }).then(function (r) {
+        if (!r.ok) { writeError(r); return; }
+        toast(k + ' is covered by ' + id + '. It is under Done.');
+        loadSide();
+      });
+    },
     'reopen-finding': function (el) {
       var k = el.getAttribute('data-key');
       queueWrite(function () { return api('api_setFindingState', k, 'open', ''); }).then(function (r) { if (!r.ok) writeError(r); else loadSide(); });
     },
-    'new-case': function () { S.manual.unshift({ scenario: '', expected: [] }); render(); var f = document.querySelector('[id^="man_0_"]'); if (f) f.focus(); },
-    'discard-manual': function (el) { S.manual.splice(parseInt(el.getAttribute('data-index'), 10), 1); render(); },
+    'new-case': function () {
+      if (S.manual.length) { S.manual = []; render(); return; } // pressed again: close it (what was typed comes back next time)
+      S.manual = [{ scenario: '', expected: [] }];
+      render();
+      var f = document.querySelector('[id^="man_0_"]');
+      if (f) f.focus();
+    },
+    'discard-manual': function () { S.manual = []; clearForm('man:'); render(); },
     'add-manual': function (el) {
-      var i = parseInt(el.getAttribute('data-index'), 10);
-      var d = collectDraft('man:' + i, S.manual[i]);
+      var mtab = val('man:tab', val('findingsSuite', '') || S.tab);
+      var msm = suiteOf(mtab);
+      if (!msm) return;
+      var d = collectDraft('man:0', S.manual[0], msm);
       if (!d.scenario.trim()) { toast('The scenario cannot be empty.', 'bad'); return; }
       el.disabled = true;
-      queueWrite(function () { return api('api_addCases', S.tab, [d], cycleLabel()); }).then(function (r) {
+      queueWrite(function () { return api('api_addCases', mtab, [d], msm.cycle); }).then(function (r) {
         if (!r.ok) { el.disabled = false; writeError(r); return; }
-        S.manual.splice(i, 1);
+        S.manual = [];
         clearForm('man:');
-        toast('Added to the workbook as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
-        loadTab(cycleLabel(), true);
+        toast('Added to ' + mtab + ' as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
+        if (mtab === S.tab) loadTab(cycleLabel(), true); else delete S.suites[mtab];
         loadSide();
       });
     },
@@ -1753,6 +2029,7 @@
       });
     },
     print: function () { window.print(); },
+    'pick-tab': function (el) { pickTab(el.getAttribute('data-tab')); },
     'issue-show': function (el) { S.form.issueShow = el.getAttribute('data-show'); render(); },
     'issues-reload': function () { S.issues = null; render(); },
     'issues-refresh': function (el) {
@@ -1929,6 +2206,11 @@
       if (!a.ok) { toast(a.error, 'bad'); return; }
       S.app = a;
       TR.state.book = name;
+      TR.store.set('book', name);
+      S.addHere = null;
+      S.autoSummary = null;
+      S.autoMode = false;
+      S.suites = {};
       S.selected = null;
       S.keep = {};
       S.undo = [];
@@ -1947,19 +2229,28 @@
     });
   }
 
+  /** Open another test case tab (a module) of this workbook. */
+  function pickTab(name) {
+    if (S.autoMode && name === S.tab) { S.autoMode = false; render(); return; }
+    S.autoMode = false;
+    if (!name || name === S.tab) return;
+    S.tab = name;
+    TR.store.set('tab:' + book(), S.tab);
+    S.addHere = null;
+    S.selected = null;
+    S.caseTool = null;
+    S.keep = {};
+    S.undo = [];
+    S.model = null;
+    S.filters.type = '';
+    loadTab('');
+  }
+
   var CHANGES = {
     book: function (el) { if (el.value) switchBook(el.value); },
-    tab: function (el) {
-      S.tab = el.value;
-      TR.store.set('tab:' + book(), S.tab);
-      S.selected = null;
-      S.caseTool = null;
-      S.keep = {};
-      S.undo = [];
-      S.model = null;
-      S.filters.type = '';
-      loadTab('');
-    },
+    tab: function (el) { pickTab(el.value); },
+    'findings-suite': function (el) { S.form.findingsSuite = el.value; render(); },
+    'man-suite': function (el) { S.form['man:tab'] = el.value; render(); },
     cycle: function (el) {
       var c = S.model.cycles[parseInt(el.value, 10)];
       if (!c) return;
@@ -1981,6 +2272,12 @@
     var fn = ACTIONS[el.getAttribute('data-action')];
     if (fn) { e.preventDefault(); fn(el, e); }
   });
+
+  // Keep a folded Columns section folded (or open) across redraws.
+  document.addEventListener('toggle', function (e) {
+    var el = e.target;
+    if (el && el.matches && el.matches('details[data-cols]')) S.form['colsOpen:' + el.getAttribute('data-cols')] = el.open;
+  }, true);
 
   document.addEventListener('change', function (e) {
     var el = e.target;

@@ -543,6 +543,20 @@ for (const B of BACKENDS) {
     assert.notEqual(call('api_version', TAB).version, v1);
   });
 
+  test_('automation summary: the latest results by test file, and what is failing', async () => {
+    const { call } = await setup();
+    const r = call('api_automationSummary');
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.tabs.length, 1);
+    const t = r.tabs[0];
+    assert.equal(t.tab, 'CMS Automation');
+    assert.deepEqual(t.counts, { pass: 3, fail: 1, other: 1, none: 0, total: 5 });
+    assert.deepEqual([t.executedPct, t.passRate], [100, 75]);
+    assert.equal(t.files[0].file, 'workflow-assign.spec.ts', 'failing files first');
+    assert.deepEqual(t.files.find((f) => f.file === 'inbox-search.spec.ts'), { file: 'inbox-search.spec.ts', pass: 1, fail: 0, other: 1, none: 0, total: 2 });
+    assert.deepEqual(JSON.parse(JSON.stringify(t.failures)), [{ file: 'workflow-assign.spec.ts', test: 'Assign › GRO assigns', group: 'Employee', note: 'Assign button missing', status: 'Fail' }]);
+  });
+
   test_('summary figures and the visible summary tab', async () => {
     const { ss, call } = await setup();
     const s = call('api_summary', TAB);

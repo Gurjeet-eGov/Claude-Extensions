@@ -1258,6 +1258,62 @@ function tr_summary(tabName, cycleLabel) {
   };
 }
 
+/**
+ * The automation results tabs (role automation): for each, the latest status column's
+ * figures, the figures per test file, and the failing tests. Reads only.
+ */
+function tr_automationSummary() {
+  var cfg = tr_config_();
+  var ss = tr_ss_();
+  var out = [];
+  ss.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (name === TR_META || name === TR_SUMMARY || name === TR_ISSUES) return;
+    var tcfg = cfg && cfg.tabs && cfg.tabs[name];
+    if ((tcfg ? tcfg.role : tr_detectTab_(sh).role) !== 'automation') return;
+    var m = tr_open_(name, cfg);
+    var cy = m.cycles[m.cycles.length - 1];
+    if (!cy) { out.push({ tab: name, cycle: '', error: 'No status column found in this tab.' }); return; }
+    var norm = m.headers.map(TRCore.normalizeHeader);
+    var col = function (re) { for (var i = 0; i < norm.length; i++) if (re.test(norm[i])) return i; return -1; };
+    var specCol = TRCore.detectSpecColumn(m.headers);
+    var testCol = col(/playwright|test case id|test name|^test$|^title$/);
+    var scenCol = col(/scenario/);
+    var groupCol = col(/^suite$|functionality|feature|module/);
+    var noteCol = cy.comment >= 0 ? cy.comment : col(/^notes?$|^comments?$/);
+    var cell = function (row, i) { return i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : ''; };
+    var counts = { pass: 0, fail: 0, other: 0, none: 0, total: 0 };
+    var files = {};
+    var order = [];
+    var failures = [];
+    m.values.slice(m.headerRow).forEach(function (row) {
+      var file = cell(row, specCol);
+      var test = cell(row, testCol) || cell(row, scenCol);
+      if (!file && !test) return;
+      var status = cell(row, cy.status);
+      var cls = TRCore.classifyStatus(status);
+      counts[cls] += 1;
+      counts.total += 1;
+      var key = file || '(no test file)';
+      if (!files[key]) { files[key] = { file: key, pass: 0, fail: 0, other: 0, none: 0, total: 0 }; order.push(key); }
+      files[key][cls] += 1;
+      files[key].total += 1;
+      if (cls === 'fail') failures.push({ file: file, test: test, group: cell(row, groupCol), note: cell(row, noteCol), status: status });
+    });
+    var ran = counts.pass + counts.fail;
+    out.push({
+      tab: name,
+      cycle: cy.label,
+      counts: counts,
+      executedPct: counts.total ? Math.round(((counts.total - counts.none) / counts.total) * 100) : null,
+      passRate: ran ? Math.round((counts.pass / ran) * 100) : null,
+      files: order.map(function (k) { return files[k]; }).sort(function (a, b) { return (b.fail - a.fail) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0); }),
+      failures: failures
+    });
+  });
+  return { ok: true, tabs: out, sheetName: ss.getName(), generatedAt: tr_now_() };
+}
+
 /** Write the summary into a visible "Test Run Summary" tab, so the published sheet carries it. */
 function tr_writeSummaryTab(tabName, cycleLabel) {
   var res = tr_summary(tabName, cycleLabel);

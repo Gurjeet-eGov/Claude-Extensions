@@ -140,10 +140,14 @@ test('suite cases: one suite\'s test cases for Bug Reporter to pick from, withou
     assert.equal(r.ok, true, r.error);
     assert.equal(r.tab, 'CMS 2.20.1 Features');
     assert.ok(r.cases.length > 0);
-    assert.deepEqual(Object.keys(r.cases[0]).sort(), ['id', 'key', 'scenario', 'status']);
+    assert.deepEqual(Object.keys(r.cases[0]).sort(), ['group1', 'group2', 'id', 'key', 'scenario', 'status', 'testType']);
+    assert.equal(r.fields.scenario >= 0, true, 'with the suite\'s columns, for a new-case form');
+    assert.ok(Array.isArray(r.statusOptions));
     assert.equal((await s.req('GET', '/api/app')).last.tab, TAB, 'the console keeps its tab');
     const main = await s.req('GET', `/api/suite-cases?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}`);
-    assert.deepEqual(main.cases.find((c) => c.id === 'CMS/05'), { key: 'CMS/05', id: 'CMS/05', scenario: main.cases.find((c) => c.id === 'CMS/05').scenario, status: 'Fail' });
+    const c5 = main.cases.find((c) => c.id === 'CMS/05');
+    assert.deepEqual([c5.key, c5.status, c5.group2], ['CMS/05', 'Fail', 'Complaint Details']);
+    assert.equal(main.hasComment, true);
     assert.equal(main.cycle, 'v2.12');
     assert.equal((await s.req('GET', `/api/suite-cases?book=${encodeURIComponent(BOOK)}&tab=Nope`)).code, 'NO_TAB');
   } finally { s.close(); }

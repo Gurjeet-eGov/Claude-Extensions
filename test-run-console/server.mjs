@@ -469,7 +469,12 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       book: res.book,
       tab: res.tab,
       cycle: ci >= 0 ? res.cycles[ci].label : '',
-      cases: res.cases.filter((c) => !c.retired).map((c) => ({ key: c.key, id: c.id, scenario: clip(c.scenario, 160), status: ci >= 0 ? c.statuses[ci] || '' : '' })),
+      // what a form for a new case in this suite needs: its columns, result values, comment column
+      fields: res.fields,
+      statusOptions: res.statusOptions,
+      hasCycle: ci >= 0,
+      hasComment: ci >= 0 ? !!res.cycles[ci].hasComment : false,
+      cases: res.cases.filter((c) => !c.retired).map((c) => ({ key: c.key, id: c.id, scenario: clip(c.scenario, 160), status: ci >= 0 ? c.statuses[ci] || '' : '', group1: c.group1, group2: c.group2, testType: c.testType })),
     };
   }
 

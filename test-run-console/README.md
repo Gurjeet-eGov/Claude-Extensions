@@ -29,8 +29,12 @@ Want to look around first? Run `npm run demo`. It uses a throwaway copy of a sam
 
 Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**.
 
+- **Workbooks.** Keep one workbook per environment (or however you work). **Import** (top right, for the person running Test Run) takes one or several `.xlsx` files at once. **Workbook** (top right) switches between them, for everyone, including teammates with View only links. Each browser remembers its own choice.
+- **Test suites and cycles.** Under the screen names, the **Test suites** row has a button for each test case tab of the workbook (a module, say PGR or Trade License) and **Test cycle** picks the cycle. The row, with the progress bar, stays in view while you scroll.
 - **Run.** Cases are grouped into *test paths*, by Feature then Sub feature.
-  - Each case is one line: a status dot, the ID, the scenario and badges.
+  - The filters sit in a column on the left that stays in view: Search, Show (To do, Failed, All, Retired) and Test type. **Collapse**, **Expand** and **?** (shortcuts) are at the top right of the list.
+  - Each case is one line: a status dot, the ID, the scenario, its test type as a tag, and badges.
+  - **+ Add a test case here**, at the end of each section, adds a scenario you found while testing, with the section's feature and sub feature filled in. It goes after the last row of the workbook, with the next ID.
   - Click a case to see its pre condition, test data and expected result as bullets.
   - Mark it with **P**, **F**, **N** or a button. The next case in the list opens, and **U** undoes.
   - **Comment and issue link:** type them before or after choosing the result. Pressing a result saves all three and opens the next case. A failure with nothing typed yet stays open so you can describe it; press the result again (or **Save note**, or Enter) once you have.
@@ -43,11 +47,11 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - Titles, states and priorities of GitHub issues are filled in from GitHub, with the `gh` login on the laptop running Test Run. Priority comes from the issue's project board (a *Priority* field) or a label such as `P1`. **Refresh from GitHub** gets the latest. You can also type a title or priority with **✎**.
   - **Download** adds them to the workbook as a **Known issues** sheet: the issue (linked), title, priority, state, test cases and when it was added. The file in `sheets/` is not changed.
 - **Colour and symbol together.** ✓ pass, ✗ fail, – other, ○ not run, so results stay readable for colour-blind readers and on paper.
-- **Focus on risk.** Untested cases sort into four groups: new in this release, failed last cycle, manual only, and automation already passing.
+- **Risk first.** Sections with cases that are new in this release, or failed last cycle, come first, and those cases are tagged.
 - **Automation badges.** If the workbook has the automation sign-off tab, cases whose comment names a spec (e.g. `inbox-search.spec`) show its latest result: **Auto ✓**, **Auto ✗** or **Auto ~**.
 - **Cycles.** Each cycle is a pair of columns, `Test Status` and `Comment`, as your sheets already have.
-  - **Setup → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
-  - Earlier cycles stay, so you can compare. The cycle picker at the top switches between them.
+  - **Setup → Workbook → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
+  - Earlier cycles stay, so you can compare. **Test cycle**, next to the test suites, switches between them.
 - **Fix cases while you run.** Under the result buttons of an open case:
   - **✎ Edit case** (or **E**) changes the scenario, pre condition, test data, expected result or test type in the workbook. An optional note is added to the cycle's comment as `Updated: …`.
   - **⧉ Duplicate of…** picks the case to keep (similar ones are suggested). This one is struck out and its comment starts with `Duplicate of CMS/12: …`.
@@ -55,12 +59,16 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - Nothing is deleted: the text stays in the workbook, struck out, with the reason in the Comment of the current cycle. Status cells are left as they are.
   - Retired cases leave the to-do list, the progress bar and the Summary figures. The **Retired** filter lists them, and **Restore to the run** removes the strikethrough and the note.
   - The strikethrough on the Scenario cell is what marks a case as retired, so this survives Download, Google Sheets and Excel. A row someone strikes out by hand is treated the same way.
-- **Findings.** Bugs and scenarios found while testing that are not in the test cases yet. They are what gets added to the final workbook.
-  - They arrive from Bug Reporter (tick *Also add this to Test Run* and leave the test case empty), or you note one by hand.
-  - **Write up as test case** opens the case, prefilled from the bug, right there. **Add to workbook** appends it with the next ID (`CMS/183`) and the last row's formatting.
-  - **Already covered…** links it to an existing case instead.
-  - **+ New test case** adds a case that has no finding behind it.
+- **Findings.** Bugs and scenarios found while testing that are not in the test cases yet, from every test suite of the workbook. They are what gets added to the final workbook.
+  - They arrive from Bug Reporter (tick *Also add this to Test Run* and leave the test case empty), or you add one with **+ Add finding**, choosing its test suite.
+  - Each finding lists up to three similar test cases already in its suite. **Covered by this** moves it to **Done** in one click.
+  - **Write up as test case** opens the case, prefilled from the bug, right there. **Add to workbook** appends it to the finding's suite with the next ID (`CMS/183`) and the last row's formatting.
+  - **Already covered…** links it to an existing case by its ID instead.
+  - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
+  - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows percent executed, pass rate, a colour strip per feature, open failures with issue links, and a comparison with the previous cycle. **Export summary** saves it as one HTML file you can send. **Update summary tab** writes it into the workbook.
+  - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation.
+- **Setup** has two parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved) and **Sharing** (your name and the team).
 - **Cells on several lines.** Legacy sheets often have several lines in one cell. The console reads them the way a person would:
   - lines become a list (bullet marks dropped, numbers like `1.` or `2,` kept);
   - a line that carries on the one before (a closing quote, lower case, or after "Dear Citizen,") stays with it;
@@ -71,11 +79,11 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 
 ## Sharing with your team
 
-Test Run runs on one laptop, yours. To share it, turn on **Setup → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
+Test Run runs on one laptop, yours. To share it, turn on **Setup → Sharing → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
 
 ### 1. How your team reaches your laptop
 
-Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Team** offers two ways:
+Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Sharing → Team** offers two ways:
 
 | | Quick tunnel | Fixed address |
 |---|---|---|
@@ -92,7 +100,7 @@ Test Run only listens on your laptop, so a tunnel gives it an internet address. 
   - **Hosted page:** this console on GitHub Pages, `https://<owner>.github.io/<repo>/test-run/`. Invite links open there. It holds no data; it only talks to your laptop. To put it there, once:
     1. In the repository on GitHub: **Settings → Pages → Source: GitHub Actions**.
     2. Merge into `master`. The workflow [`.github/workflows/test-run-pages.yml`](../.github/workflows/test-run-pages.yml) publishes the console.
-    3. In **Setup → Team**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
+    3. In **Setup → Sharing → Team**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
   - **Keep the current address in a secret gist:** Test Run writes its address to a gist with your `gh` login, and the hosted page looks it up there.
 - Until the hosted page is live, invite links name the current tunnel address. They stop working when it changes, and you make new ones (**New link**).
 
@@ -101,18 +109,18 @@ Test Run only listens on your laptop, so a tunnel gives it an internet address. 
 - **[Tailscale Funnel](https://tailscale.com/kb/1223/funnel)** (free, no domain needed):
   1. Install Tailscale on your Mac (`brew install --cask tailscale`, or the App Store) and sign in.
   2. Run `tailscale funnel --bg 5178`. The first time, it gives you a link to allow Funnel for your account. It keeps running after restarts.
-  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Team → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
+  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Sharing → Team → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
 - **Cloudflare named tunnel** (needs a domain you manage in Cloudflare):
   1. `cloudflared tunnel login`
   2. `cloudflared tunnel create test-run`
   3. `cloudflared tunnel route dns test-run testrun.your-domain.org`
-  4. In **Setup → Team**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start tunnel**. Test Run runs it while sharing and starts it again if it drops.
+  4. In **Setup → Sharing → Team**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start tunnel**. Test Run runs it while sharing and starts it again if it drops.
 
 **Check** fetches the address and confirms it reaches this Test Run (not another laptop's).
 
 ### 2. Invite people
 
-In **Setup → Team**, add each person with what they can do:
+In **Setup → Sharing → Team**, add each person with what they can do:
 
 | Can | Who | What they can do |
 |---|---|---|
