@@ -69,7 +69,6 @@ for (const B of BACKENDS) {
     const boot = o.call('api_bootstrap');
     assert.equal(boot.ok, true, boot.error);
     const res = o.call('api_saveSetup', {
-      issueBase: 'https://github.com/example/repo/issues',
       tabs: boot.tabs.map((t) => ({ name: t.name, ...t.detected })),
     });
     assert.equal(res.ok, true, res.error);
@@ -182,6 +181,89 @@ for (const B of BACKENDS) {
     assert.deepEqual(sheetRow(ss, TAB, c.row).slice(7, 11), ['', '', '', ''], 'undo clears status and tester');
   });
 
+  test_('an issue link saved with a result: a Linked issue column is added, the cell shows #812 linked to the issue', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/04');
+    const gh = 'https://github.com/org/repo/issues/812';
+    const base = { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12' };
+    const r = call('api_mark', { ...base, expect: '', status: 'Fail', comment: 'Assign fails', issue: gh });
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.addedIssueColumn, 'Linked issue');
+    const sh = ss.getSheetByName(TAB);
+    assert.equal(sh.getRange(1, 10).getValue(), 'Linked issue');
+    assert.equal(sh.getRange(c.row, 10).getValue(), '#812');
+    assert.equal(sh.getRange(c.row, 10).getLinkUrls()[0][0], gh);
+    const d = caseOf(call('api_loadTab', TAB), 'CMS/04');
+    assert.deepEqual(JSON.parse(JSON.stringify(d.issues)), [{ ref: '#812', url: gh }]);
+    assert.equal(d.linkedIssue, gh);
+    // A second issue: both references in the cell, the cell links to the first; the issue list keeps the second's link
+    const other = 'https://github.com/org/repo/issues/9';
+    const r2 = call('api_mark', { ...base, expect: 'Fail', status: 'Fail', issue: `${gh}\n${other}` });
+    assert.equal(r2.ok, true, r2.error);
+    assert.equal(r2.addedIssueColumn, undefined);
+    assert.equal(sh.getRange(c.row, 10).getValue(), '#812, #9');
+    assert.deepEqual(JSON.parse(JSON.stringify(caseOf(call('api_loadTab', TAB), 'CMS/04').issues)), [{ ref: '#812', url: gh }, { ref: '#9', url: other }]);
+    // Cleared: no text, no link
+    assert.equal(call('api_mark', { ...base, expect: 'Fail', status: 'Fail', issue: '' }).ok, true);
+    assert.equal(sh.getRange(c.row, 10).getValue(), '');
+    assert.equal(sh.getRange(c.row, 10).getLinkUrls()[0][0], '');
+    // Nothing typed and no column: no column added
+    const d2 = caseOf(call('api_loadTab', 'Dashboard KPI'), call('api_loadTab', 'Dashboard KPI').cases[0].key);
+    const before = ss.getSheetByName('Dashboard KPI').getLastColumn();
+    call('api_mark', { tab: 'Dashboard KPI', key: d2.key, sh: d2.sh, row: d2.row, expect: d2.statuses[d2.statuses.length - 1] || '', issue: '' });
+    assert.equal(ss.getSheetByName('Dashboard KPI').getLastColumn(), before);
+  });
+
+  test_('a bug filed against a case: marked failed, the bug linked and noted in the comment once', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/12');
+    const url = 'https://github.com/org/repo/issues/77';
+    const r = call('api_linkBug', { tab: TAB, key: 'CMS/12', url, title: 'Assign button does nothing', priority: 'P1' });
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.status, r.previous, r.cycle], ['Fail', '', 'v2.12']);
+    assert.deepEqual(sheetRow(ss, TAB, c.row).slice(7, 10), ['Fail', 'Bug #77: Assign button does nothing', '#77']);
+    call('api_linkBug', { tab: TAB, key: 'CMS/12', url, title: 'Assign button does nothing' });
+    assert.deepEqual(sheetRow(ss, TAB, c.row).slice(7, 10), ['Fail', 'Bug #77: Assign button does nothing', '#77'], 'not noted twice');
+    // An already failing case keeps its status and comment, with the bug added under it
+    const f = caseOf(call('api_loadTab', TAB), 'CMS/05');
+    const r2 = call('api_linkBug', { tab: TAB, key: 'CMS/05', url: 'https://github.com/org/repo/issues/78', title: 'Block level missing' });
+    assert.equal(r2.status, 'Fail');
+    assert.deepEqual(sheetRow(ss, TAB, f.row).slice(7, 10), ['Fail', 'Block level missing on details page\nBug #78: Block level missing', '#78']);
+    assert.equal(call('api_linkBug', { tab: TAB, key: 'CMS/99', url }).code, 'NO_CASE');
+    assert.equal(call('api_linkBug', { tab: TAB, key: 'CMS/12', url: 'javascript:alert(1)' }).code, 'BAD_INPUT');
+  });
+
+  test_('known issues: from cases and findings, with titles and priorities; the downloaded copy gets a Known issues sheet', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/04');
+    const a = 'https://github.com/org/repo/issues/812';
+    const b = 'https://github.com/org/repo/issues/900';
+    call('api_mark', { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: '', status: 'Fail', issue: a });
+    call('api_saveFinding', { text: 'Toast overlaps the header', url: b, issue: '#900', tab: TAB, source: 'bug-reporter', priority: 'P0' });
+    assert.equal(call('api_saveIssueMeta', [{ key: a, title: 'Assign fails', priority: 'P2', state: 'open' }]).ok, true);
+    const list = call('api_listIssues');
+    assert.equal(list.ok, true, list.error);
+    assert.deepEqual(list.issues.map((i) => [i.ref, i.title, i.priority]), [['#900', 'Toast overlaps the header', 'P0'], ['#812', 'Assign fails', 'P2']]);
+    assert.deepEqual(list.issues[0].findings.map((f) => f.key), ['F-001']);
+    // The Features tab already names "#812" with no link: the issue list gives it this one
+    assert.deepEqual(list.issues[1].cases.map((x) => [x.tab, x.id, x.status]), [[TAB, 'CMS/04', 'Fail'], ['CMS 2.20.1 Features', 'CMS/002', 'Fail']]);
+    // Written up as a case, the finding's bug moves to that case
+    call('api_setFindingState', 'F-001', 'written', 'CMS/19');
+    assert.equal(call('api_listIssues').issues.find((i) => i.url === b), undefined);
+    call('api_setFindingState', 'F-001', 'open');
+
+    const w = call('api_writeIssuesSheet');
+    assert.equal(w.rows, 2);
+    const sh = ss.getSheetByName('Known issues');
+    assert.deepEqual(sh.getRange(4, 1, 1, 6).getDisplayValues()[0], ['Issue', 'Title', 'Priority', 'State', 'Linked test cases', 'Added']);
+    assert.deepEqual([sh.getRange(5, 1).getValue(), sh.getRange(5, 1).getLinkUrls()[0][0]], ['#900', b]);
+    assert.match(sh.getRange(5, 5).getValue(), /^Not in the test cases yet \(finding F-001: Toast overlaps the header\)$/);
+    assert.match(sh.getRange(6, 5).getValue(), /^CMS 2\.20\.1 › CMS\/04 – .+ \(Fail\)\nCMS 2\.20\.1 Features › CMS\/002 – .+ \(Fail\)$/);
+    assert.equal(sh.getRange(6, 4).getValue(), 'Open');
+    assert.ok(!call('api_bootstrap').tabs.some((t) => t.name === 'Known issues'), 'never offered as a test suite');
+    assert.equal(call('api_writeIssuesSheet').rows, 2, 'written again in place');
+  });
+
   test_('starting a cycle adds a status/comment pair next to the last one, with dropdown and formatting', async () => {
     const { ss, call } = await setup();
     const r = call('api_startCycle', TAB, 'v2.20.1');
@@ -227,6 +309,142 @@ for (const B of BACKENDS) {
     assert.equal(B.fmt(ss, TAB, 20, 1), 'body', 'formatting copied from the last case');
     assert.deepEqual(dvValues(ss, TAB, 20, 8), ['Fail', 'NA (Skipped)', 'Pass'], 'dropdown copied');
     assert.equal(call('api_loadTab', TAB).cases.length, 20);
+  });
+
+  const lines = (ss, tab, row, col, n = 1) => ss.getSheetByName(tab).getRange(row, col, 1, n).getFontLines()[0];
+
+  test_('deprecating a case: row struck out, text kept, reason first in the comment, out of the counts; restore undoes it', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/15');
+    const v1 = call('api_version', TAB).version;
+    const base = { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12' };
+    assert.equal(call('api_retireCase', { ...base, kind: 'deprecated', reason: '  ' }).code, 'BAD_INPUT', 'a reason is required');
+    assert.equal(call('api_retireCase', { ...base, kind: 'gone', reason: 'x' }).code, 'BAD_INPUT');
+
+    const r = call('api_retireCase', { ...base, kind: 'deprecated', reason: 'SMS replaced by\nWhatsApp in 2.20' });
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.comment, 'Deprecated: SMS replaced by WhatsApp in 2.20\nNo SMS gateway on this deployment', 'note on one line, earlier comment kept below');
+    const row = sheetRow(ss, TAB, 16);
+    assert.equal(row[1], 'Verify if an SMS is sent to the citizen when a complaint is created', 'the text stays in the workbook');
+    assert.deepEqual(row.slice(7, 9), ['NA (Skipped)', r.comment], 'status untouched, reason in the comment');
+    assert.deepEqual(lines(ss, TAB, 16, 1, 9), ['line-through', 'line-through', 'none', 'line-through', 'line-through', 'line-through', 'line-through', 'none', 'none'],
+      'what the case says is struck out; sub feature (a group label) and the results are not');
+    assert.notEqual(call('api_version', TAB).version, v1);
+
+    const d = call('api_loadTab', TAB);
+    assert.deepEqual(caseOf(d, 'CMS/15').retired, { kind: 'deprecated', of: '', reason: 'SMS replaced by WhatsApp in 2.20', cycle: 'v2.12' });
+    assert.equal(caseOf(d, 'CMS/14').retired, null);
+    const s = call('api_summary', TAB).summary;
+    assert.deepEqual(s.counts, { pass: 4, fail: 2, other: 1, none: 10, total: 17 }, 'retired cases leave the figures');
+    assert.deepEqual(s.retired.map((x) => [x.id, x.kind, x.reason]), [['CMS/15', 'deprecated', 'SMS replaced by WhatsApp in 2.20']]);
+    const tab = (call('api_writeSummaryTab', TAB), dump(ss, 'Test Run Summary'));
+    assert.ok(tab.some((x) => x[0] === 'CMS/15' && x[2] === 'Deprecated: SMS replaced by WhatsApp in 2.20'), 'listed in the summary tab');
+
+    const back = call('api_restoreCase', base);
+    assert.equal(back.ok, true, back.error);
+    assert.equal(back.comment, 'No SMS gateway on this deployment');
+    assert.deepEqual(lines(ss, TAB, 16, 1, 2), ['none', 'none']);
+    assert.equal(caseOf(call('api_loadTab', TAB), 'CMS/15').retired, null);
+  });
+
+  test_('a duplicate is struck out and tagged with the case that is kept', async () => {
+    const { ss, call } = await setup();
+    const d0 = call('api_loadTab', TAB);
+    const dup = caseOf(d0, 'CMS/12');
+    const base = { tab: TAB, key: dup.key, sh: dup.sh, row: dup.row, cycle: 'v2.12', kind: 'duplicate' };
+    assert.equal(call('api_retireCase', { ...base, of: '' }).code, 'BAD_INPUT', 'the kept case is required');
+    assert.equal(call('api_retireCase', { ...base, of: 'CMS/404' }).code, 'BAD_INPUT');
+    assert.equal(call('api_retireCase', { ...base, of: 'CMS/12' }).code, 'BAD_INPUT', 'not a duplicate of itself');
+
+    const r = call('api_retireCase', { ...base, of: 'cms/10' });
+    assert.equal(r.ok, true, r.error);
+    assert.equal(sheetRow(ss, TAB, 13)[8], 'Duplicate of CMS/10', 'reason is optional for duplicates; the ID is written as in the sheet');
+    assert.equal(lines(ss, TAB, 13, 2)[0], 'line-through');
+    assert.equal(lines(ss, TAB, 11, 2)[0], 'none', 'the kept case is untouched');
+
+    const d = call('api_loadTab', TAB);
+    assert.deepEqual(caseOf(d, 'CMS/12').retired, { kind: 'duplicate', of: 'CMS/10', reason: '', cycle: 'v2.12', ofKey: 'CMS/10' });
+    assert.deepEqual(caseOf(d, 'CMS/10').duplicates, ['CMS/12']);
+
+    const c9 = caseOf(d, 'CMS/09');
+    assert.equal(call('api_retireCase', { tab: TAB, key: c9.key, sh: c9.sh, row: c9.row, cycle: 'v2.12', kind: 'duplicate', of: 'CMS/12' }).code, 'BAD_INPUT', 'cannot point at a retired case');
+    assert.doesNotMatch(call('api_buildPrompt', 'paths', TAB, { cycle: 'v2.12' }).text, /CMS\/12 \|/, 'retired cases are not planned');
+
+    // Re-marking as deprecated replaces the note instead of stacking a second one.
+    const again = call('api_retireCase', { ...base, kind: 'deprecated', reason: 'Timeline covered by CMS/10 and CMS/13' });
+    assert.equal(again.comment, 'Deprecated: Timeline covered by CMS/10 and CMS/13');
+
+    // A new cycle: the case stays retired, and the reason is still found in the cycle it was retired in.
+    assert.equal(call('api_startCycle', TAB, 'v2.20.1').ok, true);
+    const d2 = call('api_loadTab', TAB);
+    assert.equal(caseOf(d2, 'CMS/12').retired.cycle, 'v2.12');
+    assert.equal(sheetRow(ss, TAB, 13)[10], '', 'nothing written into the new cycle');
+  });
+
+  test_('cases added below a retired last row do not come out struck', async () => {
+    const { ss, call } = await setup();
+    const last = caseOf(call('api_loadTab', TAB), 'CMS/18');
+    assert.equal(call('api_retireCase', { tab: TAB, key: last.key, sh: last.sh, row: last.row, cycle: 'v2.12', kind: 'deprecated', reason: 'SLA moved to the dashboard' }).ok, true);
+    const r = call('api_addCases', TAB, [{ scenario: 'Verify if SLA is shown on the dashboard', expected: ['SLA shall be shown'] }], 'v2.12');
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(lines(ss, TAB, 20, 1, 2), ['none', 'none']);
+    assert.equal(B.fmt(ss, TAB, 20, 1), 'body', 'the rest of the formatting is still copied');
+    assert.equal(caseOf(call('api_loadTab', TAB), 'CMS/19').retired, null);
+    assert.equal(call('api_addColumns', TAB, ['testedBy']).ok, true);
+    assert.equal(lines(ss, TAB, 19, 10)[0], 'none', 'new columns do not inherit the strikethrough');
+  });
+
+  test_('updating a case while testing: fields written, optional "Updated:" note in the comment', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/04');
+    const base = { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12' };
+    assert.equal(call('api_updateCase', { ...base, fields: { scenario: ' ' } }).code, 'BAD_INPUT');
+    const r = call('api_updateCase', { ...base, fields: { scenario: 'Verify if the CSR can create a complaint with only the mandatory fields', expected: 'Complaint shall be created\nLocality is now optional' }, note: 'Locality made optional in 2.20' });
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.key, 'CMS/04');
+    assert.notEqual(r.sh, c.sh, 'new scenario fingerprint for the next write');
+    const row = sheetRow(ss, TAB, 5);
+    assert.equal(row[1], 'Verify if the CSR can create a complaint with only the mandatory fields');
+    assert.equal(row[6], '• Complaint shall be created\n• Locality is now optional');
+    assert.equal(row[8], 'Updated: Locality made optional in 2.20');
+    const plain = call('api_updateCase', { ...base, sh: r.sh, fields: { testData: 'Phone and name only' } });
+    assert.equal(plain.ok, true, plain.error);
+    assert.equal(sheetRow(ss, TAB, 5)[8], 'Updated: Locality made optional in 2.20', 'no note, comment untouched');
+
+    // On a retired case the update note goes below the retire note, so the case stays readable as retired.
+    const k = caseOf(call('api_loadTab', TAB), 'CMS/16');
+    const kb = { tab: TAB, key: k.key, sh: k.sh, row: k.row, cycle: 'v2.12' };
+    call('api_retireCase', { ...kb, kind: 'deprecated', reason: 'Masking moved to ABAC' });
+    const u = call('api_updateCase', { ...kb, fields: { testData: 'n/a' }, note: 'typo' });
+    assert.equal(u.comment, 'Deprecated: Masking moved to ABAC\nUpdated: typo');
+    assert.equal(caseOf(call('api_loadTab', TAB), 'CMS/16').retired.reason, 'Masking moved to ABAC');
+  });
+
+  test_('editing keeps the style of the cell: legacy multi-line text as typed, house-style bullets as bullets', async () => {
+    const { ss, call } = await setup();
+    const c = caseOf(call('api_loadTab', TAB), 'CMS/09');
+    const sh = ss.getSheetByName(TAB);
+    sh.getRange(c.row, 7).setValue('Dear Citizen,\nYour complaint was rejected.'); // a legacy cell, no bullets
+    const fresh = caseOf(call('api_loadTab', TAB), 'CMS/09');
+    const base = { tab: TAB, key: fresh.key, sh: fresh.sh, row: fresh.row, cycle: 'v2.12' };
+    const r = call('api_updateCase', { ...base, fields: { expected: 'Dear Citizen,   \nYour complaint was rejected; reason shown.\n\n\n', preCondition: 'Complaint pending\nGRO logged in  ' } });
+    assert.equal(r.ok, true, r.error);
+    const row = sheetRow(ss, TAB, c.row);
+    assert.equal(row[6], 'Dear Citizen,\nYour complaint was rejected; reason shown.', 'written as typed, only tidied');
+    assert.equal(row[5], 'Complaint pending\nGRO logged in');
+    const b = caseOf(call('api_loadTab', TAB), 'CMS/02'); // house style "• " bullets
+    call('api_updateCase', { tab: TAB, key: b.key, sh: b.sh, row: b.row, cycle: 'v2.12', fields: { expected: '• All fields shall have visible labels\nMandatory fields shall be marked with *' } });
+    assert.equal(sheetRow(ss, TAB, b.row)[6], '• All fields shall have visible labels\n• Mandatory fields shall be marked with *', 'a new line in a bulleted cell becomes a bullet too');
+  });
+
+  test_('retiring needs a comment column for the reason', async () => {
+    const srv = await open({}, (ss) => B.addSheet(ss, 'Bare', [['ID', 'Scenario', 'Status'], ['B-1', 'Verify if a', ''], ['B-2', 'Verify if b', '']]));
+    const boot = srv.call('api_bootstrap');
+    srv.call('api_saveSetup', { tabs: boot.tabs.map((t) => ({ name: t.name, ...t.detected })) });
+    const c = srv.call('api_loadTab', 'Bare').cases[0];
+    const r = srv.call('api_retireCase', { tab: 'Bare', key: c.key, sh: c.sh, row: c.row, cycle: '', kind: 'deprecated', reason: 'old' });
+    assert.equal(r.code, 'NO_COMMENT');
+    assert.equal(lines(srv.ss, 'Bare', 2, 2)[0], 'none', 'nothing struck when the reason cannot be written');
   });
 
   test_('findings: numbered, listed, written up from the inbox, deleted', async () => {

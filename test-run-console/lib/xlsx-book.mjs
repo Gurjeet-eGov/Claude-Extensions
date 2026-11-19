@@ -133,6 +133,13 @@ function displayOf(v) {
   return String(v);
 }
 
+function linkOf(v) {
+  if (!v || typeof v !== 'object') return '';
+  if (typeof v.hyperlink === 'string' && /^https?:\/\//i.test(v.hyperlink)) return v.hyperlink;
+  const m = /^\s*=?\s*HYPERLINK\(\s*"([^"]+)"/i.exec(String(v.formula || v.sharedFormula || ''));
+  return m && /^https?:\/\//i.test(m[1]) ? m[1] : '';
+}
+
 function displayText(cell) {
   if (cell.isMerged && cell.master && cell.master !== cell) return '';
   return displayOf(cell.value);
@@ -149,12 +156,102 @@ function writeValue(cell, v) {
   else if (s.startsWith("'")) cell.value = s.slice(1);
   else if (/^-?(0|[1-9]\d{0,14})(\.\d+)?$/.test(s)) cell.value = Number(s);
   else cell.value = s;
+  // Text on several lines only shows as lines when the cell wraps.
+  if (s.includes('\n') && !(cell.alignment && cell.alignment.wrapText)) {
+    restyle(cell, (st) => { st.alignment = { ...(st.alignment || {}), wrapText: true }; });
+  }
 }
 
 function restyle(cell, fn) {
   const st = clone(cell.style || {}) || {};
   fn(st);
   cell.style = st;
+}
+
+// ---------------------------------------------------------------------------
+// Row heights
+// ---------------------------------------------------------------------------
+//
+// A .xlsx file stores each row's height; it does not re-measure wrapped text
+// when opened. Google Sheets in particular downloads every row at one line's
+// height (15.75pt, marked custom), so a cell on several lines shows only its
+// last line once the file is opened or uploaded again. fitRowHeights() grows
+// each row to fit its wrapped text, measured with Arial-like character widths.
+// It only ever makes rows taller, so rows someone sized by hand are kept.
+
+// Arial advance widths in em, by character class.
+function charEm(ch) {
+  if (ch === ' ') return 0.278;
+  if ('iljI.,:;\'|!'.includes(ch)) return 0.25;
+  if ('ftr()[]-/'.includes(ch)) return 0.333;
+  if ('mwMW@%'.includes(ch)) return 0.86;
+  if (ch >= 'A' && ch <= 'Z') return 0.7;
+  return 0.556;
+}
+
+function textPx(s, emPx) {
+  let w = 0;
+  for (const ch of s) w += charEm(ch) * emPx;
+  return w;
+}
+
+/** How many lines a text takes in a column maxPx wide (greedy word wrap, like Sheets and Excel). */
+export function wrappedLines(text, maxPx, emPx) {
+  let lines = 0;
+  for (const para of String(text).split(/\r?\n/)) {
+    let n = 1;
+    let used = 0;
+    for (const word of para.split(/(?<= )/)) { // keep the trailing space with each word
+      let w = textPx(word, emPx);
+      if (used > 0 && used + textPx(word.trimEnd(), emPx) > maxPx) { n++; used = 0; }
+      while (w > maxPx) { n++; w -= maxPx; } // a word longer than the column breaks anywhere
+      used += w;
+    }
+    lines += n;
+  }
+  return lines;
+}
+
+/** Points of row height for a number of lines of text at a font size. */
+const rowPt = (lines, sizePt) => Math.min(409, Math.ceil((lines * sizePt * 1.3 + 3) * 4) / 4);
+
+/** Grow rows of one worksheet to fit their wrapped text. Returns how many rows changed. */
+function fitWorksheet(ws) {
+  const defaultWidth = (ws.properties && ws.properties.defaultColWidth) || 8.43;
+  const defaultHeight = (ws.properties && ws.properties.defaultRowHeight) || 15;
+  const colPx = new Map();
+  const widthOf = (c) => {
+    if (!colPx.has(c)) {
+      const col = ws.getColumn(c);
+      colPx.set(c, col.hidden ? 0 : Math.round((col.width || defaultWidth) * 7 + 5) - 6); // minus cell padding
+    }
+    return colPx.get(c);
+  };
+  let changed = 0;
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    if (row.hidden) return;
+    let need = 0;
+    row.eachCell({ includeEmpty: false }, (cell, c) => {
+      if (cell.isMerged) return;
+      const text = displayText(cell);
+      if (!text) return;
+      const multi = text.includes('\n');
+      if (multi && !(cell.alignment && cell.alignment.wrapText)) {
+        restyle(cell, (st) => { st.alignment = { ...(st.alignment || {}), wrapText: true }; });
+      }
+      if (!multi && !(cell.alignment && cell.alignment.wrapText)) return; // overflows sideways, never taller
+      const px = widthOf(c);
+      if (px <= 0) return;
+      const font = cell.font || {};
+      const size = font.size || (font.name && font.name !== 'Calibri' ? 10 : 11);
+      const emPx = size * (96 / 72) * (font.bold ? 1.07 : 1);
+      const lines = wrappedLines(text.replace(/\s+$/, ''), px, emPx);
+      if (lines > 1) need = Math.max(need, rowPt(lines, size));
+    });
+    const now = row.height || defaultHeight;
+    if (need > now + 0.5) { row.height = need; changed++; }
+  });
+  return changed;
 }
 
 const argb = (hex) => `FF${String(hex).replace('#', '').toUpperCase()}`;
@@ -257,6 +354,65 @@ class XRange {
   setVerticalAlignment(v) { this.write(); this.each((c) => restyle(c, (s) => { s.alignment = { ...(s.alignment || {}), vertical: v === 'center' ? 'middle' : v }; })); return this; }
   setHorizontalAlignment(h) { this.write(); this.each((c) => restyle(c, (s) => { s.alignment = { ...(s.alignment || {}), horizontal: h }; })); return this; }
   setNumberFormat(f) { this.write(); this.each((c) => restyle(c, (s) => { s.numFmt = f; })); return this; }
+
+  /** Each cell's hyperlink ('' when none): a link on the cell, or a =HYPERLINK("…") formula. */
+  getLinkUrls() {
+    const out = [];
+    for (let i = 0; i < this.numRows; i++) {
+      const line = [];
+      for (let j = 0; j < this.numCols; j++) line.push(linkOf(this.cell(i, j).value));
+      out.push(line);
+    }
+    return out;
+  }
+  /** Link every cell in the range to url, keeping its text ('' removes the link). Linked text is blue and underlined. */
+  setLinkUrl(url) {
+    this.write();
+    const u = /^https?:\/\/\S+$/i.test(String(url || '')) ? String(url) : '';
+    this.each((c) => {
+      const text = displayText(c);
+      if (u && text) c.value = { text, hyperlink: u };
+      else c.value = text === '' ? null : text;
+      restyle(c, (s) => {
+        const font = { ...(s.font || {}) };
+        delete font.underline;
+        if (u && text) { font.underline = true; font.color = { argb: 'FF1155CC' }; } else if (font.color && font.color.argb === 'FF1155CC') delete font.color;
+        s.font = font;
+      });
+    });
+    return this;
+  }
+  // Font line, as Sheets names it: 'line-through' (strikethrough), 'underline' or 'none'.
+  getFontLines() {
+    const out = [];
+    for (let i = 0; i < this.numRows; i++) {
+      const line = [];
+      for (let j = 0; j < this.numCols; j++) {
+        const f = (this.cell(i, j).style || {}).font || {};
+        line.push(f.strike ? 'line-through' : f.underline ? 'underline' : 'none');
+      }
+      out.push(line);
+    }
+    return out;
+  }
+  setFontLine(line) {
+    this.write();
+    this.each((c) => {
+      const f = (c.style || {}).font || {};
+      const strike = line === 'line-through';
+      const underline = line === 'underline';
+      if (!!f.strike === strike && !!f.underline === underline) return; // nothing to change: keep the style untouched
+      restyle(c, (s) => {
+        const font = { ...(s.font || {}) };
+        delete font.strike;
+        delete font.underline;
+        if (strike) font.strike = true;
+        if (underline) font.underline = true;
+        s.font = font;
+      });
+    });
+    return this;
+  }
   setBorder(top, left, bottom, right, vertical, horizontal) {
     this.write();
     const thin = { style: 'thin', color: { argb: 'FF000000' } };
@@ -400,6 +556,12 @@ export class XBook {
     return new XBook(wb, name);
   }
   toBuffer() { return this.wb.xlsx.writeBuffer(); }
+  /** Grow every row to fit its wrapped or multi-line text (see fitWorksheet). Returns rows changed. */
+  fitRowHeights() {
+    let n = 0;
+    for (const ws of this.wb.worksheets) n += fitWorksheet(ws);
+    return n;
+  }
   markDirty() {
     if (this.readOnly) throw new Error('This workbook is read-only (you do not have permission to edit it).');
     this.dirty = true;

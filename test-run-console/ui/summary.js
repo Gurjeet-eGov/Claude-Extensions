@@ -22,7 +22,15 @@
     });
   }
 
-  TR.api('api_bootstrap').then(function (b) {
+  TR.connect().then(function (c) {
+    if (!c.ok) {
+      main.innerHTML = '<div class="banner bad">' + (c.code === 'NEED_KEY' || c.code === 'BAD_KEY' || c.code === 'NO_SERVER'
+        ? 'Open your invite link first, then come back to this page.' : 'The Test Run server is not answering.') + '</div>';
+      return null;
+    }
+    return TR.api('api_bootstrap');
+  }).then(function (b) {
+    if (!b) return;
     if (!b.ok) { main.innerHTML = '<div class="banner bad">' + esc(b.error) + '</div>'; return; }
     TR.state.book = b.book || TR.state.book;
     document.getElementById('sheetName').textContent = b.sheetName;

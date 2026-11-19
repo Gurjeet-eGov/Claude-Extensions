@@ -251,11 +251,31 @@ test('summary figures: counts, rates, failures, comparison, testers', () => {
   assert.deepEqual(s.testers, [{ name: 'x@e.org', count: 2 }]);
 });
 
-test('issue links', () => {
-  assert.equal(TRCore.issueUrl('#812', 'https://github.com/org/repo/issues'), 'https://github.com/org/repo/issues/812');
-  assert.equal(TRCore.issueUrl('https://x.y/1', ''), 'https://x.y/1');
-  assert.equal(TRCore.issueUrl('#812', ''), null);
-  assert.equal(TRCore.issueUrl('none', 'https://a/'), null);
+test('issue links: references, cell links, the issue list', () => {
+  const P = (...a) => plain(TRCore.parseIssues(...a));
+  const gh = 'https://github.com/org/repo/issues/812';
+  assert.equal(TRCore.issueRef(gh), '#812');
+  assert.equal(TRCore.issueRef(gh, true), 'repo#812');
+  assert.equal(TRCore.issueRef('https://acme.atlassian.net/browse/ccrs-44'), 'CCRS-44');
+  assert.equal(TRCore.issueRef('https://gitlab.com/g/p/-/issues/7'), '#7');
+  assert.equal(TRCore.issueRef('https://tracker.example.org/x/y'), 'tracker.example.org');
+  // A typed link, a reference with the cell's link, words left as they are
+  assert.deepEqual(P(gh), [{ ref: '#812', url: gh }]);
+  assert.deepEqual(P('#812', gh), [{ ref: '#812', url: gh }]);
+  assert.deepEqual(P('Blocked by login issue'), [{ ref: 'Blocked by login issue', url: '' }]);
+  assert.deepEqual(P(`Bug: ${gh}.`), [{ ref: '#812', url: gh }]);
+  // The cell's link goes to the reference it names; the issue list gives the others theirs
+  const other = 'https://github.com/org/repo/issues/9';
+  assert.deepEqual(P('#9, #812', gh, { '#9': [other] }), [{ ref: '#9', url: other }, { ref: '#812', url: gh }]);
+  assert.deepEqual(P('#9', '', { '#9': [other, 'https://github.com/org/web/issues/9'] }), [{ ref: '#9', url: '' }]); // two links have it: left bare
+  // Only http(s) links are kept
+  assert.deepEqual(P('javascript:alert(1)'), [{ ref: 'javascript:alert(1)', url: '' }]);
+  assert.equal(TRCore.cleanLink('file:///etc/passwd'), '');
+  // Writing: references, with the repo when two clash; editing: links in full
+  const two = TRCore.parseIssues('https://github.com/a/x/issues/5 https://github.com/a/y/issues/5');
+  assert.equal(TRCore.issueCellText(two), 'x#5, y#5');
+  assert.equal(TRCore.issueValue(two), 'https://github.com/a/x/issues/5\nhttps://github.com/a/y/issues/5');
+  assert.deepEqual([TRCore.priorityRank('P1'), TRCore.priorityRank('High'), TRCore.priorityRank('critical'), TRCore.priorityRank('')], [1, 1, 0, 9]);
 });
 
 test('similarity flags near-duplicate scenarios', () => {
@@ -263,4 +283,37 @@ test('similarity flags near-duplicate scenarios', () => {
   const d = plain(TRCore.duplicatesFor('Verify that GRO can assign complaints pending assignment', cases));
   assert.equal(d[0].id, 'C1');
   assert.deepEqual(plain(TRCore.duplicatesFor('Verify if the dashboard KPI tiles load', cases)), []);
+});
+
+test('retire notes: written on one line, read back, replaced rather than stacked', () => {
+  assert.equal(TRCore.retireNote('deprecated', '', ' Not\napplicable  anymore '), 'Deprecated: Not applicable anymore');
+  assert.equal(TRCore.retireNote('duplicate', 'CMS/12', ''), 'Duplicate of CMS/12');
+  assert.deepEqual({ ...TRCore.parseRetireNote('Duplicate of CMS/12: same check: other words\nolder comment') }, { kind: 'duplicate', of: 'CMS/12', reason: 'same check: other words' });
+  assert.deepEqual({ ...TRCore.parseRetireNote('deprecated') }, { kind: 'deprecated', of: '', reason: '' });
+  assert.equal(TRCore.parseRetireNote('Deprecated feature still shown in menu'), null, 'ordinary comments are not notes');
+  assert.equal(TRCore.parseRetireNote('Block level missing\nDeprecated: x'), null, 'only the first line counts');
+  assert.equal(TRCore.withRetireNote('Deprecated: old\nkept text', 'Duplicate of CMS/1'), 'Duplicate of CMS/1\nkept text');
+  assert.equal(TRCore.stripRetireNote('Deprecated: old\nkept text'), 'kept text');
+  assert.equal(TRCore.stripRetireNote('just a comment'), 'just a comment');
+  assert.equal(TRCore.withUpdateNote('', 'typo'), 'Updated: typo');
+  assert.equal(TRCore.withUpdateNote('Failed once', 'typo'), 'Updated: typo\nFailed once');
+});
+
+test('struck rows are retired; duplicates are linked both ways; summary leaves them out', () => {
+  const fields = { id: 0, scenario: 1 };
+  const cycles = [{ label: 'v1', status: 2, comment: 3 }, { label: 'v2', status: 4, comment: 5 }];
+  const rows = [
+    ['T-1', 'Verify a', 'Pass', '', '', ''],
+    ['T-2', 'Verify a again', '', 'Duplicate of T-1: same', '', ''],
+    ['T-3', 'Verify c', '', '', 'Fail', ''],
+    ['T-4', 'Verify d', '', '', '', ''],
+  ];
+  const cases = TRCore.buildCases(rows, fields, cycles, { struck: [false, true, false, true] });
+  assert.equal(cases[0].retired, null);
+  assert.deepEqual({ ...cases[1].retired }, { kind: 'duplicate', of: 'T-1', reason: 'same', cycle: 'v1', ofKey: 'T-1' });
+  assert.deepEqual([...cases[0].duplicates], ['T-2']);
+  assert.equal(cases[3].retired.kind, 'struck', 'struck in the workbook by hand, no note');
+  const s = TRCore.summarize(cases, { cycleIdx: 1, prevIdx: 0 });
+  assert.deepEqual({ ...s.counts }, { pass: 0, fail: 1, other: 0, none: 1, total: 2 });
+  assert.deepEqual([...s.retired.map((x) => x.id)], ['T-2', 'T-4']);
 });

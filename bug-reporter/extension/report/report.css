@@ -458,3 +458,17 @@ dialog.zoom::backdrop {
 #uPreview {
   max-height: 50vh;
 }
+
+/* Test Run: add the bug to a test case, or as a finding */
+.tr-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.tr-box .grid2 { margin: 0; }
+.tr-box.off #trFields, .tr-box.off #trHint { display: none; }
+#trHint.bad { color: var(--bad, #b3261e); }

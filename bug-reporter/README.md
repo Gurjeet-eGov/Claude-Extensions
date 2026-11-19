@@ -60,6 +60,7 @@ You can change these at `chrome://extensions/shortcuts`.
 - **Settings → Usage** shows the cost of every draft and the weekly and all-time totals, from Anthropic's official per-model prices (input, cache writes, cached reads and output priced separately). On a Claude subscription this is what the tokens would cost on the API; drafts count against your plan's limits rather than being billed.
 - Claude never sees full payloads: one-line summaries, plus the condensed request/response in *Detailed* mode. The full cURL and response blocks are pasted into the issue by the extension, not written by Claude.
 - The screenshot is only sent if you tick **Let Claude see the screenshot**.
+- **Let Claude read the ticked API calls** (on by default; the default is in Settings → Claude). Untick it and Claude gets no API calls at all: the ticked calls still go into the issue under API Details, exactly as captured. Use it when a response holds data you don't want to send, or to save tokens.
 - The duplicate search, dropdowns and filing never use Claude.
 - The default is **Sonnet 5.5 at effort low**, using exact model IDs. Haiku 5.5 uses less but writes plainer text; change it in **Settings → Claude**. **Settings → Usage** logs every draft with its model, effort, tokens and turns.
 
@@ -111,15 +112,26 @@ The CSV opens in Excel, Numbers, Google Sheets and LibreOffice on Mac, Windows a
 - After stopping, the popup shows the last list and offers **Save again**.
 - Starting a new list replaces the last one; you're warned if it wasn't saved.
 
-## Noting the bug as a test scenario (Test Run)
+## Adding the bug to Test Run
 
-If the [Test Run console](../test-run-console/) is running on this computer, the review screen shows **Also add this scenario to Test Run** next to **File issue**, followed by where the note will go (workbook, tab, cycle).
+When the [Test Run console](../test-run-console/) is reachable, the **Report Issue** form has a Test Run box, above the Claude options. Test Run can be on this computer, or a teammate's shared Test Run.
 
-- **If you tick it:** once the issue is filed, the bug is noted in Test Run as a finding. It carries the title, the issue link, the Description / Actual / Expected text, and the module. You can then write it up there as a test case, by hand or with Claude.
-- **The checkbox** starts unticked and remembers your last choice. When Test Run isn't running, it doesn't appear.
+- **Also add this to Test Run:** tick it, and once the issue is filed it is added to Test Run.
+- **Test suite:** the workbook › tab to add it to.
+- **Test case (optional):** type an ID or a few words and pick from the list.
+  - **With a test case:** that case is marked failed in the current cycle, with the issue linked to it and `Bug #123: <title>` added to its comment.
+  - **Without one:** the bug becomes a finding in that suite, with the title, the issue link, the Description / Actual / Expected text and the module, to be written up as a test case there.
+  - Either way, Test Run lists the issue under **Known issues** with its title and the priority you chose.
+- **The checkbox and the suite** start from your last choice (else the suite open in Test Run). When Test Run isn't reachable, the box doesn't appear.
+- **The review screen** repeats what will happen in Test Run, next to **File issue**.
 - **If the note fails,** you get a warning only: the issue itself is already filed.
-- **Settings:** options → **Test Run** has an on/off switch, the port (default 5178) and **Check now**.
-- **Network:** the extension only contacts `127.0.0.1` for this.
+- **Settings:** options → **Test Run**:
+  - an on/off switch;
+  - **Test Run address**: empty for Test Run on this computer (`http://127.0.0.1:5178`), or another address;
+  - **Invite link**: for a teammate's shared Test Run, paste the link they sent. It fills in the address and keeps your key. A view-only invite can't add bugs.
+  - **Check now**.
+- **A shared Test Run that moved:** its address can change, for example a quick tunnel after a restart. It keeps the current address in a gist, and Bug Reporter looks there when the saved address stops answering.
+- **Network:** only the Test Run address you set (by default `127.0.0.1`), and for a shared Test Run its gist on `api.github.com`.
 
 ## Incognito
 

@@ -108,6 +108,79 @@ test('the real sample keeps everything it did not touch across a save', async ()
   assert.equal(Object.keys(after.getSheetByName('CMS 2.20.1').ws.dataValidations.model).length, 18);
 });
 
+test('strikethrough is read and written as the font line, and survives a save', async () => {
+  const book = await bookWith((wb) => {
+    const ws = wb.addWorksheet('S');
+    ws.getRow(1).values = ['ID', 'Scenario'];
+    ws.getRow(2).values = ['1', 'a'];
+    ws.getRow(3).values = ['2', 'b'];
+    ws.getCell('B3').font = { name: 'Arial', strike: true, color: { argb: 'FF990000' } };
+  });
+  const sh = book.getSheetByName('S');
+  assert.deepEqual(sh.getRange(2, 2, 2, 1).getFontLines(), [['none'], ['line-through']], 'strike set in Excel or Google Sheets is seen');
+  sh.getRange(2, 1, 1, 2).setFontLine('line-through');
+  sh.getRange(3, 2).setFontLine('none');
+  const again = (await reload(book)).getSheetByName('S');
+  assert.deepEqual(again.getRange(2, 1, 2, 2).getFontLines(), [['line-through', 'line-through'], ['none', 'none']]);
+  assert.deepEqual(again.ws.getCell('B3').font, { name: 'Arial', color: { argb: 'FF990000' } }, 'the rest of the font is kept');
+});
+
+test('rows grow to fit wrapped and multi-line text (a Google Sheets download keeps them one line high)', async () => {
+  const book = await bookWith((wb) => {
+    const ws = wb.addWorksheet('S');
+    ws.properties.defaultColWidth = 12.63;
+    ws.getColumn(2).width = 24.88;
+    const wrap = { vertical: 'bottom', wrapText: true };
+    const put = (addr, v, align = wrap) => { const c = ws.getCell(addr); c.value = v; c.font = { name: 'Arial' }; c.alignment = align; };
+    put('A1', 'ID'); put('B1', 'Pre Condition');
+    put('A2', 'T-1'); put('B2', 'Phone number\nName\nComplaint type\nSub-type\nLocality fields (all from the boundary data)\nDescription');
+    put('A3', 'T-2'); put('B3', 'Valid and invalid numbers, both of them');
+    put('A4', 'T-3'); put('B4', 'Short');
+    put('A5', 'T-4'); put('B5', 'Two\nlines', { vertical: 'bottom' }); // line break but no wrap set
+    put('A6', 'T-5'); put('B6', 'A sentence long enough to wrap if only this cell wrapped', { vertical: 'bottom' });
+    put('A7', 'T-6'); put('B7', 'Line one\nLine two');
+    for (let r = 1; r <= 6; r++) ws.getRow(r).height = 15.75;
+    ws.getRow(7).height = 120; // sized by hand: kept
+  });
+  const sh = book.getSheetByName('S');
+  const ht = (r) => sh.ws.getRow(r).height;
+  const changed = book.fitRowHeights();
+  assert.ok(ht(2) >= 80, `six lines and one wrapped line need about 7 lines (got ${ht(2)})`);
+  assert.ok(ht(3) >= 28 && ht(3) < 45, `a long line in a narrow column wraps to 2 lines (got ${ht(3)})`);
+  assert.equal(ht(4), 15.75, 'one line: untouched');
+  assert.ok(ht(5) >= 28, 'line breaks count even without wrap set ...');
+  assert.equal(sh.ws.getCell('B5').alignment.wrapText, true, '... and wrap is turned on so they show');
+  assert.equal(ht(6), 15.75, 'text that does not wrap overflows sideways; the row stays');
+  assert.equal(ht(7), 120, 'never made shorter');
+  assert.equal(changed, 3);
+  assert.equal(book.fitRowHeights(), 0, 'nothing more to do the second time');
+  const again = (await reload(book)).getSheetByName('S').ws;
+  assert.equal(again.getRow(2).height, ht(2), 'kept in the saved file');
+});
+
+test('a written value on several lines wraps', async () => {
+  const book = await bookWith((wb) => { wb.addWorksheet('S').getCell('A1').value = 'x'; });
+  const sh = book.getSheetByName('S');
+  sh.getRange(1, 1).setValue('Deprecated: old\nFailed once');
+  assert.equal(sh.ws.getCell('A1').alignment.wrapText, true);
+});
+
+test('library: every save fits row heights', async () => {
+  const dir = tmp();
+  const lib = new Library(dir);
+  writeFileSync(join(dir, 'B.xlsx'), Buffer.from(await (await bookWith((wb) => {
+    const ws = wb.addWorksheet('S');
+    ws.getCell('A1').value = 'a\nb\nc';
+    ws.getCell('A1').alignment = { wrapText: true };
+    ws.getRow(1).height = 15.75;
+  })).toBuffer()));
+  const entry = await lib.get('B.xlsx');
+  entry.book.getSheetByName('S').getRange(2, 1).setValue('x');
+  await lib.save(entry);
+  const saved = await XBook.fromFile(join(dir, 'B.xlsx'), 'B');
+  assert.ok(saved.getSheetByName('S').ws.getRow(1).height >= 40);
+});
+
 test('library: lists workbooks, ignores lock and temp files', async () => {
   const dir = tmp();
   writeFileSync(join(dir, 'A.xlsx'), await buildSampleXlsx());

@@ -69,6 +69,7 @@ export class Library {
     entry.store.flush();
     if (!entry.book.dirty) return false;
     this.backup(entry);
+    entry.book.fitRowHeights(); // wrapped and multi-line cells stay readable in Excel and Google Sheets
     const buf = await entry.book.toBuffer();
     const tmp = join(this.dir, `.${entry.name}.${process.pid}.tmp`);
     writeFileSync(tmp, Buffer.from(buf));

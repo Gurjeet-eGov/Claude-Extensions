@@ -1,7 +1,7 @@
 /**
  * Test Run console: the message Claude gets when the tester asks it to write
  * up findings or plan test paths. It goes to Claude Code on this computer
- * (lib/claude-run.mjs), or onto the clipboard with "Copy prompt". It holds only
+ * (lib/claude-run.mjs, removed for now), or onto the clipboard with "Copy prompt". It holds only
  * what the tester selected. The reply is validated (TRCore.validateReply) and
  * reviewed in the Inbox before anything is written to the workbook.
  *

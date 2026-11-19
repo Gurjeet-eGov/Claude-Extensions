@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
     effort: 'low', // low | medium | high
     detail: 'detailed', // detailed: Claude also reads condensed request/response of attached calls | concise
     sendScreenshot: false,
+    sendApis: true, // let Claude read the ticked API calls; off: they go into the issue as they are, unread
     skillPath: '', // empty = skill bundled with the helper
   },
   network: {
@@ -28,8 +29,10 @@ export const DEFAULT_SETTINGS = {
     tempDays: 3,
   },
   testRun: {
-    enabled: true, // offer "Also add this scenario to Test Run" while the Test Run console runs on this computer
-    port: 5178,
+    enabled: true, // offer "Also add this to Test Run" when Test Run is reachable
+    url: '', // empty: Test Run on this computer (http://127.0.0.1:5178); else a shared Test Run's address
+    key: '', // invite key for a shared Test Run (from the invite link)
+    gist: '', // where a shared Test Run keeps its current address
   },
 };
 

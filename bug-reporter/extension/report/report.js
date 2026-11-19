@@ -1,4 +1,4 @@
-import { getSettings, getProjects, matchProject, guessModule, MODEL_LABELS } from '../lib/settings.js';
+import { getSettings, saveSettings, getProjects, matchProject, guessModule, MODEL_LABELS } from '../lib/settings.js';
 import { get, put, byTab, newId } from '../lib/idb.js';
 import { HostSession, callHost, stageBlob } from '../lib/host-client.js';
 import { summarizeCall, relTime } from '../lib/digit-errors.js';
@@ -12,7 +12,7 @@ import { isStatic } from '../lib/static-files.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
 import { buildComment, RESULTS } from '../lib/comment.js';
 import { costOfUsageRecord, formatUsd } from '../lib/pricing.js';
-import { testRunStatus, testRunBase, noteBugInTestRun, buildBugNote, whereLabel } from '../lib/testrun.js';
+import { testRunStatus, testRunBase, isLocalBase, canNote, listSuites, pickSuite, listCases, caseLabel, matchCase, consoleLink, noteBugInTestRun, buildBugNote, whereLabel } from '../lib/testrun.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -106,8 +106,9 @@ async function load() {
   // form
   S.projects = await getProjects();
   if (isUpdateMode()) initUpdate();
-  else initForm();
+  else { initForm(); refreshTestRun(); }
   $('claudeShot').checked = Boolean(S.settings.claude.sendScreenshot);
+  $('claudeApis').checked = S.settings.claude.sendApis !== false;
   // Per-issue Claude choice: starts from Settings, applies to this report only.
   $('draftModel').value = S.settings.claude.model || 'sonnet';
   $('draftEffort').value = S.settings.claude.effort || 'low';
@@ -581,6 +582,7 @@ function validate({ needNotes = true } = {}) {
   if (!priority()) errs.push('Choose a priority (P0–P3).');
   if (!moduleValue()) errs.push('Choose a module.');
   if (needNotes && !$('actual').value.trim()) errs.push('Describe what happened (a line is enough).');
+  if (trWanted() && $('trCase').value.trim() && !trCase()) errs.push('Pick the test case from the list in the Test Run box, or leave it empty to add a finding.');
   $('formErr').textContent = errs.join(' ');
   $('formErr').classList.toggle('hidden', !errs.length);
   return !errs.length;
@@ -609,7 +611,9 @@ async function draftWithClaude() {
   const session = new HostSession();
   try {
     const halt = S.report.haltWall;
-    const sel = selectedCalls();
+    // Ticked calls always go into the issue body (buildBody). Claude reads them only when allowed.
+    const apisToClaude = $('claudeApis').checked;
+    const sel = apisToClaude ? selectedCalls() : [];
     let screenshotName = null;
     if ($('claudeShot').checked && S.shots[0]) {
       screenshotName = shotName(0, S.shots[0].mime);
@@ -628,7 +632,7 @@ async function draftWithClaude() {
         selectedApis: sel.map((c) => ({ id: c.aid, summary: summarizeCall(c, { haltWall: halt }) })),
         detail,
         apiDetails: detail === 'detailed' ? sel.map((c) => ({ id: c.aid, text: condenseCall(c) })) : [],
-        otherFailures: S.calls.filter((c) => c.failed && !S.checked.has(c.id)).map((c) => ({ id: c.aid, summary: summarizeCall(c, { haltWall: halt }) })),
+        otherFailures: apisToClaude ? S.calls.filter((c) => c.failed && !S.checked.has(c.id)).map((c) => ({ id: c.aid, summary: summarizeCall(c, { haltWall: halt }) })) : [],
         consoleErrors: selectedConsole().map((c) => c.message),
         allowScreenshot: Boolean(screenshotName),
         screenshotName,
@@ -811,7 +815,7 @@ function filingSummary() {
 
 function showPreview() {
   showReview();
-  refreshTestRun();
+  showTestRunSummary();
   $('filingTo').textContent = filingSummary();
   refreshTitle();
   S.bodyDirty = false;
@@ -934,7 +938,7 @@ async function fileIssue() {
     S.report.filed = filed;
     await put('reports', S.report);
     showFiled(filed);
-    if (S.testRun && $('trNoteChk').checked) noteInTestRun(filed);
+    if (canNote(S.testRun) && trWanted()) noteInTestRun(filed);
   } catch (e) {
     $('result').innerHTML = `<div class="notice bad"><b>Not filed.</b> ${esc(e.message)}${fixHtml(e.fix)}</div>`;
     $('result').classList.remove('hidden');
@@ -945,34 +949,122 @@ async function fileIssue() {
 }
 
 // ---------- Test Run ----------
-// While the local Test Run console runs, offer to note the bug there as a test scenario.
+// When Test Run is reachable (on this computer, or a teammate's shared one), the form offers to
+// add the bug there once filed: in the test suite (workbook › tab) picked here, against a test
+// case (marked failed, with the issue linked) or, with no test case, as a finding.
 async function refreshTestRun() {
   const st = await testRunStatus(S.settings);
   S.testRun = st;
-  $('trNote').classList.toggle('hidden', !st || !!S.report?.filed);
-  if (!st) return;
-  $('trWhere').textContent = whereLabel(st) ? `(${whereLabel(st)})` : '';
-  const { testRunNote } = await chrome.storage.local.get('testRunNote');
+  if (st && st.base !== testRunBase(S.settings)) {
+    // A shared Test Run answered at a new address (found in its gist): keep it for next time.
+    S.settings.testRun.url = st.base;
+    await saveSettings(S.settings);
+  }
+  const filed = !!S.report?.filed;
+  $('trKey').classList.toggle('hidden', !(st && st.needsKey) || filed);
+  const show = canNote(st) && !filed;
+  $('trBox').classList.toggle('hidden', !show);
+  if (!show) return;
+  const { suites, current } = await listSuites(S.settings, st.base);
+  S.trSuites = suites;
+  const { testRunNote, testRunSuite } = await chrome.storage.local.get(['testRunNote', 'testRunSuite']);
+  const chosen = pickSuite(suites, testRunSuite, current || st);
+  $('trSuite').innerHTML = suites.map((s, i) => `<option value="${i}"${s === chosen ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  $('trSuite').disabled = suites.length < 2;
+  $('trWho').textContent = isLocalBase(st.base) ? '' : `(shared${st.me?.name ? `, as ${st.me.name}` : ''})`;
   $('trNoteChk').checked = testRunNote === true;
+  $('trBox').classList.toggle('off', !$('trNoteChk').checked);
+  if (!suites.length) {
+    $('trFields').classList.add('hidden');
+    trHint('Test Run has no test suite yet: set one up in its Setup first.', true);
+    return;
+  }
+  await loadTrCases();
 }
-$('trNoteChk').addEventListener('change', () => chrome.storage.local.set({ testRunNote: $('trNoteChk').checked }));
+
+function trWanted() {
+  return !$('trBox').classList.contains('hidden') && $('trNoteChk').checked && !!S.trSuites?.length;
+}
+function trSuite() {
+  return S.trSuites?.[Number($('trSuite').value)] || null;
+}
+function trCase() {
+  return matchCase(S.trCases?.cases, $('trCase').value);
+}
+function trHint(text, bad = false) {
+  $('trHint').textContent = text;
+  $('trHint').classList.toggle('bad', bad);
+}
+
+/** The picked suite's test cases, for the test case picker. */
+async function loadTrCases() {
+  const suite = trSuite();
+  S.trCases = { cases: [], cycle: '' };
+  $('trCases').innerHTML = '';
+  if (!suite) return;
+  const seq = (S.trSeq = (S.trSeq || 0) + 1);
+  const res = await listCases(S.settings, S.testRun.base, suite);
+  if (seq !== S.trSeq) return; // another suite was picked meanwhile
+  S.trCases = res;
+  $('trCases').innerHTML = res.cases.map((c) => `<option value="${esc(caseLabel(c))}">${esc(c.status || 'not run')}</option>`).join('');
+  updateTrHint();
+}
+
+function updateTrHint() {
+  const text = $('trCase').value.trim();
+  const c = trCase();
+  const cycle = S.trCases?.cycle ? ` in cycle ${S.trCases.cycle}` : '';
+  if (!text) trHint('No test case: it is added as a finding, to be written up as a test case later.');
+  else if (!c) trHint(`No test case like "${text}" in this suite. Pick one from the list, or leave it empty.`, true);
+  else if (/fail/i.test(c.status)) trHint(`${c.id || 'This case'} is already marked ${c.status}${cycle}; the issue is linked to it.`);
+  else trHint(`${c.id || 'This case'} will be marked failed${cycle}, with the issue linked to it.`);
+}
+
+/** On the review screen, what will happen in Test Run once filed. */
+function showTestRunSummary() {
+  const on = trWanted() && !S.report?.filed;
+  $('trSummary').classList.toggle('hidden', !on);
+  if (!on) return;
+  const c = trCase();
+  const suite = trSuite();
+  $('trSummary').textContent = c
+    ? `Then in Test Run: ${c.id || 'the case'} marked failed, with this issue linked (${suite.label}).`
+    : `Then in Test Run: a finding in ${suite.label}.`;
+}
+
+$('trNoteChk').addEventListener('change', () => {
+  chrome.storage.local.set({ testRunNote: $('trNoteChk').checked });
+  $('trBox').classList.toggle('off', !$('trNoteChk').checked);
+});
+$('trSuite').addEventListener('change', () => {
+  const s = trSuite();
+  if (s) chrome.storage.local.set({ testRunSuite: { book: s.book, tab: s.tab } });
+  $('trCase').value = '';
+  loadTrCases();
+});
+$('trCase').addEventListener('input', updateTrHint);
 
 async function noteInTestRun(filed) {
-  $('trNote').classList.add('hidden');
+  $('trSummary').classList.add('hidden');
   const box = document.createElement('div');
   box.className = 'notice small';
-  box.textContent = 'Adding the scenario to Test Run…';
+  box.textContent = 'Adding it to Test Run…';
   $('result').appendChild(box);
   try {
-    const note = buildBugNote({ title: $('title').value.trim(), filed, repo: S.project?.repo, draft: S.draft, extra: $('extra').value, module: moduleValue(), pageUrl: S.report.pageUrl });
-    const res = await noteBugInTestRun(S.settings, note);
+    const suite = trSuite();
+    const testCase = trCase();
+    const note = buildBugNote({ title: $('title').value.trim(), filed, repo: S.project?.repo, draft: S.draft, extra: $('extra').value, module: moduleValue(), pageUrl: S.report.pageUrl, suite, testCase, priority: priority() });
+    const res = await noteBugInTestRun(S.settings, note, { base: S.testRun.base });
     box.className = 'notice ok small';
-    box.innerHTML = `Noted in Test Run as <b>${esc(res.key)}</b> (${esc(whereLabel(res))}). <a href="${esc(testRunBase(S.settings))}/?view=findings" target="_blank" rel="noopener">Open Test Run ↗</a>`;
+    const open = `<a href="${esc(consoleLink(S.testRun, S.testRun.base, res.kind === 'case' ? 'issues' : 'findings'))}" target="_blank" rel="noopener">Open Test Run ↗</a>`;
+    box.innerHTML = res.kind === 'case'
+      ? `In Test Run, <b>${esc(res.key)}</b> is marked ${esc(res.status || 'failed')}${res.cycle ? ` in cycle ${esc(res.cycle)}` : ''}, with this issue linked (${esc(whereLabel({ book: res.book, tab: res.tab }))}). ${open}`
+      : `Added to Test Run as finding <b>${esc(res.key)}</b> (${esc(whereLabel(res))}). ${open}`;
     S.report.filed.testRun = res;
     await put('reports', S.report);
   } catch (e) {
     box.className = 'notice warn small';
-    box.textContent = `The issue is filed, but the scenario could not be added to Test Run: ${e.message}`;
+    box.textContent = `The issue is filed, but it could not be added to Test Run: ${e.message}`;
   }
 }
 

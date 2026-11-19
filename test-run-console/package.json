@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
+    "share": "node server.mjs --share",
     "demo": "node server.mjs --demo",
     "test": "node --test test/*.test.mjs",
     "prompts": "node scripts/export-prompts.mjs"

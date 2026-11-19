@@ -35,6 +35,9 @@ function api_mark(req) { return tr_call_(function () { return tr_mark(req); }); 
 function api_startCycle(tab, label) { return tr_call_(function () { return tr_startCycle(tab, label); }); }
 function api_addCases(tab, items, cycle) { return tr_call_(function () { return tr_addCases(tab, items, cycle); }); }
 function api_editCase(tab, key, sh, row, fields) { return tr_call_(function () { return tr_editCase(tab, key, sh, row, fields); }); }
+function api_updateCase(req) { return tr_call_(function () { return tr_updateCase(req); }); }
+function api_retireCase(req) { return tr_call_(function () { return tr_retireCase(req); }); }
+function api_restoreCase(req) { return tr_call_(function () { return tr_restoreCase(req); }); }
 function api_listFindings() { return tr_call_(function () { return tr_listFindings(); }); }
 function api_saveFinding(f) { return tr_call_(function () { return tr_saveFinding(f); }); }
 function api_setFindingState(key, state, caseId) { return tr_call_(function () { return tr_setFindingState(key, state, caseId); }); }
@@ -48,3 +51,7 @@ function api_deleteInbox(key) { return tr_call_(function () { return tr_deleteIn
 function api_clearPathPlan(tab) { return tr_call_(function () { return tr_clearPathPlan(tab); }); }
 function api_summary(tab, cycle) { return tr_call_(function () { return tr_summary(tab, cycle); }); }
 function api_writeSummaryTab(tab, cycle) { return tr_call_(function () { return tr_writeSummaryTab(tab, cycle); }); }
+function api_linkBug(req) { return tr_call_(function () { return tr_linkBug(req); }); }
+function api_listIssues() { return tr_call_(function () { return tr_listIssues(); }); }
+function api_saveIssueMeta(items) { return tr_call_(function () { return tr_saveIssueMeta(items); }); }
+function api_writeIssuesSheet() { return tr_call_(function () { return tr_writeIssuesSheet(); }); }

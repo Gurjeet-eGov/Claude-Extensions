@@ -12,6 +12,7 @@
 
 var TR_META = '_testrun'; // tab name used by the earlier Google Sheets version; always hidden from the console
 var TR_SUMMARY = 'Test Run Summary';
+var TR_ISSUES = 'Known issues'; // written into downloaded copies only
 var TR_ROLES = ['manual', 'automation', 'ignore'];
 
 function tr_err_(code, message) {
@@ -122,8 +123,24 @@ function tr_open_(tabName, cfg) {
   return {
     sheet: sh, tab: sh.getName(), cfg: cfg, tcfg: tcfg, values: values,
     headerRow: hr, headers: headers, fields: res.fields, missing: res.missing,
-    cycles: cycles, extras: extras, lastRow: lastRow, lastCol: lastCol
+    cycles: cycles, extras: extras, lastRow: lastRow, lastCol: lastCol,
+    struck: tr_struck_(sh, hr, lastRow, res.fields.scenario),
+    issueLinks: tr_columnLinks_(sh, hr, lastRow, res.fields.linkedIssue)
   };
+}
+
+/** The hyperlink of each data row's cell in one column ('' when none). */
+function tr_columnLinks_(sh, headerRow, lastRow, col) {
+  var n = lastRow - headerRow;
+  if (col < 0 || n <= 0) return [];
+  return sh.getRange(headerRow + 1, col + 1, n, 1).getLinkUrls().map(function (r) { return r[0] || ''; });
+}
+
+/** One flag per data row: is its Scenario cell struck out (a retired case)? */
+function tr_struck_(sh, headerRow, lastRow, scenarioCol) {
+  var n = lastRow - headerRow;
+  if (scenarioCol < 0 || n <= 0) return [];
+  return sh.getRange(headerRow + 1, scenarioCol + 1, n, 1).getFontLines().map(function (r) { return r[0] === 'line-through'; });
 }
 
 function tr_cases_(m) {
@@ -131,7 +148,10 @@ function tr_cases_(m) {
     firstRow: m.headerRow + 1,
     headers: m.headers,
     extras: m.extras,
-    fillDown: m.tcfg.fillDown !== false
+    fillDown: m.tcfg.fillDown !== false,
+    struck: m.struck,
+    issueLinks: m.issueLinks,
+    issueRefs: tr_issueRefs_()
   });
 }
 
@@ -184,7 +204,7 @@ function tr_automationIndex_(cfg, exceptTab) {
   var ss = tr_ss_();
   ss.getSheets().forEach(function (sh) {
     var name = sh.getName();
-    if (name === exceptTab || name === TR_META || name === TR_SUMMARY) return;
+    if (name === exceptTab || name === TR_META || name === TR_SUMMARY || name === TR_ISSUES) return;
     var tcfg = cfg && cfg.tabs && cfg.tabs[name];
     if (tcfg && tcfg.role !== 'automation') return;
     if (!tcfg && tr_detectTab_(sh).role !== 'automation') return;
@@ -202,7 +222,7 @@ function tr_automationIndex_(cfg, exceptTab) {
 }
 
 function tr_versionOf_(m) {
-  return TRCore.hashRaw(JSON.stringify(m.values));
+  return TRCore.hashRaw(JSON.stringify(m.values) + '|' + m.struck.map(function (x) { return x ? 1 : 0; }).join('') + '|' + m.issueLinks.join(' '));
 }
 
 /** Find a case's row by key, checking the scenario text has not changed underneath. */
@@ -233,7 +253,7 @@ function tr_bootstrap() {
   var cfg = tr_config_();
   var tabs = ss.getSheets().filter(function (sh) {
     var n = sh.getName();
-    return n !== TR_META && n !== TR_SUMMARY;
+    return n !== TR_META && n !== TR_SUMMARY && n !== TR_ISSUES;
   }).map(function (sh) {
     var saved = (cfg && cfg.tabs && cfg.tabs[sh.getName()]) || null;
     var top = tr_topRows_(sh, Math.max(10, saved ? saved.headerRow : 0));
@@ -306,7 +326,7 @@ function tr_loadTab(tabName, cycleLabel) {
     paths: info.paths,
     plan: plan ? { source: 'plan', savedAt: plan.savedAt || '', savedBy: plan.savedBy || '', unknown: info.unknown, leftover: info.leftover } : { source: 'auto' },
     hasAutomation: Object.keys(auto).length > 0,
-    issueBase: (cfg && cfg.issueBase) || '',
+    issueInfo: tr_issueInfo_(),
     claude: !!(cfg && cfg.claude),
     version: tr_versionOf_(m)
   };
@@ -326,9 +346,7 @@ function tr_saveSetup(setup) {
   return tr_withLock_(function () {
     var ss = tr_ss_();
     var prev = tr_config_() || {};
-    var issueBase = TRCore.cleanText(setup.issueBase, 300);
-    if (issueBase && !/^https:\/\//i.test(issueBase)) throw tr_err_('BAD_INPUT', 'The issue link must start with https://');
-    var cfg = { version: 1, claude: setup.claude === true, issueBase: issueBase, tabs: {} };
+    var cfg = { version: 1, claude: setup.claude === true, tabs: {} };
     (setup.tabs || []).forEach(function (t) {
       if (!t || !ss.getSheetByName(String(t.name))) return;
       var prevTab = (prev.tabs && prev.tabs[t.name]) || {};
@@ -351,7 +369,7 @@ function tr_saveSetup(setup) {
   });
 }
 
-/** Per-tab preferences changed from the Plan screen: current cycle, release in scope. */
+/** Per-tab preferences changed from the console: current cycle, release in scope. */
 function tr_setTabPrefs(tabName, prefs) {
   prefs = prefs || {};
   return tr_withLock_(function () {
@@ -369,6 +387,26 @@ function tr_addColumns(tabName, fields) {
   return tr_withLock_(function () {
     var cfg = tr_config_();
     if (!cfg || !cfg.tabs || !cfg.tabs[tabName]) throw tr_err_('NOT_SET_UP', 'Save Setup for this tab first.');
+    return tr_addColumns_(tabName, fields, cfg);
+  });
+}
+
+/**
+ * The tab with a Linked issue column, added at the right of the table if it has none
+ * (a tab nobody saved in Setup gets its detected settings saved). No lock: callers hold it.
+ */
+function tr_ensureIssueColumn_(m) {
+  if (m.fields.linkedIssue >= 0) return m;
+  var cfg = tr_config_() || { version: 1, claude: false, tabs: {} };
+  cfg.tabs = cfg.tabs || {};
+  if (!cfg.tabs[m.tab]) cfg.tabs[m.tab] = JSON.parse(JSON.stringify(m.tcfg));
+  cfg.tabs[m.tab].columns = cfg.tabs[m.tab].columns || {};
+  tr_addColumns_(m.tab, ['linkedIssue'], cfg);
+  return tr_open_(m.tab);
+}
+
+function tr_addColumns_(tabName, fields, cfg) {
+  {
     var m = tr_open_(tabName, cfg);
     var allowed = ['testedBy', 'testedOn', 'release', 'linkedIssue', 'automatedBy'];
     var add = (fields || []).filter(function (f) { return allowed.indexOf(f) >= 0 && m.fields[f] < 0; });
@@ -380,13 +418,78 @@ function tr_addColumns(tabName, fields) {
     sh.getRange(m.headerRow, at, 1, 1).copyTo(sh.getRange(m.headerRow, at + 1, 1, add.length), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     var dataRows = Math.max(m.lastRow - m.headerRow, 0);
     if (dataRows > 0 && m.fields.scenario >= 0) {
-      sh.getRange(m.headerRow + 1, m.fields.scenario + 1, dataRows, 1).copyTo(sh.getRange(m.headerRow + 1, at + 1, dataRows, add.length), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      var newCells = sh.getRange(m.headerRow + 1, at + 1, dataRows, add.length);
+      sh.getRange(m.headerRow + 1, m.fields.scenario + 1, dataRows, 1).copyTo(newCells, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      newCells.setFontLine('none'); // a retired row's strikethrough is not copied into new columns
     }
     sh.getRange(m.headerRow, at + 1, 1, add.length).setValues([labels]);
     add.forEach(function (f, i) { cfg.tabs[tabName].columns[f] = labels[i]; });
     tr_metaPut_('config', 'global', cfg);
     return { ok: true, added: add };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Issues: the Linked issue cell, and the workbook's issue list (sidecar, kind 'issue')
+// -----------------------------------------------------------------------------
+
+/** { ref (lower case): [url, ...] } from the issue list, to give "#123" back its link. */
+function tr_issueRefs_() {
+  var byRef = {};
+  tr_metaList_('issue').forEach(function (r) {
+    var v = r.value || {};
+    if (!v.url) return;
+    [TRCore.issueRef(v.url), TRCore.issueRef(v.url, true)].forEach(function (ref) {
+      var k = ref.toLowerCase();
+      var list = byRef[k] || (byRef[k] = []);
+      if (list.indexOf(v.url) < 0) list.push(v.url);
+    });
   });
+  return byRef;
+}
+
+/** { key (lower case): { title, priority, state } } for showing issues next to cases. */
+function tr_issueInfo_() {
+  var out = {};
+  tr_metaList_('issue').forEach(function (r) {
+    var v = r.value || {};
+    if (v.title || v.priority || v.state) out[String(r.key).toLowerCase()] = { title: v.title || '', priority: v.priority || '', state: v.state || '' };
+  });
+  return out;
+}
+
+/** Add issues to the list (or fill in what is missing). items: [{ url|ref, title?, priority?, source?, number? }] */
+function tr_noteIssues_(items) {
+  (items || []).forEach(function (it) {
+    var key = it.url || it.ref;
+    if (!key) return;
+    var prev = tr_metaGet_('issue', key);
+    var v = prev ? JSON.parse(JSON.stringify(prev)) : { url: it.url || '', ref: it.url ? TRCore.issueRef(it.url) : it.ref, added: tr_now_(), addedBy: tr_user_() };
+    var changed = !prev;
+    ['title', 'priority', 'source'].forEach(function (f) {
+      var val = TRCore.cleanText(it[f], f === 'title' ? 300 : 60);
+      if (val && v[f] !== val && (f !== 'source' || !v.source)) { v[f] = val; changed = true; }
+    });
+    if (changed) tr_metaPut_('issue', key, v);
+  });
+}
+
+/**
+ * Write a case's Linked issue cell: references as text ("#12, #15"), linked to the
+ * first issue's page, and note each link in the issue list. Returns the issues.
+ */
+function tr_writeIssueCell_(sh, r, col, value, extra) {
+  var list = TRCore.parseIssues(value, '', tr_issueRefs_());
+  var range = sh.getRange(r, col + 1);
+  range.setValue(TRCore.cellSafe(TRCore.issueCellText(list)));
+  var first = list.filter(function (i) { return i.url; })[0];
+  range.setLinkUrl(first ? first.url : '');
+  tr_noteIssues_(list.filter(function (i) { return i.url; }).map(function (i) {
+    var e = { url: i.url, ref: i.ref };
+    if (extra && extra.url === i.url) { e.title = extra.title; e.priority = extra.priority; e.source = extra.source; }
+    return e;
+  }));
+  return list;
 }
 
 // -----------------------------------------------------------------------------
@@ -405,7 +508,7 @@ function tr_mark(req) {
     var m = tr_open_(req.tab);
     var ci = tr_findCycle_(m, req.cycle);
     var cy = m.cycles[ci];
-    if (!cy) throw tr_err_('NO_CYCLE', 'This tab has no status column yet. Start a cycle on the Plan screen.');
+    if (!cy) throw tr_err_('NO_CYCLE', 'This tab has no status column yet. Start a cycle in Setup.');
     var r = tr_findRow_(m, req.key, req.sh, req.row);
     var row = m.values[r - 1];
     var cur = String(row[cy.status] || '').trim();
@@ -429,9 +532,17 @@ function tr_mark(req) {
       out.comment = TRCore.cleanText(req.comment, 5000);
       if (out.comment !== String(row[cy.comment] || '').trim()) sh.getRange(r, cy.comment + 1).setValue(TRCore.cellSafe(out.comment));
     }
-    if (req.issue != null && m.fields.linkedIssue >= 0) {
-      out.issue = TRCore.cleanText(req.issue, 300);
-      if (out.issue !== String(row[m.fields.linkedIssue] || '').trim()) sh.getRange(r, m.fields.linkedIssue + 1).setValue(TRCore.cellSafe(out.issue));
+    if (req.issue != null) {
+      var want = TRCore.parseIssues(TRCore.cleanText(req.issue, 2000), '', tr_issueRefs_());
+      var had = m.fields.linkedIssue >= 0 ? TRCore.parseIssues(row[m.fields.linkedIssue], m.issueLinks[r - m.headerRow - 1], tr_issueRefs_()) : [];
+      if (TRCore.issueValue(want) !== TRCore.issueValue(had)) {
+        var hadColumn = m.fields.linkedIssue >= 0;
+        if (want.length) m = tr_ensureIssueColumn_(m);
+        if (m.fields.linkedIssue >= 0) want = tr_writeIssueCell_(sh, r, m.fields.linkedIssue, TRCore.issueValue(want));
+        if (!hadColumn && m.fields.linkedIssue >= 0) out.addedIssueColumn = m.headers.length ? m.headers[m.fields.linkedIssue] : 'Linked issue';
+      }
+      out.issues = want;
+      out.issue = TRCore.issueValue(want);
     }
     if (status !== cur) {
       if (m.fields.testedBy >= 0) { out.testedBy = status ? tr_user_() : ''; sh.getRange(r, m.fields.testedBy + 1).setValue(TRCore.cellSafe(out.testedBy)); }
@@ -508,10 +619,11 @@ function tr_cleanItem_(it) {
 /** Append cases below the last one, with the next IDs and the last row's formatting. No lock: callers hold it. */
 function tr_addCases_(tabName, items, cycleLabel) {
   var m = tr_open_(tabName);
-  var f = m.fields;
-  if (f.scenario < 0) throw tr_err_('NOT_SET_UP', 'This tab has no Scenario column mapped. Open Setup.');
+  if (m.fields.scenario < 0) throw tr_err_('NOT_SET_UP', 'This tab has no Scenario column mapped. Open Setup.');
   items = (items || []).map(tr_cleanItem_);
   if (!items.length) return { ok: true, added: [] };
+  if (items.some(function (it) { return it.issue; })) m = tr_ensureIssueColumn_(m);
+  var f = m.fields;
   var cases = tr_cases_(m);
   var ids = f.id >= 0 ? m.values.slice(m.headerRow).map(function (r) { return r[f.id]; }).filter(function (v) { return String(v).trim(); }) : [];
   var newIds = f.id >= 0 ? TRCore.nextIds(ids, items.length) : [];
@@ -533,7 +645,6 @@ function tr_addCases_(tabName, items, cycleLabel) {
     put('testData', it.testData);
     put('preCondition', it.preCondition);
     put('expected', TRCore.formatExpected(it.expected));
-    put('linkedIssue', it.issue);
     put('release', it.release);
     if (cy && it.status) {
       if (!opts.some(function (o) { return o.value === it.status; })) throw tr_err_('BAD_STATUS', '"' + it.status + '" is not one of this column\'s values.');
@@ -551,8 +662,10 @@ function tr_addCases_(tabName, items, cycleLabel) {
     var src = sh.getRange(lastData, 1, 1, width);
     src.copyTo(dest, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     src.copyTo(dest, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+    dest.setFontLine('none'); // if the last case is retired, new cases must not come out struck
   }
   dest.setValues(rows);
+  items.forEach(function (it, i) { if (it.issue && f.linkedIssue >= 0) tr_writeIssueCell_(sh, lastData + 1 + i, f.linkedIssue, it.issue); });
   var added = rows.map(function (r, i) { return { id: newIds[i] || '', row: lastData + 1 + i, scenario: items[i].scenario }; });
   items.forEach(function (it, i) {
     if (it.fromFinding) tr_setFindingState_(it.fromFinding, 'written', added[i].id || ('row ' + added[i].row));
@@ -564,20 +677,30 @@ function tr_addCases(tabName, items, cycleLabel) {
   return tr_withLock_(function () { return tr_addCases_(tabName, items, cycleLabel); });
 }
 
-/** Change fields of one existing case. No lock: callers hold it. */
-function tr_editCase_(tabName, key, sh, rowHint, fields) {
+/**
+ * Change fields of one existing case. No lock: callers hold it.
+ * opts.asTyped: text is written as typed (multi-line kept); an expected result is
+ * only turned into "• " bullets when the cell already used them. Otherwise
+ * expected results are always written in house style.
+ */
+function tr_editCase_(tabName, key, sh, rowHint, fields, opts) {
   var m = tr_open_(tabName);
   var r = tr_findRow_(m, key, sh, rowHint);
+  var asTyped = !!(opts && opts.asTyped);
   var written = [];
   var skipped = [];
   TRCore.EDITABLE.forEach(function (f) {
     if (!fields || fields[f] == null) return;
     if (m.fields[f] < 0) { skipped.push(f); return; }
-    var v = f === 'expected'
-      ? TRCore.formatExpected(Array.isArray(fields[f]) ? fields[f].map(function (b) { return TRCore.cleanText(b, 800); }) : TRCore.parseExpected(TRCore.cleanText(fields[f], 6000)))
-      : TRCore.cleanText(fields[f], f === 'scenario' ? 400 : 3000);
+    var v;
+    if (f === 'expected' && (!asTyped || Array.isArray(fields[f]) || TRCore.isBulleted(m.values[r - 1][m.fields[f]]))) {
+      v = TRCore.formatExpected(Array.isArray(fields[f]) ? fields[f].map(function (b) { return TRCore.cleanText(b, 800); }) : TRCore.parseExpected(TRCore.cleanText(fields[f], 6000)));
+    } else {
+      v = TRCore.tidyText(TRCore.cleanText(fields[f], f === 'scenario' ? 400 : f === 'expected' ? 6000 : 3000));
+    }
     if (f === 'scenario' && !v) return;
-    m.sheet.getRange(r, m.fields[f] + 1).setValue(TRCore.cellSafe(v));
+    if (f === 'linkedIssue') tr_writeIssueCell_(m.sheet, r, m.fields[f], v);
+    else m.sheet.getRange(r, m.fields[f] + 1).setValue(TRCore.cellSafe(v));
     written.push(f);
   });
   return { ok: true, row: r, written: written, skipped: skipped };
@@ -585,6 +708,112 @@ function tr_editCase_(tabName, key, sh, rowHint, fields) {
 
 function tr_editCase(tabName, key, sh, rowHint, fields) {
   return tr_withLock_(function () { return tr_editCase_(tabName, key, sh, rowHint, fields); });
+}
+
+// -----------------------------------------------------------------------------
+// Case upkeep while running: update, deprecate, duplicate, restore
+// -----------------------------------------------------------------------------
+
+/** The case at sheet row r, as the console sees it (fresh read). */
+function tr_caseAt_(tabName, r) {
+  var m = tr_open_(tabName);
+  return tr_cases_(m).filter(function (c) { return c.row === r; })[0] || null;
+}
+
+/** The current cycle with a comment column, or an error saying why the note has nowhere to go. */
+function tr_noteCycle_(m, label) {
+  var cy = m.cycles[tr_findCycle_(m, label)];
+  if (!cy) throw tr_err_('NO_CYCLE', 'This tab has no status column yet. Start a cycle in Setup.');
+  if (cy.comment < 0) throw tr_err_('NO_COMMENT', 'Cycle "' + (cy.label || 'Status') + '" has no Comment column, so the reason has nowhere to go. Add a Comment column next to its status column first.');
+  return cy;
+}
+
+/** Strike out (or restore) the cells that describe the case; results and comments stay readable. */
+function tr_strikeCase_(m, r, on) {
+  TRCore.STRUCK_FIELDS.forEach(function (f) {
+    if (m.fields[f] >= 0) m.sheet.getRange(r, m.fields[f] + 1).setFontLine(on ? 'line-through' : 'none');
+  });
+}
+
+/**
+ * Change a case's text while testing. req: { tab, key, sh, row, cycle, fields, note? }
+ * A note goes into the cycle's comment as "Updated: <note>".
+ */
+function tr_updateCase(req) {
+  req = req || {};
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    var note = TRCore.cleanText(req.note, 500);
+    var cy = note ? tr_noteCycle_(m, req.cycle) : null;
+    var fields = {};
+    TRCore.EDITABLE.forEach(function (f) { if (req.fields && req.fields[f] != null) fields[f] = req.fields[f]; });
+    if (fields.scenario != null && !TRCore.cleanText(fields.scenario, 400)) throw tr_err_('BAD_INPUT', 'The scenario cannot be empty.');
+    var res = tr_editCase_(req.tab, req.key, req.sh, req.row, fields, { asTyped: true });
+    var out = { ok: true, row: res.row, written: res.written, skipped: res.skipped };
+    if (cy) {
+      var cur = String(m.values[res.row - 1][cy.comment] || '');
+      out.comment = TRCore.withUpdateNote(cur, note);
+      m.sheet.getRange(res.row, cy.comment + 1).setValue(TRCore.cellSafe(out.comment));
+    }
+    var c = tr_caseAt_(req.tab, res.row);
+    if (c) { out.key = c.key; out.sh = c.sh; }
+    return out;
+  });
+}
+
+/**
+ * Take a case out of the run without deleting it: its row is struck out and
+ * the cycle's comment starts with why.
+ * req: { tab, key, sh, row, cycle, kind: 'deprecated'|'duplicate', of (case kept, for duplicates), reason }
+ */
+function tr_retireCase(req) {
+  req = req || {};
+  var kind = String(req.kind || '');
+  if (TRCore.RETIRE_KINDS.indexOf(kind) < 0) throw tr_err_('BAD_INPUT', 'Choose Deprecated or Duplicate.');
+  var reason = TRCore.cleanText(req.reason, 500);
+  if (kind === 'deprecated' && !reason) throw tr_err_('BAD_INPUT', 'Say why this case is no longer needed; it goes into the comment.');
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    var cy = tr_noteCycle_(m, req.cycle);
+    var r = tr_findRow_(m, req.key, req.sh, req.row);
+    var of = '';
+    if (kind === 'duplicate') {
+      var want = TRCore.cleanText(req.of, 400).toLowerCase();
+      if (!want) throw tr_err_('BAD_INPUT', 'Pick the case that is kept.');
+      var cases = tr_cases_(m);
+      var kept = cases.filter(function (c) { return (c.id && c.id.toLowerCase() === want) || c.key.toLowerCase() === want; })[0];
+      if (!kept) throw tr_err_('BAD_INPUT', 'Case "' + req.of + '" is not in this tab.');
+      if (kept.row === r) throw tr_err_('BAD_INPUT', 'A case cannot be a duplicate of itself.');
+      if (kept.retired) throw tr_err_('BAD_INPUT', (kept.id || 'That case') + ' is retired itself. Pick the case that is kept.');
+      of = kept.id || kept.scenario.slice(0, 120);
+    }
+    var note = TRCore.retireNote(kind, of, reason);
+    var before = String(m.values[r - 1][cy.comment] || '');
+    // The reason is often what the tester already typed as the comment ("Not applicable anymore"): say it once.
+    var rest = TRCore.stripRetireNote(before).replace(/\s+/g, ' ').trim().toLowerCase();
+    var comment = rest && rest === reason.replace(/\s+/g, ' ').trim().toLowerCase() ? note : TRCore.withRetireNote(before, note);
+    m.sheet.getRange(r, cy.comment + 1).setValue(TRCore.cellSafe(comment));
+    tr_strikeCase_(m, r, true);
+    return { ok: true, row: r, comment: comment, retired: { kind: kind, of: of, reason: TRCore.parseRetireNote(note).reason, cycle: cy.label } };
+  });
+}
+
+/** Bring a retired case back into the run: no strikethrough, and the note leaves this cycle's comment. req: { tab, key, sh, row, cycle } */
+function tr_restoreCase(req) {
+  req = req || {};
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    var r = tr_findRow_(m, req.key, req.sh, req.row);
+    var out = { ok: true, row: r };
+    var cy = m.cycles[tr_findCycle_(m, req.cycle)];
+    if (cy && cy.comment >= 0) {
+      var cur = String(m.values[r - 1][cy.comment] || '');
+      out.comment = TRCore.stripRetireNote(cur);
+      if (out.comment !== cur.trim()) m.sheet.getRange(r, cy.comment + 1).setValue(TRCore.cellSafe(out.comment));
+    }
+    tr_strikeCase_(m, r, false);
+    return out;
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -629,6 +858,7 @@ function tr_saveFinding(input) {
       at: (prev && prev.at) || tr_now_()
     };
     tr_metaPut_('finding', key, v);
+    if (v.url) tr_noteIssues_([{ url: v.url, title: text, priority: input.priority, source: v.source }]);
     v.key = key;
     return { ok: true, finding: v };
   });
@@ -652,6 +882,200 @@ function tr_deleteFinding(key) {
 }
 
 // -----------------------------------------------------------------------------
+// Known issues
+// -----------------------------------------------------------------------------
+
+/**
+ * A bug filed against a test case (from Bug Reporter): mark the case failed in the
+ * current cycle, add the bug to its Linked issue cell, and note "Bug #12: title" in
+ * the cycle's comment. req: { tab, key, url, title, priority, cycle? }
+ */
+function tr_linkBug(req) {
+  req = req || {};
+  var url = TRCore.cleanLink(req.url);
+  if (!url) throw tr_err_('BAD_INPUT', 'The bug needs its link (https://…).');
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    var c = tr_cases_(m).filter(function (x) { return x.key === req.key || (x.id && x.id === req.key); })[0];
+    if (!c) throw tr_err_('NO_CASE', 'There is no test case "' + req.key + '" in ' + m.tab + ' any more.');
+    if (c.retired) throw tr_err_('RETIRED', c.id + ' is retired (struck out), so it cannot be marked. Restore it first, or note the bug as a finding.');
+    var ci = tr_findCycle_(m, req.cycle, true);
+    var cy = m.cycles[ci];
+    if (!cy) throw tr_err_('NO_CYCLE', m.tab + ' has no cycle to mark yet. Start one in Setup.');
+    var fail = tr_statusOptions_(m, cy).filter(function (o) { return o.cls === 'fail'; })[0];
+    if (!fail) throw tr_err_('NO_FAIL', 'The status column of cycle "' + cy.label + '" has no failing value to mark.');
+    var title = TRCore.cleanText(req.title, 300);
+    var sh = m.sheet;
+    var r = c.row;
+    var prev = c.statuses[ci] || '';
+    if (TRCore.classifyStatus(prev) !== 'fail') {
+      sh.getRange(r, cy.status + 1).setValue(TRCore.cellSafe(fail.value));
+      if (m.fields.testedBy >= 0) sh.getRange(r, m.fields.testedBy + 1).setValue(TRCore.cellSafe(tr_user_()));
+      if (m.fields.testedOn >= 0) sh.getRange(r, m.fields.testedOn + 1).setValue(tr_now_());
+    }
+    var ref = TRCore.issueRef(url);
+    if (cy.comment >= 0) {
+      var comment = String(c.comments[ci] || '').trim();
+      if (comment.indexOf(url) < 0 && !new RegExp('(^|\\W)' + ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\W|$)').test(comment)) {
+        var line = 'Bug ' + ref + (title ? ': ' + title : '');
+        sh.getRange(r, cy.comment + 1).setValue(TRCore.cellSafe(comment ? comment + '\n' + line : line));
+      }
+    }
+    m = tr_ensureIssueColumn_(m);
+    var list = tr_writeIssueCell_(sh, r, m.fields.linkedIssue, TRCore.issueValue(c.issues.concat([{ ref: ref, url: url }])),
+      { url: url, title: title, priority: req.priority, source: 'bug-reporter' });
+    return { ok: true, key: c.key, id: c.id, row: r, tab: m.tab, cycle: cy.label, status: TRCore.classifyStatus(prev) === 'fail' ? prev : fail.value, previous: prev, issues: list };
+  });
+}
+
+/** Manual tabs of the workbook (saved as manual in Setup, or detected as such). */
+function tr_manualTabs_(cfg) {
+  return tr_ss_().getSheets().filter(function (sh) {
+    var n = sh.getName();
+    if (n === TR_META || n === TR_SUMMARY || n === TR_ISSUES) return false;
+    var t = cfg && cfg.tabs && cfg.tabs[n];
+    return (t ? t.role : tr_detectTab_(sh).role) === 'manual';
+  }).map(function (sh) { return sh.getName(); });
+}
+
+/**
+ * Every issue the workbook knows: linked to test cases (any manual tab), or noted as
+ * open findings (bugs with no test case yet), with what the issue list says about it.
+ */
+function tr_listIssues() {
+  var cfg = tr_config_();
+  var tabs = tr_manualTabs_(cfg);
+  var byKey = {};
+  var order = [];
+  function entry(it) {
+    var k = (it.url || it.ref).toLowerCase();
+    if (!byKey[k]) { byKey[k] = { key: it.url || it.ref, ref: it.ref, url: it.url, cases: [], findings: [] }; order.push(k); }
+    return byKey[k];
+  }
+  tabs.forEach(function (tab) {
+    var m = tr_open_(tab, cfg);
+    if (m.fields.linkedIssue < 0) return;
+    var ci = m.cycles.length ? tr_findCycle_(m, '', true) : -1;
+    tr_cases_(m).forEach(function (c) {
+      c.issues.forEach(function (it) {
+        var status = ci >= 0 ? c.statuses[ci] || '' : '';
+        entry(it).cases.push({ tab: tab, key: c.key, id: c.id, scenario: c.scenario, status: status, cls: TRCore.classifyStatus(status), cycle: ci >= 0 ? m.cycles[ci].label : '', retired: !!c.retired });
+      });
+    });
+  });
+  tr_metaList_('finding').forEach(function (r) {
+    var f = r.value || {};
+    if (f.state && f.state !== 'open') return;
+    TRCore.parseIssues(f.url || '', '', null).concat(f.url ? [] : TRCore.parseIssues(f.issue || '', '', tr_issueRefs_())).forEach(function (it) {
+      entry(it).findings.push({ key: r.key, text: f.text, tab: f.tab || '' });
+    });
+  });
+  var meta = {};
+  tr_metaList_('issue').forEach(function (r) { meta[String(r.key).toLowerCase()] = r.value || {}; });
+  var issues = order.map(function (k) {
+    var e = byKey[k];
+    var v = meta[k] || {};
+    e.title = v.title || '';
+    e.priority = v.priority || '';
+    e.state = v.state || '';
+    e.labels = v.labels || [];
+    e.source = v.source || '';
+    e.added = v.added || '';
+    e.addedBy = v.addedBy || '';
+    e.fetchedAt = v.fetchedAt || '';
+    e.fetchError = v.fetchError || '';
+    return e;
+  });
+  issues.sort(function (a, b) {
+    var ca = a.state === 'closed' ? 1 : 0;
+    var cb = b.state === 'closed' ? 1 : 0;
+    if (ca !== cb) return ca - cb;
+    var pa = TRCore.priorityRank(a.priority);
+    var pb = TRCore.priorityRank(b.priority);
+    if (pa !== pb) return pa - pb;
+    return a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0;
+  });
+  return { ok: true, issues: issues, tabs: tabs, sheetName: tr_ss_().getName() };
+}
+
+/**
+ * Change what the issue list says about issues. items: [{ key, title?, priority?, state?,
+ * labels?, fetchedAt?, fetchError? }]; a field left out (null) is kept.
+ */
+function tr_saveIssueMeta(items) {
+  return tr_withLock_(function () {
+    var n = 0;
+    (items || []).forEach(function (it) {
+      var key = String((it && it.key) || '').trim();
+      if (!key) return;
+      var url = TRCore.cleanLink(key);
+      var v = tr_metaGet_('issue', key) || { url: url, ref: url ? TRCore.issueRef(url) : TRCore.cleanText(key, 160), added: tr_now_(), addedBy: tr_user_() };
+      if (it.title != null) v.title = TRCore.cleanText(it.title, 300);
+      if (it.priority != null) v.priority = TRCore.cleanText(it.priority, 40);
+      if (it.state != null) v.state = ['open', 'closed', ''].indexOf(String(it.state).toLowerCase()) >= 0 ? String(it.state).toLowerCase() : '';
+      if (Array.isArray(it.labels)) v.labels = it.labels.slice(0, 20).map(function (l) { return TRCore.cleanText(l, 60); });
+      if (it.fetchedAt != null) v.fetchedAt = TRCore.cleanText(it.fetchedAt, 40);
+      if (it.fetchError != null) v.fetchError = TRCore.cleanText(it.fetchError, 300);
+      tr_metaPut_('issue', key, v);
+      n++;
+    });
+    return { ok: true, saved: n };
+  });
+}
+
+/** Text for an issue's test cases in the Known issues sheet. */
+function tr_issueCasesText_(e, manyTabs) {
+  var lines = e.cases.map(function (c) {
+    return (manyTabs ? c.tab + ' \u203a ' : '') + (c.id || 'Row') + ' \u2013 ' + c.scenario + (c.retired ? ' (retired)' : c.status ? ' (' + c.status + ')' : ' (not run)');
+  });
+  e.findings.forEach(function (f) { lines.push('Not in the test cases yet (finding ' + f.key + ': ' + f.text + ')'); });
+  return lines.join('\n');
+}
+
+/**
+ * Add a "Known issues" sheet listing every issue (for downloads: the server runs this
+ * on a copy of the workbook, never on the file itself). Returns how many were listed.
+ */
+function tr_writeIssuesSheet() {
+  var data = tr_listIssues();
+  if (!data.issues.length) return { ok: true, rows: 0 };
+  var ss = tr_ss_();
+  var name = TR_ISSUES;
+  var existing = ss.getSheetByName(name);
+  if (existing) {
+    var a1 = String(existing.getRange(1, 1).getDisplayValues()[0][0] || '');
+    if (a1 === 'Known issues') existing.clear(); else { name = TR_ISSUES + ' (Test Run)'; existing = ss.getSheetByName(name); if (existing) existing.clear(); }
+  }
+  var sh = existing || ss.insertSheet(name);
+  var manyTabs = data.tabs.length > 1;
+  var head = ['Issue', 'Title', 'Priority', 'State', 'Linked test cases', 'Added'];
+  var W = head.length;
+  var rows = [
+    ['Known issues', '', '', '', '', ''],
+    [data.sheetName + ' \u00b7 ' + data.issues.length + ' issue' + (data.issues.length === 1 ? '' : 's') + ' \u00b7 listed ' + tr_now_(), '', '', '', '', ''],
+    ['', '', '', '', '', ''],
+    head
+  ];
+  data.issues.forEach(function (e) {
+    rows.push([e.ref, e.title, e.priority, e.state ? e.state.charAt(0).toUpperCase() + e.state.slice(1) : '', tr_issueCasesText_(e, manyTabs), [e.added, e.addedBy].filter(Boolean).join(' \u00b7 ')].map(TRCore.cellSafe));
+  });
+  sh.getRange(1, 1, rows.length, W).setValues(rows);
+  data.issues.forEach(function (e, i) { if (e.url) sh.getRange(5 + i, 1).setLinkUrl(e.url); });
+  sh.getRange(1, 1, rows.length, W).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('top').setWrap(true);
+  sh.getRange(1, 1).setFontSize(14).setFontWeight('bold');
+  sh.getRange(4, 1, 1, W).setFontWeight('bold').setBackground('#C9DAF8');
+  sh.getRange(4, 1, rows.length - 3, W).setBorder(true, true, true, true, true, true);
+  sh.setColumnWidth(1, 90);
+  sh.setColumnWidth(2, 320);
+  sh.setColumnWidth(3, 70);
+  sh.setColumnWidth(4, 70);
+  sh.setColumnWidth(5, 380);
+  sh.setColumnWidth(6, 150);
+  sh.setFrozenRows(4);
+  return { ok: true, rows: data.issues.length, sheet: name };
+}
+
+// -----------------------------------------------------------------------------
 // Claude prompts and pasted replies
 // -----------------------------------------------------------------------------
 
@@ -671,7 +1095,8 @@ function tr_buildPrompt(kind, tabName, opts) {
   var cases = tr_cases_(m);
   if (kind === 'paths') {
     var ci = tr_findCycle_(m, opts.cycle, true);
-    var scope = opts.onlyUntested && ci >= 0 ? cases.filter(function (c) { return TRCore.classifyStatus(c.statuses[ci]) === 'none'; }) : cases;
+    var active = TRCore.activeCases(cases);
+    var scope = opts.onlyUntested && ci >= 0 ? active.filter(function (c) { return TRCore.classifyStatus(c.statuses[ci]) === 'none'; }) : active;
     if (!scope.length) throw tr_err_('EMPTY', 'There are no cases to plan.');
     return { ok: true, text: TRPrompts.planPaths({ tab: m.tab, cases: scope, focus: TRCore.cleanText(opts.focus, 400) }), count: scope.length };
   }
@@ -681,7 +1106,7 @@ function tr_buildPrompt(kind, tabName, opts) {
   var related = [];
   findings.forEach(function (f) {
     var area = String(f.area || '').toLowerCase();
-    cases.forEach(function (c) {
+    TRCore.activeCases(cases).forEach(function (c) {
       var inArea = area && ((c.group1 && c.group1.toLowerCase() === area) || (c.group2 && c.group2.toLowerCase() === area));
       if ((inArea || TRCore.similarity(f.text, c.scenario) >= 0.25) && related.indexOf(c) < 0) related.push(c);
     });
@@ -712,7 +1137,7 @@ function tr_parseReply(tabName, text) {
   var cases = tr_cases_(m);
   var res = TRCore.validateReply(TRCore.extractJson(text), { caseIds: cases.map(function (c) { return c.id || c.key; }) });
   if (res.type === 'scenarios') {
-    res.items.forEach(function (it) { it.duplicates = TRCore.duplicatesFor(it.scenario, cases); it.state = 'open'; });
+    res.items.forEach(function (it) { it.duplicates = TRCore.duplicatesFor(it.scenario, TRCore.activeCases(cases)); it.state = 'open'; });
     res.covered.forEach(function (cv) { cv.state = 'open'; });
   }
   if (res.type === 'edits') {
@@ -828,7 +1253,7 @@ function tr_summary(tabName, cycleLabel) {
     release: data.release,
     groupLabel: hasG1 ? 'Feature' : 'Sub feature',
     generatedAt: tr_now_(),
-    issueBase: data.issueBase,
+    issueInfo: data.issueInfo,
     summary: s
   };
 }
@@ -865,8 +1290,25 @@ function tr_writeSummaryTab(tabName, cycleLabel) {
     marks.section.push(add(['Open failures (' + s.failures.length + ')']));
     var failHeader = add(['ID', 'Scenario', 'Comment', 'Linked issue', res.groupLabel]);
     marks.header.push(failHeader);
-    s.failures.forEach(function (f) { add([f.id, f.scenario, f.comment, f.issue, f.group]); });
+    var links = [];
+    s.failures.forEach(function (f) {
+      var r = add([f.id, f.scenario, f.comment, TRCore.issueCellText(f.issues || []), f.group]);
+      var u = (f.issues || []).filter(function (i) { return i.url; })[0];
+      if (u) links.push([r, u.url]);
+    });
     var failEnd = rows.length;
+    var retiredHeader = 0;
+    var retiredEnd = 0;
+    if (s.retired.length) {
+      add([]);
+      marks.section.push(add(['Retired cases, not counted above (' + s.retired.length + ')']));
+      retiredHeader = add(['ID', 'Scenario', 'Why', 'Retired in']);
+      marks.header.push(retiredHeader);
+      s.retired.forEach(function (x) {
+        add([x.id, x.scenario, x.kind === 'struck' ? 'Struck out in the workbook' : TRCore.retireNote(x.kind, x.of, x.reason), x.cycle]);
+      });
+      retiredEnd = rows.length;
+    }
     if (s.comparison) {
       add([]);
       marks.section.push(add(['Compared with ' + (res.prevCycle || 'the previous cycle')]));
@@ -875,6 +1317,7 @@ function tr_writeSummaryTab(tabName, cycleLabel) {
       add(['Still failing', s.comparison.stillFailing]);
     }
     sh.getRange(1, 1, rows.length, W).setValues(rows);
+    links.forEach(function (l) { sh.getRange(l[0], 4).setLinkUrl(l[1]); });
     var all = sh.getRange(1, 1, rows.length, W);
     all.setFontFamily('Arial').setFontSize(10).setVerticalAlignment('top').setWrap(true);
     sh.getRange(1, 1).setFontSize(14).setFontWeight('bold');
@@ -883,6 +1326,7 @@ function tr_writeSummaryTab(tabName, cycleLabel) {
     sh.getRange(totalRow, 1, 1, W).setFontWeight('bold');
     sh.getRange(marks.header[0], 1, tableEnd - marks.header[0] + 1, W).setBorder(true, true, true, true, true, true);
     sh.getRange(failHeader, 1, failEnd - failHeader + 1, 5).setBorder(true, true, true, true, true, true);
+    if (retiredHeader) sh.getRange(retiredHeader, 1, retiredEnd - retiredHeader + 1, 4).setBorder(true, true, true, true, true, true);
     sh.getRange(marks.header[0] + 1, 3, tableEnd - marks.header[0], 1).setBackground('#E6F4EA');
     sh.getRange(marks.header[0] + 1, 4, tableEnd - marks.header[0], 1).setBackground('#FCE8E6');
     sh.setColumnWidth(1, 240);

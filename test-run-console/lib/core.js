@@ -255,9 +255,72 @@ var TRCore = (function () {
     return v == null ? '' : String(v);
   }
 
+  // ---------------------------------------------------------------------------
+  // Retired cases (deprecated, or a duplicate of a case that is kept)
+  // ---------------------------------------------------------------------------
+  //
+  // A retired case stays in the workbook: its row is struck out and the
+  // comment of the cycle it was retired in starts with one line that says why:
+  //   "Deprecated: <reason>"
+  //   "Duplicate of CMS/12: <reason>"
+  // The strikethrough on the Scenario cell is what marks a case as retired, so
+  // the workbook alone carries it (also after a round trip through Google Sheets).
+
+  var RETIRE_KINDS = ['deprecated', 'duplicate'];
+  var NOTE_RE = /^(deprecated|duplicate of\s+(.+?))\s*(?::\s*(.*))?$/i;
+
+  /** Fields whose cells are struck out when a case is retired: what the case says, not its results. */
+  var STRUCK_FIELDS = ['id', 'scenario', 'testType', 'testData', 'preCondition', 'expected'];
+
+  function oneLine(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
+
+  /** The comment line for a retired case. */
+  function retireNote(kind, of, reason) {
+    var r = oneLine(reason);
+    var head = kind === 'duplicate' ? 'Duplicate of ' + oneLine(of) : 'Deprecated';
+    return r ? head + ': ' + r : head;
+  }
+
+  /** { kind, of, reason } from a comment whose first line is a retire note, else null. */
+  function parseRetireNote(comment) {
+    var first = String(comment == null ? '' : comment).split(/\r?\n/)[0].trim();
+    var m = first.match(NOTE_RE);
+    if (!m) return null;
+    return { kind: m[2] ? 'duplicate' : 'deprecated', of: m[2] ? m[2].trim() : '', reason: (m[3] || '').trim() };
+  }
+
+  /** A comment with the retire note as its first line (an earlier note is replaced, the rest kept). */
+  function withRetireNote(comment, note) {
+    var rest = stripRetireNote(comment);
+    return rest ? note + '\n' + rest : note;
+  }
+
+  /** The comment without a leading retire note. */
+  function stripRetireNote(comment) {
+    var s = String(comment == null ? '' : comment);
+    if (!parseRetireNote(s)) return s.trim();
+    var i = s.search(/\r?\n/);
+    return i < 0 ? '' : s.slice(i).replace(/^\r?\n/, '').trim();
+  }
+
+  /** A comment with an "Updated: ..." line added on top (after a retire note, if there is one). */
+  function withUpdateNote(comment, note) {
+    var line = 'Updated: ' + oneLine(note);
+    var s = String(comment == null ? '' : comment).trim();
+    if (!s) return line;
+    if (parseRetireNote(s)) {
+      var i = s.search(/\r?\n/);
+      return i < 0 ? s + '\n' + line : s.slice(0, i) + '\n' + line + s.slice(i);
+    }
+    return line + '\n' + s;
+  }
+
   /**
    * Build case objects from data rows (everything below the header row).
-   * opts: { firstRow (sheet row number of rows[0]), headers, fillDown }
+   * opts: { firstRow (sheet row number of rows[0]), headers, fillDown,
+   *         struck: [bool per row] (Scenario cell struck out = retired) }
    */
   function buildCases(rows, fields, cycles, opts) {
     opts = opts || {};
@@ -265,6 +328,8 @@ var TRCore = (function () {
     var headers = opts.headers || [];
     var extras = opts.extras || [];
     var fillDown = opts.fillDown !== false;
+    var struck = opts.struck || [];
+    var issueLinks = opts.issueLinks || [];
     var lastFeature = '';
     var lastSub = '';
     var cases = [];
@@ -295,7 +360,8 @@ var TRCore = (function () {
         testData: cell(row, fields.testData),
         preCondition: cell(row, fields.preCondition),
         expected: cell(row, fields.expected),
-        linkedIssue: cell(row, fields.linkedIssue).trim(),
+        linkedIssue: '',
+        issues: parseIssues(cell(row, fields.linkedIssue), issueLinks[r], opts.issueRefs),
         automatedBy: cell(row, fields.automatedBy).trim(),
         release: cell(row, fields.release).trim(),
         testedBy: cell(row, fields.testedBy).trim(),
@@ -308,9 +374,47 @@ var TRCore = (function () {
         var v = cell(row, i);
         if (v.trim()) c.extras.push({ label: String(headers[i] || ''), value: v });
       });
+      c.linkedIssue = issueValue(c.issues);
+      c.retired = struck[r] ? retiredInfo(c, cycles) : null;
       cases.push(c);
     }
+    linkDuplicates(cases);
     return cases;
+  }
+
+  /** Why a struck-out case was retired: the latest cycle comment with a retire note. */
+  function retiredInfo(c, cycles) {
+    for (var i = c.comments.length - 1; i >= 0; i--) {
+      var n = parseRetireNote(c.comments[i]);
+      if (n) { n.cycle = cycles[i] ? cycles[i].label : ''; return n; }
+    }
+    return { kind: 'struck', of: '', reason: '', cycle: '' };
+  }
+
+  /** Point each duplicate at the case it duplicates (c.retired.ofKey) and list it on that case (c.duplicates). */
+  function linkDuplicates(cases) {
+    var byId = {};
+    cases.forEach(function (c) {
+      c.duplicates = [];
+      if (c.id) byId[normLabel(c.id)] = c;
+    });
+    cases.forEach(function (c) {
+      if (!c.retired || c.retired.kind !== 'duplicate') return;
+      var kept = byId[normLabel(c.retired.of)];
+      if (!kept) {
+        for (var i = 0; i < cases.length; i++) {
+          if (!cases[i].id && normLabel(cases[i].scenario) === normLabel(c.retired.of)) { kept = cases[i]; break; }
+        }
+      }
+      if (!kept || kept === c) return;
+      c.retired.ofKey = kept.key;
+      kept.duplicates.push(c.id || c.key);
+    });
+  }
+
+  /** Cases still in the run (not retired). */
+  function activeCases(cases) {
+    return cases.filter(function (c) { return !c.retired; });
   }
 
   /** Split an expected-result cell into bullet strings. */
@@ -329,6 +433,17 @@ var TRCore = (function () {
       .filter(function (s) { return s; })
       .map(function (s) { return '\u2022 ' + s; })
       .join('\n');
+  }
+
+  /** Does a cell already use house-style bullets ("• " on every line)? */
+  function isBulleted(text) {
+    var lines = String(text == null ? '' : text).split(/\r?\n/).filter(function (l) { return l.trim(); });
+    return lines.length > 0 && lines.every(function (l) { return /^\s*\u2022/.test(l); });
+  }
+
+  /** Multi-line text tidied for a cell: no trailing spaces on lines, at most one blank line in a row. */
+  function tidyText(text) {
+    return String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /**
@@ -585,7 +700,7 @@ var TRCore = (function () {
       testData: cleanText(it.testData, LIMITS.long),
       preCondition: cleanText(it.preCondition, LIMITS.long),
       expected: expected,
-      issue: cleanText(it.issue, LIMITS.short),
+      issue: cleanText(it.issue, 1000),
       release: cleanText(it.release, 40),
       fromFinding: cleanText(it.fromFinding, 40),
       edgeCase: it.edgeCase === true
@@ -709,7 +824,12 @@ var TRCore = (function () {
     var stillFailing = 0;
     var auto = { linked: 0, pass: 0, fail: 0, other: 0 };
     var testers = {};
+    var retired = [];
     cases.forEach(function (c) {
+      if (c.retired) {
+        retired.push({ key: c.key, id: c.id, scenario: c.scenario, kind: c.retired.kind, of: c.retired.of, reason: c.retired.reason, cycle: c.retired.cycle || '' });
+        return;
+      }
       var cls = classifyStatus(c.statuses[ci]);
       total[cls] += 1; total.total += 1;
       var gname = c[groupBy] || c.group1 || 'Ungrouped';
@@ -717,7 +837,7 @@ var TRCore = (function () {
       if (!g) { g = gmap[gname] = { name: gname, counts: emptyCounts() }; groups.push(g); }
       g.counts[cls] += 1; g.counts.total += 1;
       if (cls === 'fail') {
-        failures.push({ key: c.key, id: c.id, scenario: c.scenario, comment: c.comments[ci] || '', issue: c.linkedIssue || '', group: gname });
+        failures.push({ key: c.key, id: c.id, scenario: c.scenario, comment: c.comments[ci] || '', issue: c.linkedIssue || '', issues: c.issues || [], group: gname });
       }
       if (pi != null && pi >= 0) {
         var prev = classifyStatus(c.statuses[pi]);
@@ -744,17 +864,118 @@ var TRCore = (function () {
       failures: failures,
       comparison: (pi != null && pi >= 0) ? { newlyFailing: newlyFailing, fixed: fixed, stillFailing: stillFailing } : null,
       automation: auto,
+      retired: retired,
       testers: Object.keys(testers).map(function (k) { return { name: k, count: testers[k] }; }).sort(function (a, b) { return b.count - a.count; })
     };
   }
 
-  /** "#123" -> base + "123"; full URLs are kept; anything else returns null. */
-  function issueUrl(issue, base) {
-    var s = String(issue == null ? '' : issue).trim();
-    if (/^https?:\/\//i.test(s)) return s;
-    var m = s.match(/#?(\d{1,7})\b/);
-    if (!m || !base) return null;
-    return String(base).replace(/\/?$/, '/') + m[1];
+  // ---------------------------------------------------------------------------
+  // Issue links
+  // ---------------------------------------------------------------------------
+  // A Linked issue cell names one or more issues. In the workbook each shows as a
+  // short reference ("#123", "CCRS-12") and the cell links to the first issue's
+  // page (one link per cell is all Excel keeps). The full links are also kept in
+  // the workbook's issue list (sidecar), so a reference can be turned back into
+  // its link when the cell is read.
+
+  var LINK_RE = /https?:\/\/[^\s<>"',;]+/gi;
+
+  /** A link Test Run will write: http(s) only, nothing that could run or open a local file. */
+  function cleanLink(u) {
+    var s = String(u == null ? '' : u).trim().replace(/[).\]]+$/, '');
+    return /^https?:\/\/[^\s<>"]+$/i.test(s) && s.length <= 500 ? s : '';
+  }
+
+  /** The short reference for an issue link: "#123" (GitHub, GitLab), "ABC-12" (Jira), else the site. */
+  function issueRef(url, full) {
+    var u = String(url || '');
+    var m = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/(?:-\/)?(?:issues|pull|pulls|merge_requests)\/(\d+)/i.exec(u);
+    if (m) return (full ? m[2] : '') + '#' + m[3];
+    m = /\/browse\/([A-Z][A-Z0-9_]+-\d+)/i.exec(u) || /[?&]selectedIssue=([A-Z][A-Z0-9_]+-\d+)/i.exec(u);
+    if (m) return m[1].toUpperCase();
+    m = /(?:\/_workitems\/edit\/|\/workitems?\/|\/bugs?\/|\/tickets?\/|show_bug\.cgi\?id=)(\d+)/i.exec(u);
+    if (m) return '#' + m[1];
+    return u.replace(/^https?:\/\//i, '').split(/[/?#]/)[0] || u;
+  }
+
+  /**
+   * The issues in a typed value or a cell: [{ ref, url }], in order, without repeats.
+   * link: the cell's hyperlink, if any. byRef: { ref (lower case): [url, ...] } from the
+   * issue list, to give a bare reference back its link when exactly one link has it.
+   */
+  function parseIssues(text, link, byRef) {
+    var s = String(text == null ? '' : text);
+    var out = [];
+    var seen = {};
+    function add(ref, url) {
+      var k = (url || ref).toLowerCase();
+      if (!k || seen[k]) return;
+      seen[k] = true;
+      out.push({ ref: ref, url: url });
+    }
+    LINK_RE.lastIndex = 0;
+    var hasLink = LINK_RE.test(s);
+    // Next to links, only reference-like words stay ("#12", "CCRS-4"), not "see" or "Bug:".
+    function rest(chunk) {
+      chunk.split(/[\n,;]+/).forEach(function (t) {
+        t = t.trim();
+        if (t && (!hasLink || (/\d/.test(t) && t.length <= 40))) add(t.slice(0, 160), '');
+      });
+    }
+    var last = 0;
+    var m;
+    LINK_RE.lastIndex = 0;
+    while ((m = LINK_RE.exec(s))) {
+      rest(s.slice(last, m.index));
+      var u = cleanLink(m[0]);
+      if (u) add(issueRef(u), u); else rest(m[0]);
+      last = m.index + m[0].length;
+    }
+    rest(s.slice(last));
+    var cellLink = cleanLink(link);
+    if (cellLink && !out.some(function (i) { return i.url === cellLink; })) {
+      // The cell's own link belongs to the reference it names, else to the first bare one.
+      var want = issueRef(cellLink).toLowerCase();
+      var wantFull = issueRef(cellLink, true).toLowerCase();
+      var hit = null;
+      out.forEach(function (i) { if (!hit && !i.url && (i.ref.toLowerCase() === want || i.ref.toLowerCase() === wantFull)) hit = i; });
+      if (!hit) out.forEach(function (i) { if (!hit && !i.url) hit = i; });
+      if (hit) hit.url = cellLink; else if (!out.length) out.push({ ref: issueRef(cellLink), url: cellLink });
+    }
+    if (byRef) {
+      out.forEach(function (i) {
+        if (i.url) return;
+        var urls = byRef[i.ref.toLowerCase()];
+        if (urls && urls.length === 1 && !out.some(function (o) { return o.url === urls[0]; })) i.url = urls[0];
+      });
+    }
+    return out;
+  }
+
+  /** How issues are written in a cell: their references, comma separated ("#12, #15"). Clashing refs get the repo name. */
+  function issueCellText(list) {
+    var refs = list.map(function (i) { return i.ref; });
+    return list.map(function (i, n) {
+      var clash = refs.filter(function (r) { return r.toLowerCase() === i.ref.toLowerCase(); }).length > 1;
+      return clash && i.url ? issueRef(i.url, true) : i.ref;
+    }).join(', ');
+  }
+
+  /** The value the console edits: one issue per line, links in full. */
+  function issueValue(list) {
+    return list.map(function (i) { return i.url || i.ref; }).join('\n');
+  }
+
+  /** P0..P3 and words like High, for sorting (lower is more urgent; 9 = none). */
+  function priorityRank(p) {
+    var s = String(p || '').toLowerCase();
+    var m = /\bp\s*([0-4])\b/.exec(s);
+    if (m) return Number(m[1]);
+    if (/critical|blocker|urgent|highest|sev(erity)?\s*1/.test(s)) return 0;
+    if (/high|major|sev(erity)?\s*2/.test(s)) return 1;
+    if (/medium|normal|moderate|sev(erity)?\s*3/.test(s)) return 2;
+    if (/low|minor|trivial|lowest|sev(erity)?\s*4/.test(s)) return 3;
+    return 9;
   }
 
   return {
@@ -763,6 +984,14 @@ var TRCore = (function () {
     TIERS: TIERS,
     DEFAULT_STATUSES: DEFAULT_STATUSES,
     EDITABLE: EDITABLE,
+    RETIRE_KINDS: RETIRE_KINDS,
+    STRUCK_FIELDS: STRUCK_FIELDS,
+    retireNote: retireNote,
+    parseRetireNote: parseRetireNote,
+    withRetireNote: withRetireNote,
+    stripRetireNote: stripRetireNote,
+    withUpdateNote: withUpdateNote,
+    activeCases: activeCases,
     normalizeHeader: normalizeHeader,
     detectCycles: detectCycles,
     detectColumns: detectColumns,
@@ -777,6 +1006,8 @@ var TRCore = (function () {
     buildCases: buildCases,
     parseExpected: parseExpected,
     formatExpected: formatExpected,
+    isBulleted: isBulleted,
+    tidyText: tidyText,
     cellSafe: cellSafe,
     nextIds: nextIds,
     extractSpecRefs: extractSpecRefs,
@@ -792,7 +1023,12 @@ var TRCore = (function () {
     extractJson: extractJson,
     validateReply: validateReply,
     summarize: summarize,
-    issueUrl: issueUrl
+    cleanLink: cleanLink,
+    issueRef: issueRef,
+    parseIssues: parseIssues,
+    issueCellText: issueCellText,
+    issueValue: issueValue,
+    priorityRank: priorityRank
   };
 })();
 
