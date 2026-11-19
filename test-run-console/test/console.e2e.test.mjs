@@ -615,19 +615,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.deepEqual(await page.locator('#cyclePick option').allTextContents(), ['Cycle v2.20.1']);
     });
 
-    await t.test('Setup: Rename a tab; what Test Run keeps about it moves with it', async () => {
-      await page.locator('.nav [data-view=setup]').click();
-      const card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Dashboard KPI', exact: true }) });
-      await card.locator('[data-action=tab-rename]').first().click();
-      await page.locator('#renameTo').fill('KPI dashboard');
-      await page.locator('.modal-box').getByRole('button', { name: 'Rename', exact: true }).click();
-      await page.locator('.toast', { hasText: 'Renamed to KPI dashboard.' }).waitFor();
-      await page.getByRole('heading', { name: 'KPI dashboard', exact: true }).waitFor();
-      const names = (await XBook.fromFile(file, 'x')).getSheets().map((sh) => sh.getName());
-      assert.ok(names.includes('KPI dashboard') && !names.includes('Dashboard KPI'), 'renamed in the workbook');
-      assert.equal(await page.locator('section').filter({ has: page.getByRole('heading', { name: 'KPI dashboard', exact: true }) }).locator('select').first().inputValue(), 'manual', 'its setup moved with it');
-      await page.locator('.nav [data-view=run]').click();
-      await page.locator('.ctx-tab', { hasText: 'KPI dashboard' }).waitFor(); // the Test suites row follows
+    await t.test('a tab name Excel cut at 31 characters shows with …', async () => {
+      const shown = await page.evaluate(() => [
+        'CMS Sign Off - CMS Automation (', // cut mid-way: the open bracket is left
+        'Inbox - search and filters for ', // cut on a space
+        'Inbox (employee) search filters', // 31 characters, but complete
+        'CMS 2.20.1',
+      ].map((n) => window.TR.tabLabel(n)));
+      assert.deepEqual(shown, ['CMS Sign Off - CMS Automation…', 'Inbox - search and filters for…', 'Inbox (employee) search filters', 'CMS 2.20.1']);
+      assert.equal(await page.locator('[data-action=tab-rename]').count(), 0, 'no Rename');
     });
 
     await t.test('the Workbook picker keeps one width, whatever the names', async () => {

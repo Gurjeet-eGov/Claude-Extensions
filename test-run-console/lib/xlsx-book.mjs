@@ -461,27 +461,6 @@ class XSheet {
   }
   getName() { return this.ws.name; }
   getSheetId() { return this.ws.id; }
-  /** Rename the tab; formulas in the workbook that point at it follow. */
-  setName(name) {
-    this.book.markDirty();
-    const old = this.ws.name;
-    this.ws.name = name;
-    const q = (n) => `'${String(n).replace(/'/g, "''")}'!`;
-    const plain = /^[A-Za-z_][A-Za-z0-9_.]*$/.test(old) ? new RegExp(`(^|[^A-Za-z0-9_.'])${old.replace(/\./g, '\\.')}!`, 'g') : null;
-    const fix = (f) => {
-      let out = String(f).split(q(old)).join(q(name));
-      if (plain) out = out.replace(plain, (m, pre) => pre + q(name));
-      return out;
-    };
-    for (const ws of this.book.wb.worksheets) {
-      ws.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => {
-        const v = cell.value;
-        if (v && typeof v === 'object' && typeof v.formula === 'string' && v.formula.includes(old)) cell.value = { ...v, formula: fix(v.formula) };
-      }));
-    }
-    return this;
-  }
-
   getLastRow() {
     let last = 0;
     this.ws.eachRow({ includeEmpty: false }, (row, n) => {

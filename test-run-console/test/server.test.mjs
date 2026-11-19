@@ -301,29 +301,6 @@ for (const B of BACKENDS) {
     assert.equal(call('api_removeCycle', TAB, 'Test Status / v9').code, 'NO_CYCLE');
   });
 
-  test_('renaming a tab: the workbook tab and what Test Run keeps about it (setup, plans, findings)', async () => {
-    const { ss, call, store } = await setup();
-    assert.equal(call('api_setTabPrefs', 'Dashboard KPI', { release: '2.20.1' }).ok, true);
-    const f = call('api_saveFinding', { text: 'KPI tile overlaps', tab: 'Dashboard KPI' });
-    assert.equal(f.ok, true, f.error);
-    store.put('paths', 'Dashboard KPI', { paths: [], savedAt: 'x' });
-    const r = call('api_renameTab', 'Dashboard KPI', '  KPI   dashboard ');
-    assert.equal(r.ok, true, r.error);
-    assert.deepEqual([r.tab, r.was], ['KPI dashboard', 'Dashboard KPI']);
-    assert.ok(ss.getSheetByName('KPI dashboard') && !ss.getSheetByName('Dashboard KPI'));
-    const cfg = store.get('config', 'global');
-    assert.equal(cfg.tabs['Dashboard KPI'], undefined);
-    assert.deepEqual([cfg.tabs['KPI dashboard'].role, cfg.tabs['KPI dashboard'].release], ['manual', '2.20.1']);
-    assert.ok(store.get('paths', 'KPI dashboard') && !store.get('paths', 'Dashboard KPI'), 'plans moved');
-    assert.equal(call('api_listFindings').findings.find((x) => x.key === f.finding.key).tab, 'KPI dashboard');
-    assert.equal(call('api_loadTab', 'KPI dashboard').ok, true);
-    assert.equal(call('api_renameTab', 'KPI dashboard', 'x'.repeat(32)).code, 'BAD_INPUT', 'Excel keeps them to 31');
-    assert.equal(call('api_renameTab', 'KPI dashboard', 'KPI: 2').code, 'BAD_INPUT');
-    assert.equal(call('api_renameTab', 'KPI dashboard', 'cms 2.20.1').code, 'EXISTS');
-    assert.equal(call('api_renameTab', 'KPI dashboard', 'Test Run Summary').code, 'BAD_INPUT', 'kept for Test Run');
-    assert.equal(call('api_renameTab', 'Nope', 'Other').code, 'NO_TAB');
-  });
-
   test_('starting the first cycle on a tab with no status column creates one with the default dropdown', async () => {
     const srv = await open({}, (ss) => B.addSheet(ss, 'Bare', [['ID', 'Scenario'], ['B-1', 'Verify if a'], ['B-2', 'Verify if b']]));
     const ss = srv.ss;

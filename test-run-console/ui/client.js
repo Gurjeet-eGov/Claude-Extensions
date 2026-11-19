@@ -394,7 +394,7 @@
     var hasAuto = S.view === 'summary' && S.boot.tabs.some(function (t) { return roleOf(t) === 'automation'; }); // automation is a summary, not something to run
     h += '<span class="ctx-label" id="tabsLabel">Test suites</span><div class="ctx-tabs" role="tablist" aria-labelledby="tabsLabel">' + tabs.map(function (t) {
       var on = t.name === S.tab && !S.autoMode;
-      return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="pick-tab" data-tab="' + esc(t.name) + '" title="' + esc(t.name) + '">' + esc(t.name) + '</button>';
+      return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="pick-tab" data-tab="' + esc(t.name) + '" title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</button>';
     }).join('') +
       (hasAuto ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (S.autoMode ? ' on' : '') + '" role="tab" aria-selected="' + !!S.autoMode + '" data-action="pick-auto" title="Overall summary of the automated test results in this workbook">Automation</button>' : '') +
       '</div><span class="grow"></span>';
@@ -490,7 +490,7 @@
     h += '</div>';
     if (pk && pk.d && !pk.d.error && (pk.suites.length || pk.d.automation)) {
       h += '<div class="context"><div class="context-row"><span class="ctx-label">Test suites</span><div class="ctx-tabs" role="tablist">' +
-        pk.suites.map(function (x) { var on = !pk.auto && pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '">' + esc(x.tab) + '</button>'; }).join('') +
+        pk.suites.map(function (x) { var on = !pk.auto && pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '" title="' + esc(x.tab) + '">' + esc(TR.tabLabel(x.tab)) + '</button>'; }).join('') +
         (pk.d.automation ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (pk.auto ? ' on' : '') + '" role="tab" aria-selected="' + pk.auto + '" data-action="r-auto">Automation</button>' : '') +
         '</div><span class="grow"></span>';
       if (!pk.auto && pk.suite && pk.suite.cycles.length) {
@@ -1218,7 +1218,7 @@
   function issueCasesHtml(e, many) {
     var parts = e.cases.map(function (c) {
       return '<div class="issue-case">' + TR.dot(c.retired ? 'none' : c.cls) + ' <button class="linkish mono" data-action="open-case" data-tab="' + esc(c.tab) + '" data-key="' + esc(c.key) + '" title="Open in Run">' +
-        esc((many ? c.tab + ' › ' : '') + (c.id || 'Row')) + '</button> <span class="small muted">' + esc(c.scenario.length > 70 ? c.scenario.slice(0, 68) + '…' : c.scenario) + '</span>' +
+        esc((many ? TR.tabLabel(c.tab) + ' › ' : '') + (c.id || 'Row')) + '</button> <span class="small muted">' + esc(c.scenario.length > 70 ? c.scenario.slice(0, 68) + '…' : c.scenario) + '</span>' +
         (c.retired ? ' <span class="pill none">retired</span>' : '') + '</div>';
     });
     e.findings.forEach(function (f) {
@@ -1309,7 +1309,7 @@
     var tab = f.tab || S.tab;
     var sm = suiteOf(tab);
     var h = '<div class="item finding"><div class="row"><span class="mono faint">' + esc(f.key) + '</span><b class="grow">' + esc(f.text) + '</b>' +
-      '<span class="pill outline" title="Test suite">' + esc(tab) + '</span>' +
+      '<span class="pill outline" title="Test suite: ' + esc(tab) + '">' + esc(TR.tabLabel(tab)) + '</span>' +
       (f.source === 'bug-reporter' ? '<span class="pill accent" title="Noted by the Bug Reporter extension when the issue was filed">from Bug Reporter</span>' : '') +
       (f.url ? '<a class="pill outline" href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.issue || 'issue') + ' ↗</a>' : (f.issue ? '<span class="pill outline">' + esc(f.issue) + '</span>' : '')) + '</div>' +
       (f.area ? '<div class="small muted">' + esc(f.area) + '</div>' : '') +
@@ -1343,7 +1343,7 @@
   function suitePicker(id, bind, value, change) {
     var tabs = runTabs();
     return '<div class="suite-pick"><label for="' + id + '">Test suite</label><select id="' + id + '" ' + (change ? 'data-change="' + change + '"' : 'data-bind="' + bind + '"') + '>' +
-      tabs.map(function (t) { return opt(t.name, t.name, t.name === value); }).join('') + '</select></div>';
+      tabs.map(function (t) { return opt(t.name, TR.tabLabel(t.name), t.name === value); }).join('') + '</select></div>';
   }
 
   /**
@@ -1363,7 +1363,7 @@
       '<button class="chip" data-action="findings-show" data-show="open" aria-pressed="' + (show === 'open') + '">Open <span class="n">' + open.length + '</span></button>' +
       '<button class="chip" data-action="findings-show" data-show="done" aria-pressed="' + (show === 'done') + '" title="Written up as test cases, or covered by one">Done <span class="n">' + done.length + '</span></button></div>' +
       (tabs.length > 1 ? '<div class="rail-group"><label class="rail-title" for="findingsSuite">Test suite</label><select id="findingsSuite" data-change="findings-suite"><option value="">All test suites</option>' +
-        tabs.map(function (t) { return opt(t.name, t.name, t.name === only); }).join('') + '</select></div>' : '');
+        tabs.map(function (t) { return opt(t.name, TR.tabLabel(t.name), t.name === only); }).join('') + '</select></div>' : '');
     var h = '<div class="row section-head"><div class="grow"><h2>Findings</h2><p class="small muted">Things found while testing that are not test cases yet. Write each one up as a test case, or mark it covered by one.</p></div>' +
       (S.readOnly ? '' : '<button data-action="note-toggle" aria-expanded="' + !!val('noteOpen') + '" title="Note something you found, to write up later (Bug Reporter adds them when you tick its Test Run box)"' + dis + '>+ Add finding</button>' +
         '<button data-action="new-case" aria-expanded="' + (S.manual.length > 0) + '" title="Add a test case to the workbook now"' + dis + '>+ New test case</button>') + '</div>';
@@ -1391,7 +1391,7 @@
       if (!done.length) h += '<div class="empty card"><p>Nothing done yet. Findings written up as test cases, or covered by one, move here.</p></div>';
       done.forEach(function (f) {
         var st = f.state === 'written' ? pill('pass', 'Written up' + (f.caseId ? ' as ' + f.caseId : '')) : pill('none', 'Covered' + (f.caseId ? ' by ' + f.caseId : ''));
-        h += '<div class="item finding done"><div class="row"><span class="mono faint">' + esc(f.key) + '</span><span class="grow">' + esc(f.text) + '</span><span class="pill outline">' + esc(f.tab || S.tab) + '</span>' + st +
+        h += '<div class="item finding done"><div class="row"><span class="mono faint">' + esc(f.key) + '</span><span class="grow">' + esc(f.text) + '</span><span class="pill outline">' + esc(TR.tabLabel(f.tab || S.tab)) + '</span>' + st +
           (S.readOnly ? '' : '<button class="ghost" data-action="reopen-finding" data-key="' + esc(f.key) + '">Reopen</button>') + '</div></div>';
       });
     }
@@ -1531,17 +1531,17 @@
     var ran = all.pass + all.fail;
     var h = (opts && opts.bare ? '' : '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
         (live ? '<button data-action="auto-refresh">Refresh</button>' : '') + '<button data-action="print">Print / PDF</button></div>' +
-        '<div class="print-only print-title">Automation · ' + esc(tabs.map(function (t) { return t.tab; }).join(', ')) + ' · updated on ' + esc(r.generatedAt) + '</div>');
+        '<div class="print-only print-title">Automation · ' + esc(tabs.map(function (t) { return TR.tabLabel(t.tab); }).join(', ')) + ' · updated on ' + esc(r.generatedAt) + '</div>');
     h += '<div class="kpis">' + autoKpi('', String(all.total), 'automated tests') + autoKpi('pass', ran ? Math.round((all.pass / ran) * 100) + '%' : '–', 'pass rate (of Pass + Fail)') +
       autoKpi('fail', String(all.fail), 'failing') + autoKpi('', String(all.other), 'skipped or other') + '</div>';
     r.tabs.forEach(function (t) {
-      if (t.error) { h += '<div class="banner warn section"><b>' + esc(t.tab) + ':</b> ' + esc(t.error) + '</div>'; return; }
-      h += '<div class="section card"><div class="card-pad"><div class="row" style="margin-bottom:8px"><h2>' + esc(t.tab) + '</h2><span class="small muted">' + esc(t.cycle ? 'status column ' + t.cycle : 'latest status column') + '</span><span class="grow"></span>' + TR.legend(t.counts) + '</div>' + TR.bar(t.counts) + '</div>';
+      if (t.error) { h += '<div class="banner warn section"><b>' + esc(TR.tabLabel(t.tab)) + ':</b> ' + esc(t.error) + '</div>'; return; }
+      h += '<div class="section card"><div class="card-pad"><div class="row" style="margin-bottom:8px"><h2 title="' + esc(t.tab) + '">' + esc(TR.tabLabel(t.tab)) + '</h2><span class="small muted">' + esc(t.cycle ? 'status column ' + t.cycle : 'latest status column') + '</span><span class="grow"></span>' + TR.legend(t.counts) + '</div>' + TR.bar(t.counts) + '</div>';
       h += '<div class="table-wrap"><table><thead><tr><th>Test file</th><th style="width:28%">Progress</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Other</th><th class="num">Not run</th></tr></thead><tbody>' +
         t.files.map(function (f) {
           return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + TR.bar(f, true) + '</td><td class="num">' + f.pass + '</td><td class="num">' + f.fail + '</td><td class="num">' + f.other + '</td><td class="num">' + f.none + '</td></tr>';
         }).join('') + '</tbody></table></div></div>';
-      h += '<div class="section card"><div class="card-pad"><h2>Failing in ' + esc(t.tab) + ' <span class="pill fail">' + t.failures.length + '</span></h2></div>' +
+      h += '<div class="section card"><div class="card-pad"><h2>Failing in ' + esc(TR.tabLabel(t.tab)) + ' <span class="pill fail">' + t.failures.length + '</span></h2></div>' +
         (t.failures.length ? '<div class="table-wrap"><table><thead><tr><th>Test file</th><th>Test</th><th>Note</th></tr></thead><tbody>' + t.failures.map(function (f) {
           return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + esc(f.test) + (f.group ? '<div class="small faint">' + esc(f.group) + '</div>' : '') + '</td><td class="ml">' + esc(f.note) + '</td></tr>';
         }).join('') + '</tbody></table></div>' : '<div class="card-pad muted" style="padding-top:0">No failing automated tests.</div>') + '</div>';
@@ -1575,7 +1575,7 @@
     var h = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
       '<button data-action="download" title="The workbook, with a Known issues sheet">Download</button><button data-action="print">Print / PDF</button>' +
       (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') + '</div>' +
-      '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(r.tab) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
+      '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(TR.tabLabel(r.tab)) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
     return h + TR.summaryHtml(r);
   }
 
@@ -1891,11 +1891,10 @@
     if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read, then save. Settings are kept beside the workbook in <span class="mono">sheets/.testrun/</span>; the workbook itself does not change.</div></div>';
     d.tabs.forEach(function (t, ti) {
       var headers = (t.top && t.top[t.headerRow - 1]) || [];
-      h += '<section class="section card card-pad stack"><div class="row"><h2>' + esc(t.name) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
-        (S.readOnly ? '' : '<button class="ghost small-btn" data-action="tab-rename" data-tab="' + esc(t.name) + '" title="Rename this tab in the workbook">✎ Rename</button>') + '<span class="grow"></span>' +
+      h += '<section class="section card card-pad stack"><div class="row"><h2 title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
+        '<span class="grow"></span>' +
         '<label for="role' + ti + '" class="sr">Role</label><select id="role' + ti + '" data-setup-tab="' + ti + '" data-key="role"' + dis + '>' +
         opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
-      if (looksCut(t.name)) h += '<div class="note">This name has 31 characters, the most Excel allows for a tab, so it was probably cut short when the workbook was saved as .xlsx. <button class="linkish" data-action="tab-rename" data-tab="' + esc(t.name) + '">Rename it</button></div>';
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
       if (t.role === 'automation') {
         h += '<p class="small muted">Results here feed <b>Automation</b> (next to the test suites, at the top), and the <b>Auto</b> badges on manual cases. Manual cases link to a test file when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
@@ -1965,27 +1964,6 @@
     return '<div class="muted" style="margin-bottom:6px">' + esc(c.id || '') + ' ' + esc(oneLine(c.scenario).slice(0, 140)) + '</div>' +
       (s.hasCycle ? '<label class="check"><input type="checkbox" data-bind="aiFail"' + (val('aiFail', true) ? ' checked' : '') + '> Mark it failed in cycle ' + esc(s.cycle || 'Status') + '</label>'
         : '<span class="faint">This suite has no test cycle yet, so the issue is only linked.</span>');
-  }
-
-  /** A tab name cut at Excel's 31-character limit: 31 long, and ending mid-way (an open bracket, a dash or a space). */
-  function looksCut(name) {
-    var n = String(name || '');
-    var open = (n.match(/[(\[]/g) || []).length;
-    var close = (n.match(/[)\]]/g) || []).length;
-    return n.length === 31 && (open > close || /[\s\-–(\[]$/.test(n));
-  }
-
-  /** Rename a tab: a name that fits Excel's 31 characters. */
-  function renameTabModal(tab) {
-    S.form.renameTo = looksCut(tab) ? tab.replace(/[\s\-–(\[]+$/, '') : tab;
-    openModal('<h2>Rename the tab “' + esc(tab) + '”</h2>' +
-      '<p class="small muted" style="margin-top:6px">The tab is renamed in the workbook. Test Run keeps its setup, findings and plans with it.</p>' +
-      '<div class="form-grid" style="margin-top:12px"><div class="wide"><label for="renameTo">New name <span class="faint">(up to 31 characters)</span></label>' +
-      '<input id="renameTo" data-bind="renameTo" maxlength="31" value="' + esc(S.form.renameTo) + '" autocomplete="off"></div></div>' +
-      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
-      '<button class="primary" data-action="tab-rename-save" data-tab="' + esc(tab) + '">Rename</button></div>');
-    var i = $('renameTo');
-    if (i) { i.focus(); i.select(); }
   }
 
   /** Asks before removing a test cycle: its two columns and their results leave the workbook. */
@@ -2287,28 +2265,6 @@
     },
     'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
     'book-delete': function () { deleteBookModal(); },
-    'tab-rename': function (el) { renameTabModal(el.getAttribute('data-tab')); },
-    'tab-rename-save': function (el) {
-      var tab = el.getAttribute('data-tab');
-      var name = String(val('renameTo')).replace(/\s+/g, ' ').trim();
-      if (!name) { toast('Give the tab a name.'); return; }
-      el.disabled = true;
-      queueWrite(function () { return api('api_renameTab', tab, name); }).then(function (r) {
-        el.disabled = false;
-        if (!r.ok) { toast(r.error, 'bad'); return; }
-        closeModal();
-        delete S.form.renameTo;
-        if (r.tab === r.was) return;
-        toast('Renamed to ' + r.tab + '.');
-        if (S.tab === tab) { S.tab = r.tab; TR.store.set('tab:' + book(), r.tab); }
-        delete S.suites[tab];
-        S.autoSummary = null;
-        S.summary = null;
-        sideSeen = { findings: null };
-        loadSide();
-        refreshBoot(false);
-      });
-    },
     'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
     'cycle-remove-confirm': function (el) {
       var tab = el.getAttribute('data-tab');

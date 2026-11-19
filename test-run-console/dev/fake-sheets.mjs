@@ -221,7 +221,6 @@ export class FakeSheet {
   }
   getName() { return this.name; }
   getSheetId() { return this.ss.sheets.indexOf(this); }
-  setName(name) { this.ss.checkWrite(); this.name = name; return this; }
   getLastRow() {
     for (let r = this.cells.length - 1; r >= 0; r--) if (this.cells[r].some((v) => String(v) !== '')) return r + 1;
     return 0;

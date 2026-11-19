@@ -125,7 +125,6 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     assert.equal((await s.call('api_saveSetup', [{ tabs: [] }], tester)).status, 403, 'Setup is the owner\'s');
     assert.equal((await s.call('api_startCycle', [TAB, 'v9'], tester)).status, 403, 'so are cycles');
     assert.equal((await s.call('api_removeCycle', [TAB, 'Test Status / v2.12'], tester)).status, 403, 'starting or removing them');
-    assert.equal((await s.call('api_renameTab', [TAB, 'Other'], tester)).status, 403, 'and renaming tabs');
     assert.equal((await s.remote('GET', '/api/team', { key: tester.key })).status, 403);
     assert.equal((await s.remote('POST', '/api/app', { key: tester.key, body: { user: 'x' } })).status, 403);
 
