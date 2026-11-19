@@ -384,7 +384,8 @@ details.how li { margin: 2px 0; }
 .book-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); min-width: 0; }
 .book-switch label { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
 .book-switch .n { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; background: var(--surface-2); color: var(--text); font-weight: 700; }
-.book-switch select { border: none; background: transparent; font-weight: 600; min-width: 180px; max-width: min(420px, 46vw); padding-left: 2px; }
+/* One width whatever the workbook names: a long name is cut short here, and shown in full on hover (title) and in the list */
+.book-switch select { border: none; background: transparent; font-weight: 600; width: 240px; padding-left: 2px; text-overflow: ellipsis; }
 .tb-btn { border: 1px solid var(--accent); color: var(--accent); background: var(--surface); font-weight: 600; white-space: nowrap; }
 .tb-btn:hover { background: var(--accent-weak); }
 .tb-btn span { font-size: 14px; line-height: 1; }
@@ -403,7 +404,7 @@ details.how li { margin: 2px 0; }
 @media (max-width: 760px) {
   .context-row { flex-wrap: wrap; }
   .ctx-tabs { order: 3; width: 100%; }
-  .book-switch select { min-width: 120px; }
+  .book-switch select { width: 150px; }
 }
 @media print { .context-row, .book-switch, .tb-btn { display: none !important; } }
 
@@ -519,3 +520,12 @@ button.danger-outline { border: 1px solid var(--fail); color: var(--fail); backg
 button.danger-outline:hover { background: color-mix(in srgb, var(--fail) 8%, var(--surface)); }
 .modal-list { margin: 10px 0 0 18px; display: grid; gap: 4px; font-size: 13.5px; }
 .modal-box:has(.modal-list) { width: min(560px, 100%); }
+
+/* A dropdown still on its "Choose" placeholder reads like a placeholder */
+select.choose:has(option[value=""]:checked) { color: var(--faint); }
+select.choose option { color: var(--text); }
+
+/* Setup → Test cycles: × removes an earlier cycle (asks first) */
+.cycle-chip { display: inline-flex; align-items: center; gap: 4px; }
+.cycle-chip .chip-x { border: none; background: none; padding: 0 2px; margin-right: -4px; min-height: 0; line-height: 1; font-size: 15px; color: var(--muted); cursor: pointer; border-radius: 50%; }
+.cycle-chip .chip-x:hover, .cycle-chip .chip-x:focus-visible { color: var(--fail); background: color-mix(in srgb, var(--fail) 10%, transparent); }

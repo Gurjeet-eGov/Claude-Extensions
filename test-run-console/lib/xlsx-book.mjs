@@ -54,21 +54,24 @@ function parseCell(a) {
 const cellRef = (col, row) => `${numToCol(col)}${row}`;
 
 /**
- * One address or range "A1" / "A1:C9" after `row` is deleted: rows below move up, a range
- * through it shrinks, and what was only on that row is gone (null). A range left one
- * cell big comes back as that cell ("C3").
+ * One address or range "A1" / "A1:C9" after row (axis 'row') or column (axis 'col') `at`
+ * is deleted: what is after it moves back, a range through it shrinks, and what was only
+ * on it is gone (null). A range left one cell big comes back as that cell ("C3").
  */
-function dropRowRef(ref, row) {
+function dropRef(ref, axis, at) {
   const cells = String(ref).split(':').map(parseCell);
   if (cells.some((c) => !c)) return ref;
-  const top = Math.min(...cells.map((c) => c.row));
-  const bottom = Math.max(...cells.map((c) => c.row));
-  if (top === row && bottom === row) return null;
-  const t = top > row ? top - 1 : top;
-  const b = bottom >= row ? bottom - 1 : bottom;
-  const left = Math.min(...cells.map((c) => c.col));
-  const right = Math.max(...cells.map((c) => c.col));
-  return t === b && left === right ? cellRef(left, t) : `${cellRef(left, t)}:${cellRef(right, b)}`;
+  const k = axis === 'row' ? 'row' : 'col';
+  const lo = Math.min(...cells.map((c) => c[k]));
+  const hi = Math.max(...cells.map((c) => c[k]));
+  if (lo === at && hi === at) return null;
+  const nlo = lo > at ? lo - 1 : lo;
+  const nhi = hi >= at ? hi - 1 : hi;
+  const o = axis === 'row' ? 'col' : 'row';
+  const olo = Math.min(...cells.map((c) => c[o]));
+  const ohi = Math.max(...cells.map((c) => c[o]));
+  const at2 = (v, w) => (axis === 'row' ? cellRef(w, v) : cellRef(v, w)); // (along axis, other)
+  return nlo === nhi && olo === ohi ? at2(nlo, olo) : `${at2(nlo, olo)}:${at2(nhi, ohi)}`;
 }
 
 /** Shift one address or range "A1" / "A1:C9" for an insert of n rows/cols after `after`. */
@@ -550,12 +553,48 @@ class XSheet {
     ws.dataValidations.model = moved;
     if (ws.conditionalFormattings) {
       for (const cf of ws.conditionalFormattings) {
-        if (cf && cf.ref) cf.ref = String(cf.ref).split(/\s+/).map((r) => dropRowRef(r, row)).filter(Boolean).join(' ');
+        if (cf && cf.ref) cf.ref = String(cf.ref).split(/\s+/).map((r) => dropRef(r, 'row', row)).filter(Boolean).join(' ');
       }
       ws.conditionalFormattings = ws.conditionalFormattings.filter((cf) => !cf || cf.ref !== '');
     }
     for (const r of merges) {
-      const m = dropRowRef(r, row);
+      const m = dropRef(r, 'row', row);
+      if (m && m.includes(':')) ws.mergeCells(m);
+    }
+    return this;
+  }
+
+  /** Remove one column: what is right of it moves left with its dropdowns, merges, conditional formats and widths. */
+  deleteColumn(col) {
+    this.book.markDirty();
+    const ws = this.ws;
+    const merges = this.takeMerges();
+    const carry = [];
+    for (const r of merges) {
+      const [a, b] = String(r).split(':').map(parseCell);
+      if (a && b && a.col === col && b.col > col) carry.push({ row: a.row, value: ws.getCell(a.row, col).value });
+    }
+    ws.spliceColumns(col, 1);
+    for (const c of carry) {
+      const cell = ws.getCell(c.row, col);
+      if (cell.value == null || cell.value === '') cell.value = c.value;
+    }
+    const dv = ws.dataValidations.model;
+    const moved = {};
+    for (const [addr, v] of Object.entries(dv)) {
+      const c = parseCell(addr);
+      if (!v || (c && c.col === col)) continue;
+      moved[c && c.col > col ? cellRef(c.col - 1, c.row) : addr] = v;
+    }
+    ws.dataValidations.model = moved;
+    if (ws.conditionalFormattings) {
+      for (const cf of ws.conditionalFormattings) {
+        if (cf && cf.ref) cf.ref = String(cf.ref).split(/\s+/).map((r) => dropRef(r, 'col', col)).filter(Boolean).join(' ');
+      }
+      ws.conditionalFormattings = ws.conditionalFormattings.filter((cf) => !cf || cf.ref !== '');
+    }
+    for (const r of merges) {
+      const m = dropRef(r, 'col', col);
       if (m && m.includes(':')) ws.mergeCells(m);
     }
     return this;

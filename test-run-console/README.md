@@ -56,6 +56,8 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 - **Cycles.** Each cycle is a pair of columns, `Test Status` and `Comment`, as your sheets already have.
   - **Setup → Workbook → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
   - Earlier cycles stay, so you can compare. **Test cycle**, next to the test suites, switches between them.
+  - **×** on a cycle in Setup removes it, to keep the workbook and the reports tidy: its two columns are deleted from the workbook, with their results. A pop-up says first that this cannot be undone (today's backup in `sheets/.testrun/backups/` still has it). The cycle leaves the Test cycle list, Summary and downloads, and the published reports at the next publish. A tab's last cycle stays.
+- **Release in scope** (Setup → Workbook, on a tab with a *Release* column) is the release you are testing, for example `2.20.1`. Cases whose Release column says it are tagged **New in 2.20.1** and come first in Run. A cycle is different: it is one round of results (a status and comment column pair), and a release can take several cycles, for example a first run and a retest.
 - **Fix cases while you run.** Under the result buttons of an open case:
   - **✎ Edit case** (or **E**) changes the scenario, pre condition, test data, expected result or test type in the workbook. An optional note is added to the cycle's comment as `Updated: …`.
   - **⧉ Duplicate of…** picks the case to keep (similar ones are suggested). This one is struck out and its comment starts with `Duplicate of CMS/12: …`.
@@ -128,9 +130,9 @@ Test Run only listens on your laptop, so a tunnel gives it an internet address. 
 
 ### 2. Invite people
 
-In **Setup → Sharing → Team**, add each person with what they can do:
+In **Setup → Sharing → Team**, add each person and choose their **Access** (it starts blank, on *Choose*):
 
-| Can | Who | What they can do |
+| Access | Who | What they can do |
 |---|---|---|
 | Update status | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities, **+ Add issue**. Findings: write them up. Summary. *Tested by* shows their name. |
 | View only | managers | Run, Known issues and Summary, read-only. |
@@ -207,7 +209,7 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
-  - and only when you ask: new cycle columns, added rows, the optional *Tested by*, *Tested on* and *Release* columns, and the *Test Run Summary* tab.
+  - and only when you ask: new cycle columns (and removing a cycle's columns), added rows, the optional *Tested by*, *Tested on* and *Release* columns, and the *Test Run Summary* tab.
 - **Safe saving:** each change is written to a temporary file first, which then replaces the workbook. The first save each day also keeps a copy in `sheets/.testrun/backups/` (14 days).
 - **Excel:** if you edit the workbook in Excel and save, Test Run reloads it and never overwrites a cell that changed. While Excel has it open, a banner reminds you to close it there.
 - **Publishing:** **Download** the workbook and upload it to Google Drive. If you keep it there as an `.xlsx` file, *Manage versions → Upload new version* keeps the same link.

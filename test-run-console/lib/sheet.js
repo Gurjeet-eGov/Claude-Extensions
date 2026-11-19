@@ -369,6 +369,35 @@ function tr_saveSetup(setup) {
   });
 }
 
+/**
+ * Remove a test cycle of a tab: its status and comment columns are deleted from the
+ * workbook, with the results in them. header: its status column's header, as Setup shows
+ * it. The last cycle of a tab stays. If it was the current cycle, the latest one left is.
+ */
+function tr_removeCycle(tabName, header) {
+  var want = String(header == null ? '' : header).replace(/\s+/g, ' ').trim().toLowerCase();
+  return tr_withLock_(function () {
+    var cfg = tr_config_();
+    if (!cfg || !cfg.tabs || !cfg.tabs[tabName]) throw tr_err_('NOT_SET_UP', 'Save Setup for this tab first.');
+    var m = tr_open_(tabName, cfg);
+    var ci = -1;
+    m.cycles.forEach(function (c, i) { if (String(m.headers[c.status]).replace(/\s+/g, ' ').trim().toLowerCase() === want) ci = i; });
+    if (ci < 0) throw tr_err_('NO_CYCLE', 'That test cycle is not in ' + m.tab + ' any more. Refresh.');
+    if (m.cycles.length < 2) throw tr_err_('LAST_CYCLE', 'This is the only test cycle of ' + m.tab + ', so it stays. Start a new cycle first.');
+    var cy = m.cycles[ci];
+    var cols = [cy.status];
+    if (cy.comment >= 0) cols.push(cy.comment);
+    cols.sort(function (a, b) { return b - a; }).forEach(function (c) { m.sheet.deleteColumn(c + 1); });
+    var t = cfg.tabs[tabName];
+    var left = m.cycles.filter(function (c, i) { return i !== ci; });
+    if (String(t.cycle || '').toLowerCase() === cy.label.toLowerCase()) {
+      t.cycle = left[left.length - 1].label;
+      tr_metaPut_('config', 'global', cfg);
+    }
+    return { ok: true, tab: m.tab, removed: cy.label, cycles: left.map(function (c) { return c.label; }) };
+  });
+}
+
 /** Per-tab preferences changed from the console: current cycle, release in scope. */
 function tr_setTabPrefs(tabName, prefs) {
   prefs = prefs || {};

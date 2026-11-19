@@ -263,6 +263,11 @@ export class FakeSheet {
     }
     return this;
   }
+  deleteColumn(col) {
+    this.ss.checkWrite();
+    for (const grid of [this.cells, this.dv, this.fmt, this.line, this.link]) for (const r of grid) if (r) r.splice(col - 1, 1);
+    return this;
+  }
   deleteRow(row) {
     this.ss.checkWrite();
     this.cells.splice(row - 1, 1);

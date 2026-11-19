@@ -281,6 +281,26 @@ for (const B of BACKENDS) {
     assert.equal(call('api_startCycle', TAB, 'V2.20.1').code, 'EXISTS');
   });
 
+  test_('removing an earlier cycle deletes its two columns and results; the last cycle stays', async () => {
+    const { ss, call } = await setup();
+    assert.equal(call('api_startCycle', TAB, 'v2.20.1').ok, true);
+    const c = caseOf(call('api_loadTab', TAB, 'v2.20.1'), 'CMS/04');
+    assert.equal(call('api_mark', { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.20.1', expect: '', status: 'Pass' }).ok, true);
+    call('api_setTabPrefs', TAB, { cycle: 'v2.12' }); // the one being removed is the current one
+    const r = call('api_removeCycle', TAB, 'Test Status / v2.12');
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual([r.removed, r.cycles], ['v2.12', ['v2.20.1']]);
+    assert.deepEqual(dump(ss, TAB)[0].slice(6), ['Expected result', 'Test Status / v2.20.1', 'Comment / v2.20.1'], 'both columns gone; the next cycle moved left');
+    assert.deepEqual(dvValues(ss, TAB, 2, 8), ['Fail', 'NA (Skipped)', 'Pass'], 'its dropdown moved with it');
+    const d = call('api_loadTab', TAB);
+    assert.deepEqual(d.cycles.map((x) => x.label), ['v2.20.1']);
+    assert.equal(d.cycles[d.cycleIdx].label, 'v2.20.1', 'the latest cycle left becomes the current one');
+    assert.equal(caseOf(d, 'CMS/04').statuses[0], 'Pass', 'the other cycle keeps its results');
+    assert.equal(call('api_summary', TAB).summary.comparison, null, 'nothing left to compare with');
+    assert.equal(call('api_removeCycle', TAB, 'Test Status / v2.20.1').code, 'LAST_CYCLE');
+    assert.equal(call('api_removeCycle', TAB, 'Test Status / v9').code, 'NO_CYCLE');
+  });
+
   test_('starting the first cycle on a tab with no status column creates one with the default dropdown', async () => {
     const srv = await open({}, (ss) => B.addSheet(ss, 'Bare', [['ID', 'Scenario'], ['B-1', 'Verify if a'], ['B-2', 'Verify if b']]));
     const ss = srv.ss;

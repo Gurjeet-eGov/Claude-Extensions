@@ -1760,8 +1760,8 @@
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
     if (r.people.length) {
-      h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Can</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
-        return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="What ' + esc(p.name) + ' can do" data-change="team-role" data-id="' + esc(p.id) + '">' +
+      h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Access</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
+        return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="Access for ' + esc(p.name) + '" data-change="team-role" data-id="' + esc(p.id) + '">' +
           opt('tester', 'Update status', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
           '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
           '<td class="num"><div class="row" style="justify-content:flex-end">' +
@@ -1775,7 +1775,9 @@
     }
     var off = r.canInvite ? '' : ' disabled';
     h += '<div class="row"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. Priya (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
-      '<label class="sr" for="teamRole">Can</label><select id="teamRole" data-bind="team:role"' + off + '>' + opt('tester', 'Update status', val('team:role', 'tester') === 'tester') + opt('viewer', 'View only', val('team:role', 'tester') === 'viewer') + '</select>' +
+      // No access chosen for them until you choose one
+      '<label class="sr" for="teamRole">Access</label><select id="teamRole" class="choose" data-bind="team:role"' + off + '>' +
+      '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Choose</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
       '<button data-action="team-add"' + off + '>Add and make a link</button></div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
     return h + '</section>';
@@ -1786,14 +1788,19 @@
     var saved = (S.cfg && S.cfg.tabs && S.cfg.tabs[t.name]) || {};
     var headers = (t.top && t.top[t.headerRow - 1]) || [];
     var cycles = headers.filter(isStatusHeader);
-    var h = '<div class="subsection"><h3>Test cycles</h3><p class="small muted">A cycle is a pair of columns: <i>Test Status / name</i> and <i>Comment / name</i>. Earlier cycles stay, so you can compare.</p>' +
-      '<div class="small">Status columns: ' + (cycles.length ? cycles.map(function (x) { return '<span class="pill outline">' + esc(String(x).replace(/\s+/g, ' ')) + '</span>'; }).join(' ') : '<span class="faint">none yet</span>') + '</div>';
+    // An earlier cycle can be removed (×) to keep the workbook and the reports tidy; the last one stays.
+    var canRemove = t.saved && cycles.length > 1 && !S.readOnly;
+    var h = '<div class="subsection"><h3>Test cycles</h3><p class="small muted">A cycle is a pair of columns: <i>Test Status / name</i> and <i>Comment / name</i>. Earlier cycles stay, so you can compare' + (canRemove ? ', until you remove one with <b>×</b>' : '') + '.</p>' +
+      '<div class="small cycle-chips">Status columns: ' + (cycles.length ? cycles.map(function (x) {
+        var name = String(x).replace(/\s+/g, ' ').trim();
+        return '<span class="pill outline cycle-chip">' + esc(name) + (canRemove ? '<button class="chip-x" data-action="cycle-remove" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Remove the cycle ' + esc(name) + '" title="Remove this cycle and its results">×</button>' : '') + '</span>';
+      }).join(' ') : '<span class="faint">none yet</span>') + '</div>';
     if (!t.saved) return h + '<p class="small faint">Save first to start cycles here.</p></div>';
     h += '<div class="row"><label class="sr" for="newCycle' + ti + '">New cycle name</label><input id="newCycle' + ti + '" data-bind="newCycle:' + ti + '" placeholder="New cycle, e.g. v2.20.1" value="' + esc(val('newCycle:' + ti)) + '">' +
       '<button data-action="start-cycle" data-tab="' + esc(t.name) + '" data-index="' + ti + '">Start new cycle</button><span class="small faint">Adds the two columns next to the latest cycle, with its dropdown and formatting.</span></div>';
     if (t.columns.release) {
       h += '<div class="row"><label for="release' + ti + '">Release in scope</label><input id="release' + ti + '" data-bind="release:' + ti + '" placeholder="e.g. 2.20.1" value="' + esc(val('release:' + ti, saved.release || '')) + '">' +
-        '<button data-action="save-release" data-tab="' + esc(t.name) + '" data-index="' + ti + '">Save</button><span class="small faint">Cases whose Release column matches come first, as <b>New in release</b>.</span></div>';
+        '<button data-action="save-release" data-tab="' + esc(t.name) + '" data-index="' + ti + '">Save</button><span class="small faint">The release you are testing. Cases whose <i>' + esc(t.columns.release) + '</i> column says it are tagged <b>New in</b> it and come first in Run. Cycles are rounds of results; a release can take several.</span></div>';
     }
     return h + '</div>';
   }
@@ -1956,6 +1963,17 @@
     return '<div class="muted" style="margin-bottom:6px">' + esc(c.id || '') + ' ' + esc(oneLine(c.scenario).slice(0, 140)) + '</div>' +
       (s.hasCycle ? '<label class="check"><input type="checkbox" data-bind="aiFail"' + (val('aiFail', true) ? ' checked' : '') + '> Mark it failed in cycle ' + esc(s.cycle || 'Status') + '</label>'
         : '<span class="faint">This suite has no test cycle yet, so the issue is only linked.</span>');
+  }
+
+  /** Asks before removing a test cycle: its two columns and their results leave the workbook. */
+  function removeCycleModal(tab, header) {
+    openModal('<h2>Remove the cycle “' + esc(header) + '”?</h2>' +
+      '<p class="banner bad" style="margin-top:10px"><b>This cannot be undone.</b></p>' +
+      '<ul class="modal-list"><li>Its status and comment columns are deleted from <b>' + esc(tab) + '</b> in the workbook, with every result and comment in them.</li>' +
+      '<li>It leaves the Test cycle list, Summary and the downloads; the published reports drop it at the next publish.</li>' +
+      '<li>Today’s copy of the workbook in <span class="mono">sheets/.testrun/backups/</span> still has it.</li></ul>' +
+      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
+      '<button class="danger-fill" data-action="cycle-remove-confirm" data-tab="' + esc(tab) + '" data-header="' + esc(header) + '">Remove cycle</button></div>');
   }
 
   /** Asks before deleting the open workbook: it cannot be undone. */
@@ -2246,6 +2264,22 @@
     },
     'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
     'book-delete': function () { deleteBookModal(); },
+    'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
+    'cycle-remove-confirm': function (el) {
+      var tab = el.getAttribute('data-tab');
+      var header = el.getAttribute('data-header');
+      el.disabled = true;
+      queueWrite(function () { return api('api_removeCycle', tab, header); }).then(function (r) {
+        el.disabled = false;
+        if (!r.ok) { closeModal(); writeError(r); return; }
+        closeModal();
+        toast('Removed the cycle ' + header + ' from ' + tab + '.');
+        S.keep = {};
+        S.summary = null;
+        if (tab === S.tab) S.model = null;
+        refreshBoot(false, null);
+      });
+    },
     'add-issue': function () {
       var open = !val('aiOpen');
       clearForm('ai');
@@ -2462,8 +2496,11 @@
     'team-add': function () {
       var name = String(val('team:name')).trim();
       if (!name) { toast('Type their name first.'); var n = $('teamName'); if (n) n.focus(); return; }
-      teamCall('/api/team/people', { name: name, role: val('team:role', 'tester') }, function (r) {
+      var role = val('team:role');
+      if (role !== 'tester' && role !== 'viewer') { toast('Choose their access first.'); var sel = $('teamRole'); if (sel) sel.focus(); return; }
+      teamCall('/api/team/people', { name: name, role: role }, function (r) {
         clearForm('team:name');
+        clearForm('team:role');
         deliverLink(name, r.link, r.linkWarning, 'Added. ');
       });
     },
