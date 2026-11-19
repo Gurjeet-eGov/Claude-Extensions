@@ -1891,9 +1891,11 @@
     if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read, then save. Settings are kept beside the workbook in <span class="mono">sheets/.testrun/</span>; the workbook itself does not change.</div></div>';
     d.tabs.forEach(function (t, ti) {
       var headers = (t.top && t.top[t.headerRow - 1]) || [];
-      h += '<section class="section card card-pad stack"><div class="row"><h2>' + esc(t.name) + '</h2><span class="small muted">' + t.rows + ' rows</span><span class="grow"></span>' +
+      h += '<section class="section card card-pad stack"><div class="row"><h2>' + esc(t.name) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
+        (S.readOnly ? '' : '<button class="ghost small-btn" data-action="tab-rename" data-tab="' + esc(t.name) + '" title="Rename this tab in the workbook">✎ Rename</button>') + '<span class="grow"></span>' +
         '<label for="role' + ti + '" class="sr">Role</label><select id="role' + ti + '" data-setup-tab="' + ti + '" data-key="role"' + dis + '>' +
         opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
+      if (looksCut(t.name)) h += '<div class="note">This name has 31 characters, the most Excel allows for a tab, so it was probably cut short when the workbook was saved as .xlsx. <button class="linkish" data-action="tab-rename" data-tab="' + esc(t.name) + '">Rename it</button></div>';
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
       if (t.role === 'automation') {
         h += '<p class="small muted">Results here feed <b>Automation</b> (next to the test suites, at the top), and the <b>Auto</b> badges on manual cases. Manual cases link to a test file when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
@@ -1963,6 +1965,27 @@
     return '<div class="muted" style="margin-bottom:6px">' + esc(c.id || '') + ' ' + esc(oneLine(c.scenario).slice(0, 140)) + '</div>' +
       (s.hasCycle ? '<label class="check"><input type="checkbox" data-bind="aiFail"' + (val('aiFail', true) ? ' checked' : '') + '> Mark it failed in cycle ' + esc(s.cycle || 'Status') + '</label>'
         : '<span class="faint">This suite has no test cycle yet, so the issue is only linked.</span>');
+  }
+
+  /** A tab name cut at Excel's 31-character limit: 31 long, and ending mid-way (an open bracket, a dash or a space). */
+  function looksCut(name) {
+    var n = String(name || '');
+    var open = (n.match(/[(\[]/g) || []).length;
+    var close = (n.match(/[)\]]/g) || []).length;
+    return n.length === 31 && (open > close || /[\s\-–(\[]$/.test(n));
+  }
+
+  /** Rename a tab: a name that fits Excel's 31 characters. */
+  function renameTabModal(tab) {
+    S.form.renameTo = looksCut(tab) ? tab.replace(/[\s\-–(\[]+$/, '') : tab;
+    openModal('<h2>Rename the tab “' + esc(tab) + '”</h2>' +
+      '<p class="small muted" style="margin-top:6px">The tab is renamed in the workbook. Test Run keeps its setup, findings and plans with it.</p>' +
+      '<div class="form-grid" style="margin-top:12px"><div class="wide"><label for="renameTo">New name <span class="faint">(up to 31 characters)</span></label>' +
+      '<input id="renameTo" data-bind="renameTo" maxlength="31" value="' + esc(S.form.renameTo) + '" autocomplete="off"></div></div>' +
+      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
+      '<button class="primary" data-action="tab-rename-save" data-tab="' + esc(tab) + '">Rename</button></div>');
+    var i = $('renameTo');
+    if (i) { i.focus(); i.select(); }
   }
 
   /** Asks before removing a test cycle: its two columns and their results leave the workbook. */
@@ -2264,6 +2287,28 @@
     },
     'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
     'book-delete': function () { deleteBookModal(); },
+    'tab-rename': function (el) { renameTabModal(el.getAttribute('data-tab')); },
+    'tab-rename-save': function (el) {
+      var tab = el.getAttribute('data-tab');
+      var name = String(val('renameTo')).replace(/\s+/g, ' ').trim();
+      if (!name) { toast('Give the tab a name.'); return; }
+      el.disabled = true;
+      queueWrite(function () { return api('api_renameTab', tab, name); }).then(function (r) {
+        el.disabled = false;
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        closeModal();
+        delete S.form.renameTo;
+        if (r.tab === r.was) return;
+        toast('Renamed to ' + r.tab + '.');
+        if (S.tab === tab) { S.tab = r.tab; TR.store.set('tab:' + book(), r.tab); }
+        delete S.suites[tab];
+        S.autoSummary = null;
+        S.summary = null;
+        sideSeen = { findings: null };
+        loadSide();
+        refreshBoot(false);
+      });
+    },
     'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
     'cycle-remove-confirm': function (el) {
       var tab = el.getAttribute('data-tab');
@@ -2611,7 +2656,7 @@
         if (!r.ok) { writeError(r); return; }
         S.cfg = r.config;
         toast('Setup saved.');
-        refreshBoot(true);
+        refreshBoot(false); // stay on Setup
       });
     }
   };

@@ -398,6 +398,45 @@ function tr_removeCycle(tabName, header) {
   });
 }
 
+/**
+ * Rename a tab of the workbook (Excel keeps tab names to 31 characters, so a longer one
+ * may arrive cut short). What Test Run keeps about the tab moves with it: its setup,
+ * path plans, and the suite of findings and Bug Reporter notes.
+ */
+function tr_renameTab(oldName, newName) {
+  var name = String(newName == null ? '' : newName).replace(/\s+/g, ' ').trim();
+  if (!name) throw tr_err_('BAD_INPUT', 'Give the tab a name.');
+  if (name.length > 31) throw tr_err_('BAD_INPUT', 'Excel keeps tab names to 31 characters; this one has ' + name.length + '.');
+  if (/[\\\/?*\[\]:]/.test(name)) throw tr_err_('BAD_INPUT', 'A tab name cannot have \\ / ? * [ ] or :.');
+  if (/^'|'$/.test(name)) throw tr_err_('BAD_INPUT', 'A tab name cannot start or end with an apostrophe.');
+  if ([TR_META, TR_SUMMARY, TR_ISSUES].some(function (r) { return r.toLowerCase() === name.toLowerCase(); })) throw tr_err_('BAD_INPUT', '"' + name + '" is kept for Test Run. Choose another name.');
+  return tr_withLock_(function () {
+    var ss = tr_ss_();
+    var sh = ss.getSheetByName(String(oldName || ''));
+    if (!sh) throw tr_err_('NO_TAB', 'The tab "' + oldName + '" was not found. It may have been renamed already; refresh.');
+    if (name === oldName) return { ok: true, tab: name, was: oldName };
+    ss.getSheets().forEach(function (o) {
+      if (o.getName() !== oldName && o.getName().toLowerCase() === name.toLowerCase()) throw tr_err_('EXISTS', 'There is already a tab called "' + o.getName() + '".');
+    });
+    sh.setName(name);
+    var cfg = tr_config_();
+    if (cfg && cfg.tabs && cfg.tabs[oldName]) {
+      cfg.tabs[name] = cfg.tabs[oldName];
+      delete cfg.tabs[oldName];
+      tr_metaPut_('config', 'global', cfg);
+    }
+    var paths = tr_metaGet_('paths', oldName);
+    if (paths) { tr_metaPut_('paths', name, paths); tr_metaDelete_('paths', oldName); }
+    ['finding', 'inbox'].forEach(function (kind) {
+      tr_metaList_(kind).forEach(function (r) {
+        var v = r.value || {};
+        if (v.tab === oldName) { v.tab = name; tr_metaPut_(kind, r.key, v); }
+      });
+    });
+    return { ok: true, tab: name, was: oldName };
+  });
+}
+
 /** Per-tab preferences changed from the console: current cycle, release in scope. */
 function tr_setTabPrefs(tabName, prefs) {
   prefs = prefs || {};
