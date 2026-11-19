@@ -158,8 +158,9 @@ export function parseClaudeOutput(stdout, kind = 'draft') {
     }
     throw Object.assign(new Error(msg), { code: 'CLAUDE_ERROR' });
   }
-  let draft = out.structured_output;
-  if (!draft || typeof draft !== 'object') {
+  // kind 'raw' (used by Test Run): hand back Claude's text unchanged; the caller parses it.
+  let draft = kind === 'raw' ? String(out.result ?? '') : out.structured_output;
+  if (kind !== 'raw' && (!draft || typeof draft !== 'object')) {
     try {
       draft = JSON.parse(stripFences(out.result));
     } catch {
@@ -190,7 +191,7 @@ export function parseClaudeOutput(stdout, kind = 'draft') {
     cacheWrite = Number(out.usage.cache_creation_input_tokens || 0);
   }
   return {
-    draft: kind === 'comment' ? { comment: typeof draft.comment === 'string' ? draft.comment.trim() : '' } : normalizeDraft(draft),
+    draft: kind === 'raw' ? draft : kind === 'comment' ? { comment: typeof draft.comment === 'string' ? draft.comment.trim() : '' } : normalizeDraft(draft),
     usage: {
       // Claude Code may make a tiny side call on another model; the draft's model
       // is the one that wrote the most output.

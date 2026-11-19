@@ -23,6 +23,7 @@
         <button data-tab="recording" role="tab">Recording</button>
         <button data-tab="claude" role="tab">Claude</button>
         <button data-tab="capture" role="tab">Capture &amp; storage</button>
+        <button data-tab="testrun" role="tab">Test Run</button>
         <button data-tab="usage" role="tab">Usage</button>
       </nav>
 
@@ -155,6 +156,9 @@
           <label class="field check"
             ><input data-set="claude.sendScreenshot" type="checkbox" /> <span>Let Claude see the screenshot by default <span class="muted">(about 1–1.5K extra tokens)</span></span></label
           >
+          <label class="field check"
+            ><input data-set="claude.sendApis" type="checkbox" /> <span>Let Claude read the ticked API calls by default <span class="muted">(off: they go into the issue as they are, and Claude never sees them)</span></span></label
+          >
         </div>
         <label class="field"
           ><span>Skill file <span class="muted">(optional)</span></span>
@@ -174,6 +178,31 @@
         </div>
         <h3>Sites with capture enabled</h3>
         <div id="sites"></div>
+      </section>
+
+      <!-- Test Run -->
+      <section id="tab-testrun" class="tab hidden">
+        <h2>Test Run</h2>
+        <p class="muted">
+          Test Run is the console for your manual test cases (<code>test-run-console</code> in this repo). When it is reachable, the Report Issue form shows
+          <b>Also add this to Test Run</b>, with the test suite and, optionally, the test case. Once the issue is filed, a picked test case is marked
+          failed with the issue linked to it; with no test case, the bug is added as a finding, ready to be written up as a test case.
+        </p>
+        <label class="row"><input type="checkbox" data-set="testRun.enabled" /> Offer to add filed bugs to Test Run</label>
+        <label class="field">
+          <span>Invite link <span class="muted">(only for a Test Run a teammate shares)</span></span>
+          <div class="row">
+            <input id="trInvite" type="text" class="grow" placeholder="Paste the invite link your test lead sent: https://…#join=…" />
+            <button id="trUseInvite">Use link</button>
+          </div>
+          <span id="trInviteState" class="muted small"></span>
+        </label>
+        <label class="field">
+          <span>Test Run address</span>
+          <input id="trUrl" type="url" placeholder="http://127.0.0.1:5178" />
+          <span class="muted small">Leave empty for Test Run on this computer. An invite link fills this in.</span>
+        </label>
+        <p><button id="trCheck">Check now</button> <span id="trState" class="muted small"></span></p>
       </section>
 
       <!-- Usage -->

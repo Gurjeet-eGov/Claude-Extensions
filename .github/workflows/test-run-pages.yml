@@ -1,0 +1,45 @@
+# Publishes the Test Run console's page (test-run-console/ui) on GitHub Pages,
+# at https://<owner>.github.io/<repo>/test-run/. The page holds no data: it
+# talks to the Test Run server on the laptop of whoever sent the invite link,
+# and finds that server's current address in the gist the server keeps.
+#
+# One-time setup in your fork: Settings → Pages → Source: "GitHub Actions".
+name: Test Run page
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'test-run-console/ui/**'
+      - '.github/workflows/test-run-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}test-run/
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/test-run
+          cp test-run-console/ui/index.html test-run-console/ui/summary.html test-run-console/ui/*.js test-run-console/ui/*.css _site/test-run/
+          touch _site/.nojekyll
+          printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=test-run/"><a href="test-run/">Test Run</a>\n' > _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

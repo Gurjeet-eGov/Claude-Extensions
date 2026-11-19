@@ -1,0 +1,20 @@
+{
+  "name": "test-run-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local console for manual test runs on your .xlsx test case workbooks: colour-coded, one-click marking, management summary, Claude drafting through your Claude Code login.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "share": "node server.mjs --share",
+    "demo": "node server.mjs --demo",
+    "test": "node --test test/*.test.mjs",
+    "prompts": "node scripts/export-prompts.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  }
+}

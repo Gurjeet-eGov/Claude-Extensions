@@ -6,6 +6,7 @@ import { buildTitle } from '../lib/title.js';
 import { currentIteration } from '../lib/iteration.js';
 import { costOfUsageRecord, formatUsd, PRICING_SOURCE, PRICING_AS_OF } from '../lib/pricing.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
+import { testRunStatus, testRunBase, isLocalBase, parseInvite, addressFromGist, whereLabel } from '../lib/testrun.js';
 
 const $ = (id) => document.getElementById(id);
 let settings = await getSettings();
@@ -139,6 +140,52 @@ for (const el of document.querySelectorAll('[data-set]')) {
   });
 }
 $('openShortcuts').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+
+// ---------- Test Run ----------
+function showTestRun() {
+  const t = settings.testRun || {};
+  // An address set before addresses could be typed in: a port on this computer.
+  $('trUrl').value = t.url || (t.port && Number(t.port) !== 5178 ? `http://127.0.0.1:${t.port}` : '');
+  $('trInviteState').textContent = t.key ? `Invite saved (key …${String(t.key).slice(-4)})${t.gist ? '; the address is looked up in the gist when it changes' : ''}.` : '';
+}
+showTestRun();
+$('trUrl').addEventListener('change', async () => {
+  const v = $('trUrl').value.trim().replace(/\/+$/, '');
+  if (v && !/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/i.test(v)) { $('trState').textContent = 'The address must start with http:// or https://.'; return; }
+  settings.testRun = { ...settings.testRun, url: v };
+  await saveSettings(settings);
+  $('trState').textContent = 'Saved.';
+});
+$('trUseInvite').addEventListener('click', async () => {
+  const inv = parseInvite($('trInvite').value);
+  if (!inv.key) { $('trInviteState').textContent = 'That is not an invite link: it should end in #join=… . Copy the whole link.'; return; }
+  let url = inv.server;
+  if (!url && inv.gist) {
+    $('trInviteState').textContent = 'Looking up the address…';
+    url = await addressFromGist(inv.gist);
+  }
+  settings.testRun = { ...settings.testRun, enabled: true, key: inv.key, gist: inv.gist, url: url || settings.testRun?.url || '' };
+  await saveSettings(settings);
+  $('trInvite').value = '';
+  showTestRun();
+  if (!url) $('trInviteState').textContent += ' The shared Test Run is not reachable right now; its address is looked up again when you file a bug.';
+  $('trCheck').click();
+});
+$('trCheck').addEventListener('click', async () => {
+  $('trState').textContent = 'Checking…';
+  const s = await testRunStatus(settings, { timeoutMs: 4000 });
+  if (s && s.base !== testRunBase(settings)) { settings.testRun.url = s.base; await saveSettings(settings); showTestRun(); }
+  const base = s?.base || testRunBase(settings);
+  $('trState').textContent = settings.testRun?.enabled === false
+    ? 'Switched off above.'
+    : !s
+      ? (isLocalBase(base) ? 'Not running. Start it with npm start in test-run-console.' : `Not reachable at ${base}. The laptop that runs it may be asleep or offline.`)
+      : s.needsKey
+        ? (settings.testRun?.key ? 'Connected, but the invite key no longer works. Ask for a new link.' : 'This Test Run is shared by invite: paste your invite link above.')
+        : s.me?.role === 'viewer'
+          ? `Connected as ${s.me.name}, view only: bugs cannot be added with this invite.`
+          : `Connected${s.me && !s.me.local ? ` as ${s.me.name}` : ''}: ${whereLabel(s) || 'no workbook open yet'}.`;
+});
 
 // ---------- projects ----------
 let editing = null; // project being edited

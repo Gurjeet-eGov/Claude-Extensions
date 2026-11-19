@@ -232,6 +232,24 @@
             <span>Other notes <span class="muted">(IDs, tenant, role…)</span></span>
             <textarea id="extra" rows="2"></textarea>
           </label>
+          <div id="trBox" class="tr-box hidden">
+            <label class="row small" title="Once the issue is filed, add it to Test Run: against the test case you pick (marked failed, with the issue linked), or as a finding to write up as a test case later.">
+              <input type="checkbox" id="trNoteChk" /> <b>Also add this to Test Run</b> <span id="trWho" class="muted"></span>
+            </label>
+            <div id="trFields" class="grid2">
+              <label class="field">
+                <span>Test suite</span>
+                <select id="trSuite" aria-label="Test suite in Test Run"></select>
+              </label>
+              <label class="field">
+                <span>Test case <span class="muted">(optional)</span></span>
+                <input id="trCase" type="text" list="trCases" autocomplete="off" spellcheck="false" placeholder="Type an ID or a few words" />
+                <datalist id="trCases"></datalist>
+              </label>
+            </div>
+            <span id="trHint" class="muted small"></span>
+          </div>
+          <span id="trKey" class="muted small hidden">Test Run is shared by invite: paste your invite link in Settings → Test Run to add bugs to it.</span>
           <div class="claude-opts">
             <span class="small"><b>Claude for this issue</b> <span class="muted">(defaults from Settings)</span></span>
             <div class="row small">
@@ -258,6 +276,7 @@
               </label>
             </div>
             <label class="row small"><input type="checkbox" id="claudeShot" /> Let Claude see the screenshot <span class="muted">(≈1–1.5K extra tokens)</span></label>
+            <label class="row small" title="Off: the ticked calls still go into the issue under API Details, exactly as captured, but Claude does not read them."><input type="checkbox" id="claudeApis" /> Let Claude read the ticked API calls <span class="muted">(off: they go into the issue as they are)</span></label>
           </div>
           <div id="formErr" class="notice bad small hidden"></div>
           <div class="row actions">
@@ -291,6 +310,7 @@
         <div id="dupes" class="dupes"></div>
         <div class="row foot">
           <span id="usage" class="muted small grow"></span>
+          <span id="trSummary" class="muted small hidden"></span>
           <button id="file" class="primary">File issue</button>
         </div>
         <ul id="progress" class="progress"></ul>
