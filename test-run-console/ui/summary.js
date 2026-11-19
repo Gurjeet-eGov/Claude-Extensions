@@ -17,7 +17,7 @@
       cp.innerHTML = r.cycles.map(function (c) { return '<option value="' + esc(c.label) + '"' + (c.label === r.cycle ? ' selected' : '') + '>' + esc(c.label ? 'Cycle ' + c.label : 'Status') + '</option>'; }).join('');
       cp.classList.toggle('hidden', r.cycles.length < 2);
       document.title = 'Test Run summary: ' + r.tab;
-      main.innerHTML = '<div class="summary-head"><h1>' + esc(r.tab) + '</h1><span class="muted">cycle ' + esc(r.cycle || '–') +
+      main.innerHTML = '<div class="summary-head"><h1>' + esc(TR.tabLabel(r.tab)) + '</h1><span class="muted">cycle ' + esc(r.cycle || '–') +
         (r.release ? ' · release ' + esc(r.release) : '') + ' · as of ' + esc(r.generatedAt) + '</span></div>' + TR.summaryHtml(r);
     });
   }
@@ -39,7 +39,7 @@
     if (!tabs.length) { main.innerHTML = '<div class="empty card"><p>No test case tabs yet.</p></div>'; return; }
     state.tab = tabs.some(function (t) { return t.name === P.tab; }) ? P.tab : tabs[0].name;
     var tp = document.getElementById('tabPick');
-    tp.innerHTML = tabs.map(function (t) { return '<option' + (t.name === state.tab ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('');
+    tp.innerHTML = tabs.map(function (t) { return '<option value="' + esc(t.name) + '"' + (t.name === state.tab ? ' selected' : '') + '>' + esc(TR.tabLabel(t.name)) + '</option>'; }).join('');
     tp.classList.toggle('hidden', tabs.length < 2);
     load();
   });

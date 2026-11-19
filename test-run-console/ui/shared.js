@@ -273,6 +273,19 @@ var TR = (function () {
   var NUMBER_RE = /^\s*\d{1,2}\s*[.),]\s*/;
 
   /** Lines of a cell: right-trimmed, without blank lines at either end, runs of blank lines kept as one. */
+  /**
+   * A tab name as shown: one Excel cut at its 31-character limit (it ends mid-way, on an
+   * open bracket, a dash or a space) shows as "CMS Sign Off - CMS Automation…".
+   */
+  function tabLabel(name) {
+    var n = String(name == null ? '' : name);
+    if (n.length !== 31) return n;
+    var open = (n.match(/[(\[]/g) || []).length;
+    var close = (n.match(/[)\]]/g) || []).length;
+    if (open <= close && !/[\s\-–(\[]$/.test(n)) return n;
+    return n.replace(/[\s\-–(\[]+$/, '') + '…';
+  }
+
   function cellLines(text) {
     var lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n').map(function (l) { return l.replace(/[ \t ]+$/, ''); });
     while (lines.length && !lines[0].trim()) lines.shift();
@@ -423,7 +436,7 @@ var TR = (function () {
     SYM: SYM, CLS_LABEL: CLS_LABEL, esc: esc, api: api, http: http, state: state, classify: classify, counts: counts, bar: bar,
     dot: dot, issueKeys: issueKeys, sameIssues: sameIssues, issueLinks: issueLinks, pct: pct, summaryHtml: summaryHtml,
     cellLines: cellLines, cellItems: cellItems, cellHtml: cellHtml,
-    connect: connect, reconnect: reconnect, useInvite: useInvite, forget: forget, parseInvite: parseInvite, download: download, saveBlob: saveBlob,
+    tabLabel: tabLabel, connect: connect, reconnect: reconnect, useInvite: useInvite, forget: forget, parseInvite: parseInvite, download: download, saveBlob: saveBlob,
     conn: function () { return { server: conn.server, gist: conn.gist, hasKey: !!conn.token }; },
     legend: legend, toast: toast, store: store
   };
