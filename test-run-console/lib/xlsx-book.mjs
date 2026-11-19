@@ -53,6 +53,24 @@ function parseCell(a) {
 
 const cellRef = (col, row) => `${numToCol(col)}${row}`;
 
+/**
+ * One address or range "A1" / "A1:C9" after `row` is deleted: rows below move up, a range
+ * through it shrinks, and what was only on that row is gone (null). A range left one
+ * cell big comes back as that cell ("C3").
+ */
+function dropRowRef(ref, row) {
+  const cells = String(ref).split(':').map(parseCell);
+  if (cells.some((c) => !c)) return ref;
+  const top = Math.min(...cells.map((c) => c.row));
+  const bottom = Math.max(...cells.map((c) => c.row));
+  if (top === row && bottom === row) return null;
+  const t = top > row ? top - 1 : top;
+  const b = bottom >= row ? bottom - 1 : bottom;
+  const left = Math.min(...cells.map((c) => c.col));
+  const right = Math.max(...cells.map((c) => c.col));
+  return t === b && left === right ? cellRef(left, t) : `${cellRef(left, t)}:${cellRef(right, b)}`;
+}
+
 /** Shift one address or range "A1" / "A1:C9" for an insert of n rows/cols after `after`. */
 function shiftRef(ref, axis, after, n) {
   const parts = String(ref).split(':');
@@ -505,17 +523,41 @@ class XSheet {
     for (const r of merges) this.ws.mergeCells(shiftRef(r, 'row', row, n));
     return this;
   }
+  /** Remove one row: what is below moves up with its dropdowns, merges and conditional formats. */
   deleteRow(row) {
     this.book.markDirty();
-    this.ws.spliceRows(row, 1);
-    const dv = this.ws.dataValidations.model;
+    const ws = this.ws;
+    const merges = this.takeMerges();
+    // A merge starting on this row (a Feature written once over several rows) keeps its
+    // value on the row that takes its place.
+    const carry = [];
+    for (const r of merges) {
+      const [a, b] = String(r).split(':').map(parseCell);
+      if (a && b && a.row === row && b.row > row) carry.push({ col: a.col, value: ws.getCell(row, a.col).value });
+    }
+    ws.spliceRows(row, 1);
+    for (const c of carry) {
+      const cell = ws.getCell(row, c.col);
+      if (cell.value == null || cell.value === '') cell.value = c.value;
+    }
+    const dv = ws.dataValidations.model;
     const moved = {};
     for (const [addr, v] of Object.entries(dv)) {
       const c = parseCell(addr);
       if (!v || (c && c.row === row)) continue;
       moved[c && c.row > row ? cellRef(c.col, c.row - 1) : addr] = v;
     }
-    this.ws.dataValidations.model = moved;
+    ws.dataValidations.model = moved;
+    if (ws.conditionalFormattings) {
+      for (const cf of ws.conditionalFormattings) {
+        if (cf && cf.ref) cf.ref = String(cf.ref).split(/\s+/).map((r) => dropRowRef(r, row)).filter(Boolean).join(' ');
+      }
+      ws.conditionalFormattings = ws.conditionalFormattings.filter((cf) => !cf || cf.ref !== '');
+    }
+    for (const r of merges) {
+      const m = dropRowRef(r, row);
+      if (m && m.includes(':')) ws.mergeCells(m);
+    }
     return this;
   }
   hideSheet() { this.book.markDirty(); this.ws.state = 'hidden'; return this; }

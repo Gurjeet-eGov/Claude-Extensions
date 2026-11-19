@@ -55,4 +55,5 @@ function api_linkBug(req) { return tr_call_(function () { return tr_linkBug(req)
 function api_listIssues() { return tr_call_(function () { return tr_listIssues(); }); }
 function api_saveIssueMeta(items) { return tr_call_(function () { return tr_saveIssueMeta(items); }); }
 function api_writeIssuesSheet() { return tr_call_(function () { return tr_writeIssuesSheet(); }); }
+function api_dropRetired() { return tr_call_(function () { return tr_dropRetired(); }); }
 function api_automationSummary() { return tr_call_(function () { return tr_automationSummary(); }); }

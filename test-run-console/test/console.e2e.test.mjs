@@ -133,8 +133,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
 
       const s = await browser.newPage();
       await s.goto(`${base}summary.html?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
-      await s.locator('tr', { hasText: 'Rating moved to the feedback survey' }).waitFor();
-      await s.getByText('2 retired cases are left out of these figures').waitFor();
+      await s.locator('.kpi', { hasText: 'executed' }).waitFor();
+      assert.equal(await s.getByText('Rating moved to the feedback survey').count(), 0, 'retired cases are left out of the summary');
+      assert.equal(await s.getByText(/retired/i).count(), 0);
       await s.close();
 
       await page.locator('[data-action=show][data-show=retired]').click();
@@ -510,9 +511,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=summary]').click();
       await page.locator('.report-tools .updated', { hasText: /^Updated on: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/ }).waitFor();
       for (const gone of ['Open summary page', 'Export summary', 'Update summary tab']) assert.equal(await page.getByText(gone).count(), 0, gone);
+      // CMS/13 is still deprecated: Summary has nothing about retired cases, here or in the top bar
+      assert.equal(await page.locator('main', { hasText: /retired/i }).count(), 0, 'no Retired cases section');
+      assert.equal(await page.locator('.context', { hasText: /retired/i }).count(), 0, 'no retired count on Summary');
       const tools = page.locator('main .report-tools');
       const [download] = await Promise.all([page.waitForEvent('download'), tools.getByRole('button', { name: 'Download' }).click()]);
       assert.equal(download.suggestedFilename(), BOOK);
+      const ids = (await XBook.fromFile(await download.path(), 'dl')).getSheetByName(TAB).getDataRange().getDisplayValues().map((r) => r[0]);
+      assert.equal(ids.includes('CMS/13'), false, 'the downloaded workbook leaves the retired case out');
+      assert.ok(row(await disk(), 'CMS/13'), 'the workbook on disk keeps it');
       await tools.getByRole('button', { name: 'Print / PDF' }).waitFor();
     });
 

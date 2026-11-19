@@ -315,5 +315,5 @@ test('struck rows are retired; duplicates are linked both ways; summary leaves t
   assert.equal(cases[3].retired.kind, 'struck', 'struck in the workbook by hand, no note');
   const s = TRCore.summarize(cases, { cycleIdx: 1, prevIdx: 0 });
   assert.deepEqual({ ...s.counts }, { pass: 0, fail: 1, other: 0, none: 1, total: 2 });
-  assert.deepEqual([...s.retired.map((x) => x.id)], ['T-2', 'T-4']);
+  assert.equal(s.retired, undefined, 'and are not listed: retired cases are in no report');
 });

@@ -68,6 +68,32 @@ test('inserting rows moves dropdowns below and keeps rows above', async () => {
   assert.ok(dvAt(again, 'S', 'B6') && dvAt(again, 'S', 'B7'), 'dropdowns moved down with their rows');
 });
 
+test('deleting a row moves dropdowns, merges and conditional formats up; a merge starting there keeps its value', async () => {
+  const book = await bookWith((wb) => {
+    const ws = wb.addWorksheet('S');
+    ws.getRow(1).values = ['ID', 'Status', 'Feature'];
+    for (let r = 2; r <= 7; r++) {
+      ws.getRow(r).values = [`T-${r}`, ''];
+      ws.getCell(r, 2).dataValidation = { type: 'list', formulae: ['"Pass,Fail"'] };
+    }
+    ws.getCell('C3').value = 'Inbox';
+    ws.mergeCells('C3:C5'); // Feature merged over three rows, its value on the first
+    ws.getCell('C6').value = 'Search';
+    ws.mergeCells('C6:C7');
+    ws.addConditionalFormatting({ ref: 'B2:B7', rules: [{ type: 'containsText', operator: 'containsText', text: 'Fail', style: { font: { bold: true } }, priority: 1 }] });
+  });
+  const sh = book.getSheetByName('S');
+  sh.deleteRow(3);
+  const again = await reload(book);
+  const s2 = again.getSheetByName('S');
+  assert.deepEqual(s2.getRange(1, 1, 7, 1).getDisplayValues().map((r) => r[0]), ['ID', 'T-2', 'T-4', 'T-5', 'T-6', 'T-7', '']);
+  assert.deepEqual(s2.ws.model.merges.sort(), ['C3:C4', 'C5:C6'], 'a merge starting on the row shrinks; one below moves up');
+  assert.equal(s2.getRange(3, 3).getValue(), 'Inbox', 'the merged Feature value is kept');
+  assert.ok(dvAt(again, 'S', 'B6'));
+  assert.equal(dvAt(again, 'S', 'B7'), undefined, 'dropdowns moved up with their rows');
+  assert.equal(s2.ws.conditionalFormattings[0].ref, 'B2:B6');
+});
+
 test('display text follows Sheets: dates, formulas, rich text, merged followers, apostrophes', async () => {
   const book = await bookWith((wb) => {
     const ws = wb.addWorksheet('S');
