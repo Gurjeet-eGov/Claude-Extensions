@@ -1318,6 +1318,24 @@
     });
   }
 
+  /**
+   * Put a person's invite link on the clipboard and say so. Only if the browser blocks
+   * copying is the link shown on the page instead, to copy by hand.
+   */
+  function deliverLink(name, link, warn, lead) {
+    copyText(link).then(function (ok) {
+      if (ok) {
+        S.teamLink = null;
+        toast((lead || '') + name + '\'s invite link is copied. Send it to them privately.' + (warn ? ' ' + warn : ''), warn ? 'long' : '');
+      } else {
+        S.teamLink = { name: name, link: link, warn: warn };
+        toast('Copying was blocked: copy the link shown under People.', 'bad');
+      }
+      render();
+      if (!ok) { var t = $('teamLink'); if (t) t.select(); }
+    });
+  }
+
   function checkLine(c, okText) {
     if (!c) return '';
     return '<div class="check-line ' + (c.ok ? 'ok' : 'bad') + '">' + (c.ok ? '✓ ' + esc(okText || c.message) : '✗ ' + esc(c.message)) + ' <span class="faint">(' + esc(c.at) + ')</span></div>';
@@ -1392,14 +1410,14 @@
     // 2. People
     h += '<div class="subsection"><h3>2. People</h3>';
     if (S.teamLink) {
-      h += '<div class="note info stack-s"><span>Invite link for <b>' + esc(S.teamLink.name) + '</b>. Send it to them privately. If they lose it, <b>Copy link</b> in the list gives you the same link again.</span>' +
+      h += '<div class="note info stack-s"><span>This browser did not let Test Run copy the link for <b>' + esc(S.teamLink.name) + '</b>. Copy it from here and send it to them privately.</span>' +
         '<div class="row"><input id="teamLink" readonly value="' + esc(S.teamLink.link) + '" class="grow mono"><button class="primary" data-action="copy-link">Copy</button><button class="ghost" data-action="hide-link">Done</button></div>' +
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
     if (r.people.length) {
       h += '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Can</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
         return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="What ' + esc(p.name) + ' can do" data-change="team-role" data-id="' + esc(p.id) + '">' +
-          opt('tester', 'Mark results', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
+          opt('tester', 'Update status', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
           '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
           '<td class="num"><div class="row" style="justify-content:flex-end">' +
           '<button class="ghost" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && r.canInvite ? '' : ' disabled') +
@@ -1412,7 +1430,7 @@
     }
     var off = r.canInvite ? '' : ' disabled';
     h += '<div class="row"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. Priya (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
-      '<label class="sr" for="teamRole">Can</label><select id="teamRole" data-bind="team:role"' + off + '>' + opt('tester', 'Mark results', val('team:role', 'tester') === 'tester') + opt('viewer', 'View only (managers)', val('team:role', 'tester') === 'viewer') + '</select>' +
+      '<label class="sr" for="teamRole">Can</label><select id="teamRole" data-bind="team:role"' + off + '>' + opt('tester', 'Update status', val('team:role', 'tester') === 'tester') + opt('viewer', 'View only', val('team:role', 'tester') === 'viewer') + '</select>' +
       '<button data-action="team-add"' + off + '>Add and make a link</button></div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
     return h + '</section>';
@@ -1819,12 +1837,13 @@
       if (on) toast(S.team.team.mode === 'fixed' ? 'Starting the tunnel…' : 'Opening a tunnel… this takes a few seconds.');
       teamCall('/api/team/share', { on: on });
     },
+    // Hidden from view: a fresh or copied link goes to the clipboard, with a toast.
     'team-add': function () {
       var name = String(val('team:name')).trim();
       if (!name) { toast('Type their name first.'); var n = $('teamName'); if (n) n.focus(); return; }
       teamCall('/api/team/people', { name: name, role: val('team:role', 'tester') }, function (r) {
-        S.teamLink = { name: name, link: r.link, warn: r.linkWarning };
         clearForm('team:name');
+        deliverLink(name, r.link, r.linkWarning, 'Added. ');
       });
     },
     'team-copy': function (el) {
@@ -1834,20 +1853,14 @@
       TR.http('POST', '/api/team/people/link', { id: id }).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }
         S.team = r;
-        copyText(r.link).then(function (ok) {
-          // Shown as well, in case copying is blocked or the warning matters
-          S.teamLink = { name: p.name, link: r.link, warn: r.linkWarning };
-          render();
-          if (ok) toast(p.name + '\'s link is copied.');
-          else { var t = $('teamLink'); if (t) t.select(); toast('Press Cmd+C (Ctrl+C) to copy the selected link.'); }
-        });
+        deliverLink(p.name, r.link, r.linkWarning, '');
       });
     },
     'team-rotate': function (el) {
       var id = el.getAttribute('data-id');
       var p = S.team.people.filter(function (x) { return x.id === id; })[0];
       if (!p || !window.confirm('Make a new link for ' + p.name + '? Their current link stops working.')) return;
-      teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { S.teamLink = { name: p.name, link: r.link, warn: r.linkWarning }; });
+      teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { deliverLink(p.name, r.link, r.linkWarning, 'New link made; the old one no longer works. '); });
     },
     'team-remove': function (el) {
       var id = el.getAttribute('data-id');
