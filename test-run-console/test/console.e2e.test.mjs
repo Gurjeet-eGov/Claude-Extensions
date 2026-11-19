@@ -39,10 +39,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
   const row = (rows, id) => rows.find((r) => r[0] === id);
 
   try {
-    await t.test('first run opens Setup; saving it lands on Run with paths', async () => {
+    await t.test('first run opens Setup; Save stays on Setup with a message; Run shows paths', async () => {
       await page.goto(base);
       await page.getByText('Welcome.').waitFor();
       await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await page.locator('.toast', { hasText: 'Setup saved.' }).waitFor();
+      await page.locator('.nav [data-view=setup][aria-current=page]').waitFor();
+      await page.getByText('Welcome.').waitFor({ state: 'detached' });
+      assert.equal(await page.locator('.subtab[aria-selected=true]', { hasText: 'Workbook' }).count(), 1, 'still on Setup → Workbook');
+      await page.locator('.nav [data-view=run]').click();
       await page.locator('.nav [data-view=run][aria-current=page]').waitFor();
       await page.locator('.path-title', { hasText: 'CSR Employee' }).waitFor();
       assert.ok(await page.locator('.case').count() >= 8);
@@ -610,8 +615,27 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.deepEqual(await page.locator('#cyclePick option').allTextContents(), ['Cycle v2.20.1']);
     });
 
+    await t.test('Setup: Rename a tab; what Test Run keeps about it moves with it', async () => {
+      await page.locator('.nav [data-view=setup]').click();
+      const card = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Dashboard KPI', exact: true }) });
+      await card.locator('[data-action=tab-rename]').first().click();
+      await page.locator('#renameTo').fill('KPI dashboard');
+      await page.locator('.modal-box').getByRole('button', { name: 'Rename', exact: true }).click();
+      await page.locator('.toast', { hasText: 'Renamed to KPI dashboard.' }).waitFor();
+      await page.getByRole('heading', { name: 'KPI dashboard', exact: true }).waitFor();
+      const names = (await XBook.fromFile(file, 'x')).getSheets().map((sh) => sh.getName());
+      assert.ok(names.includes('KPI dashboard') && !names.includes('Dashboard KPI'), 'renamed in the workbook');
+      assert.equal(await page.locator('section').filter({ has: page.getByRole('heading', { name: 'KPI dashboard', exact: true }) }).locator('select').first().inputValue(), 'manual', 'its setup moved with it');
+      await page.locator('.nav [data-view=run]').click();
+      await page.locator('.ctx-tab', { hasText: 'KPI dashboard' }).waitFor(); // the Test suites row follows
+    });
+
     await t.test('the Workbook picker keeps one width, whatever the names', async () => {
-      const width = () => page.locator('#bookPick').evaluate((e) => Math.round(e.getBoundingClientRect().width));
+      // measured once the page has settled (a redraw can replace the picker mid-measure)
+      const width = async () => {
+        await page.waitForFunction(() => { const e = document.querySelector('#bookPick'); return e && e.isConnected && e.getBoundingClientRect().width > 0; });
+        return page.locator('#bookPick').evaluate((e) => Math.round(e.getBoundingClientRect().width));
+      };
       const w1 = await width();
       await page.locator('#bookPick').selectOption('Bomet Test Cases.xlsx');
       await page.locator('#bookPick option:checked', { hasText: 'Bomet Test Cases' }).waitFor({ state: 'attached' });
