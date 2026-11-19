@@ -341,7 +341,6 @@ var TR = (function () {
     h.push(kpi('fail', String(c.fail), 'failing now'));
     h.push(kpi('', String(c.none), 'not run yet'));
     h.push('</div>');
-    if (s.retired && s.retired.length) h.push('<p class="small muted" style="margin:-6px 0 12px">' + s.retired.length + ' retired case' + (s.retired.length === 1 ? ' is' : 's are') + ' left out of these figures; see <b>Retired cases</b> below.</p>');
 
     h.push('<div class="card card-pad"><div class="row" style="margin-bottom:8px"><h2>All cases</h2><span class="grow"></span>' + legend(c) + '</div>' + bar(c) + '</div>');
 
@@ -363,17 +362,6 @@ var TR = (function () {
       h.push('<div class="card-pad muted" style="padding-top:0">No failing cases in this cycle.</div>');
     }
     h.push('</div>');
-
-    var retired = s.retired || [];
-    if (retired.length) {
-      h.push('<div class="section card"><div class="card-pad"><h2>Retired cases <span class="pill none">' + retired.length + '</span></h2><p class="small muted">Deprecated or duplicates: still in the workbook, struck out, and not counted in the figures above.</p></div>');
-      h.push('<div class="table-wrap"><table><thead><tr><th>ID</th><th>Scenario</th><th>Why</th></tr></thead><tbody>');
-      retired.forEach(function (x) {
-        var why = x.kind === 'duplicate' ? 'Duplicate of <span class="mono">' + esc(x.of) + '</span>' : x.kind === 'deprecated' ? 'Deprecated' : 'Struck out in the workbook';
-        h.push('<tr><td class="mono"><s>' + esc(x.id) + '</s></td><td class="ml"><s>' + esc(x.scenario) + '</s></td><td><b>' + why + '</b>' + (x.reason ? '<div>' + esc(x.reason) + '</div>' : '') + (x.cycle ? '<div class="small faint">in cycle ' + esc(x.cycle) + '</div>' : '') + '</td></tr>');
-      });
-      h.push('</tbody></table></div></div>');
-    }
 
     var side = [];
     if (s.comparison) {

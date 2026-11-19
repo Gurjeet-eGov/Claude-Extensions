@@ -417,7 +417,7 @@
       var done = Math.round(((c.total - c.none) / (c.total || 1)) * 100);
       var nRet = m.cases.length - live.length;
       h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) +
-        (nRet ? '<span class="small muted" title="Deprecated or duplicate cases: struck out in the workbook and left out of these figures"><span class="sym-none">⊘</span> <b>' + nRet + '</b> retired</span>' : '') +
+        (nRet && S.view === 'run' ? '<span class="small muted" title="Deprecated or duplicate cases: struck out in the workbook and left out of these figures"><span class="sym-none">⊘</span> <b>' + nRet + '</b> retired</span>' : '') +
         '<span class="small muted"><b>' + done + '%</b> done</span></div>';
     }
     return h + '</div>';

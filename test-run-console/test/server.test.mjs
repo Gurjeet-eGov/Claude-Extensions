@@ -336,9 +336,9 @@ for (const B of BACKENDS) {
     assert.equal(caseOf(d, 'CMS/14').retired, null);
     const s = call('api_summary', TAB).summary;
     assert.deepEqual(s.counts, { pass: 4, fail: 2, other: 1, none: 10, total: 17 }, 'retired cases leave the figures');
-    assert.deepEqual(s.retired.map((x) => [x.id, x.kind, x.reason]), [['CMS/15', 'deprecated', 'SMS replaced by WhatsApp in 2.20']]);
+    assert.equal(s.retired, undefined, 'and every report');
     const tab = (call('api_writeSummaryTab', TAB), dump(ss, 'Test Run Summary'));
-    assert.ok(tab.some((x) => x[0] === 'CMS/15' && x[2] === 'Deprecated: SMS replaced by WhatsApp in 2.20'), 'listed in the summary tab');
+    assert.equal(tab.some((x) => x[0] === 'CMS/15'), false, 'not in the summary tab either');
 
     const back = call('api_restoreCase', base);
     assert.equal(back.ok, true, back.error);

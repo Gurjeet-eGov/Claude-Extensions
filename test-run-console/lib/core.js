@@ -824,12 +824,8 @@ var TRCore = (function () {
     var stillFailing = 0;
     var auto = { linked: 0, pass: 0, fail: 0, other: 0 };
     var testers = {};
-    var retired = [];
     cases.forEach(function (c) {
-      if (c.retired) {
-        retired.push({ key: c.key, id: c.id, scenario: c.scenario, kind: c.retired.kind, of: c.retired.of, reason: c.retired.reason, cycle: c.retired.cycle || '' });
-        return;
-      }
+      if (c.retired) return; // retired cases are in no report
       var cls = classifyStatus(c.statuses[ci]);
       total[cls] += 1; total.total += 1;
       var gname = c[groupBy] || c.group1 || 'Ungrouped';
@@ -864,7 +860,6 @@ var TRCore = (function () {
       failures: failures,
       comparison: (pi != null && pi >= 0) ? { newlyFailing: newlyFailing, fixed: fixed, stillFailing: stillFailing } : null,
       automation: auto,
-      retired: retired,
       testers: Object.keys(testers).map(function (k) { return { name: k, count: testers[k] }; }).sort(function (a, b) { return b.count - a.count; })
     };
   }

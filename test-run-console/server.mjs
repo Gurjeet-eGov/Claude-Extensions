@@ -573,7 +573,11 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       const copy = await XBook.fromBuffer(await entry.book.toBuffer(), entry.name);
       current = { book: copy, store: entry.store };
       rt.state.user = user || app.user;
-      try { rt.call('api_writeIssuesSheet'); } finally { current = null; }
+      try {
+        rt.call('api_writeIssuesSheet');
+        const dropped = rt.call('api_dropRetired'); // retired cases are in no report, nor in the downloaded workbook
+        if (!dropped.ok) throw Object.assign(new Error(`The download could not leave out the retired cases: ${dropped.error}`), { code: dropped.code });
+      } finally { current = null; }
       copy.fitRowHeights();
       return Buffer.from(await copy.toBuffer());
     });

@@ -1026,10 +1026,56 @@ function tr_saveIssueMeta(items) {
   });
 }
 
+/**
+ * For a downloaded copy only: leave out the retired cases. Their rows are deleted from each
+ * test suite (a blank Feature or Sub feature below one keeps the value it filled down from
+ * it), and an old Retired cases section in the Test Run Summary tab goes too. The workbook
+ * in the sheets folder keeps them, struck out, so they can be restored.
+ */
+function tr_dropRetired() {
+  var cfg = tr_config_();
+  var removed = 0;
+  tr_manualTabs_(cfg).forEach(function (tab) {
+    var m = tr_open_(tab, cfg);
+    var cases = tr_cases_(m);
+    var gone = cases.filter(function (c) { return c.retired; }).map(function (c) { return c.row; });
+    if (!gone.length) return;
+    var sh = m.sheet;
+    if (m.tcfg.fillDown !== false) {
+      // What each kept case would read once the rows are gone; write what it read before where that differs.
+      var lf = '', ls = '';
+      cases.forEach(function (c) {
+        if (c.retired) return;
+        var f = c.feature, s = c.subFeature;
+        if (m.fields.feature >= 0 && !f && c.group1 && lf !== c.group1) { f = c.group1; sh.getRange(c.row, m.fields.feature + 1).setValue(TRCore.cellSafe(f)); }
+        if (f) { lf = f; if (!s) ls = ''; }
+        if (m.fields.subFeature >= 0 && !s && c.group2 && ls !== c.group2) { s = c.group2; sh.getRange(c.row, m.fields.subFeature + 1).setValue(TRCore.cellSafe(s)); }
+        if (s) ls = s;
+      });
+    }
+    gone.sort(function (a, b) { return b - a; }).forEach(function (r) { sh.deleteRow(r); });
+    removed += gone.length;
+  });
+  var sum = tr_ss_().getSheetByName(TR_SUMMARY);
+  if (sum && sum.getLastRow()) {
+    var col = sum.getRange(1, 1, sum.getLastRow(), 1).getDisplayValues().map(function (r) { return String(r[0]); });
+    var start = -1;
+    for (var i = 0; i < col.length; i++) if (/^Retired cases, not counted above/.test(col[i])) { start = i; break; }
+    if (start >= 0) {
+      var end = start;
+      while (end + 1 < col.length && col[end + 1] !== '') end++;
+      if (start > 0 && col[start - 1] === '') start--; // the blank line before the section
+      for (var r = end; r >= start; r--) sum.deleteRow(r + 1);
+    }
+  }
+  return { ok: true, removed: removed };
+}
+
 /** Text for an issue's test cases in the Known issues sheet. */
 function tr_issueCasesText_(e, manyTabs) {
-  var lines = e.cases.map(function (c) {
-    return (manyTabs ? c.tab + ' \u203a ' : '') + (c.id || 'Row') + ' \u2013 ' + c.scenario + (c.retired ? ' (retired)' : c.status ? ' (' + c.status + ')' : ' (not run)');
+  // retired cases are not in the downloaded workbook, so the sheet does not name them
+  var lines = e.cases.filter(function (c) { return !c.retired; }).map(function (c) {
+    return (manyTabs ? c.tab + ' \u203a ' : '') + (c.id || 'Row') + ' \u2013 ' + c.scenario + (c.status ? ' (' + c.status + ')' : ' (not run)');
   });
   e.findings.forEach(function (f) { lines.push('Not in the test cases yet (finding ' + f.key + ': ' + f.text + ')'); });
   return lines.join('\n');
@@ -1356,18 +1402,6 @@ function tr_writeSummaryTab(tabName, cycleLabel) {
       if (u) links.push([r, u.url]);
     });
     var failEnd = rows.length;
-    var retiredHeader = 0;
-    var retiredEnd = 0;
-    if (s.retired.length) {
-      add([]);
-      marks.section.push(add(['Retired cases, not counted above (' + s.retired.length + ')']));
-      retiredHeader = add(['ID', 'Scenario', 'Why', 'Retired in']);
-      marks.header.push(retiredHeader);
-      s.retired.forEach(function (x) {
-        add([x.id, x.scenario, x.kind === 'struck' ? 'Struck out in the workbook' : TRCore.retireNote(x.kind, x.of, x.reason), x.cycle]);
-      });
-      retiredEnd = rows.length;
-    }
     if (s.comparison) {
       add([]);
       marks.section.push(add(['Compared with ' + (res.prevCycle || 'the previous cycle')]));
@@ -1385,7 +1419,6 @@ function tr_writeSummaryTab(tabName, cycleLabel) {
     sh.getRange(totalRow, 1, 1, W).setFontWeight('bold');
     sh.getRange(marks.header[0], 1, tableEnd - marks.header[0] + 1, W).setBorder(true, true, true, true, true, true);
     sh.getRange(failHeader, 1, failEnd - failHeader + 1, 5).setBorder(true, true, true, true, true, true);
-    if (retiredHeader) sh.getRange(retiredHeader, 1, retiredEnd - retiredHeader + 1, 4).setBorder(true, true, true, true, true, true);
     sh.getRange(marks.header[0] + 1, 3, tableEnd - marks.header[0], 1).setBackground('#E6F4EA');
     sh.getRange(marks.header[0] + 1, 4, tableEnd - marks.header[0], 1).setBackground('#FCE8E6');
     sh.setColumnWidth(1, 240);
