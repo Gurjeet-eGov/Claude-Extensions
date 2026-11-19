@@ -969,8 +969,11 @@ async function refreshTestRun() {
   S.trSuites = suites;
   const { testRunNote, testRunSuite } = await chrome.storage.local.get(['testRunNote', 'testRunSuite']);
   const chosen = pickSuite(suites, testRunSuite, current || st);
-  $('trSuite').innerHTML = suites.map((s, i) => `<option value="${i}"${s === chosen ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
-  $('trSuite').disabled = suites.length < 2;
+  // Two pickers: the workbook, then one of its test suites
+  const books = [...new Set(suites.map((s) => s.book))];
+  $('trBook').innerHTML = books.map((b) => `<option value="${esc(b)}"${chosen && b === chosen.book ? ' selected' : ''}>${esc(String(b).replace(/\.xlsx$/i, ''))}</option>`).join('');
+  $('trBook').disabled = books.length < 2;
+  fillTrSuites(chosen);
   $('trWho').textContent = isLocalBase(st.base) ? '' : `(shared${st.me?.name ? `, as ${st.me.name}` : ''})`;
   $('trNoteChk').checked = testRunNote === true;
   $('trBox').classList.toggle('off', !$('trNoteChk').checked);
@@ -986,7 +989,15 @@ function trWanted() {
   return !$('trBox').classList.contains('hidden') && $('trNoteChk').checked && !!S.trSuites?.length;
 }
 function trSuite() {
-  return S.trSuites?.[Number($('trSuite').value)] || null;
+  return (S.trSuites || []).find((s) => s.book === $('trBook').value && s.tab === $('trSuite').value) || null;
+}
+/** The test suites of the workbook picked, with want (a suite of it) or its first one selected. */
+function fillTrSuites(want) {
+  const book = $('trBook').value;
+  const tabs = (S.trSuites || []).filter((s) => s.book === book);
+  const pick = tabs.find((s) => want && s.tab === want.tab && s.book === want.book) || tabs[0];
+  $('trSuite').innerHTML = tabs.map((s) => `<option value="${esc(s.tab)}"${s === pick ? ' selected' : ''}>${esc(s.tab)}</option>`).join('');
+  $('trSuite').disabled = tabs.length < 2;
 }
 function trCase() {
   return matchCase(S.trCases?.cases, $('trCase').value);
@@ -1036,12 +1047,14 @@ $('trNoteChk').addEventListener('change', () => {
   chrome.storage.local.set({ testRunNote: $('trNoteChk').checked });
   $('trBox').classList.toggle('off', !$('trNoteChk').checked);
 });
-$('trSuite').addEventListener('change', () => {
+function trPicked() {
   const s = trSuite();
   if (s) chrome.storage.local.set({ testRunSuite: { book: s.book, tab: s.tab } });
   $('trCase').value = '';
   loadTrCases();
-});
+}
+$('trBook').addEventListener('change', () => { fillTrSuites(null); trPicked(); });
+$('trSuite').addEventListener('change', trPicked);
 $('trCase').addEventListener('input', updateTrHint);
 
 async function noteInTestRun(filed) {

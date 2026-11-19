@@ -114,10 +114,10 @@ The CSV opens in Excel, Numbers, Google Sheets and LibreOffice on Mac, Windows a
 
 ## Adding the bug to Test Run
 
-When the [Test Run console](../test-run-console/) is reachable, the **Report Issue** form has a Test Run box, above the Claude options. Test Run can be on this computer, or a teammate's shared Test Run.
+When the [Test Run console](../test-run-console/) is reachable, the **Report Issue** form has a Test Run box, above the Claude options. It is tinted and carries Test Run's mark, since it comes from that app. Test Run can be on this computer, or a teammate's shared Test Run.
 
 - **Also add this to Test Run:** tick it, and once the issue is filed it is added to Test Run.
-- **Test suite:** the workbook › tab to add it to.
+- **Workbook** and **Test suite:** the workbook, then the test case tab of it to add the bug to. Someone given one workbook in Test Run sees only that one.
 - **Test case (optional):** type an ID or a few words and pick from the list.
   - **With a test case:** that case is marked failed in the current cycle, with the issue linked to it and `Bug #123: <title>` added to its comment.
   - **Without one:** the bug becomes a finding in that suite, with the title, the issue link, the Description / Actual / Expected text and the module, to be written up as a test case there.
@@ -126,10 +126,9 @@ When the [Test Run console](../test-run-console/) is reachable, the **Report Iss
 - **The review screen** repeats what will happen in Test Run, next to **File issue**.
 - **If the note fails,** you get a warning only: the issue itself is already filed.
 - **Settings:** options → **Test Run**:
-  - an on/off switch;
-  - **Test Run address**: empty for Test Run on this computer (`http://127.0.0.1:5178`), or another address;
-  - **Invite link**: for a teammate's shared Test Run, paste the link they sent. It fills in the address and keeps your key. A view-only invite can't add bugs.
-  - **Check now**.
+  - a status line at the top (green when connected, with whom and what is open there), checked when you open the tab, and **Check now**;
+  - **Offer to add filed bugs to Test Run**: the on/off switch;
+  - **Connection**: the **Invite link** for a teammate's shared Test Run (it fills in the address and keeps your key; a view-only invite can't add bugs), and, folded under it, the **Test Run address**: empty for Test Run on this computer (`http://127.0.0.1:5178`), or another address.
 - **A shared Test Run that moved:** its address can change, for example a quick tunnel after a restart. It keeps the current address in a gist, and Bug Reporter looks there when the saved address stops answering.
 - **Network:** only the Test Run address you set (by default `127.0.0.1`), and for a shared Test Run its gist on `api.github.com`.
 

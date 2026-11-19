@@ -232,15 +232,26 @@
             <span>Other notes <span class="muted">(IDs, tenant, role…)</span></span>
             <textarea id="extra" rows="2"></textarea>
           </label>
+          <!-- From the Test Run app: tinted, with its mark, like the Claude box below -->
           <div id="trBox" class="tr-box hidden">
-            <label class="row small" title="Once the issue is filed, add it to Test Run: against the test case you pick (marked failed, with the issue linked), or as a finding to write up as a test case later.">
-              <input type="checkbox" id="trNoteChk" /> <b>Also add this to Test Run</b> <span id="trWho" class="muted"></span>
-            </label>
-            <div id="trFields" class="grid2">
-              <label class="field">
-                <span>Test suite</span>
-                <select id="trSuite" aria-label="Test suite in Test Run"></select>
+            <div class="tr-head">
+              <span class="tr-mark" aria-hidden="true"></span>
+              <label class="row small" title="Once the issue is filed, add it to Test Run: against the test case you pick (marked failed, with the issue linked), or as a finding to write up as a test case later.">
+                <input type="checkbox" id="trNoteChk" /> <b>Also add this to Test Run</b>
               </label>
+              <span id="trWho" class="muted small"></span>
+            </div>
+            <div id="trFields" class="tr-fields">
+              <div class="grid2">
+                <label class="field">
+                  <span>Workbook</span>
+                  <select id="trBook" aria-label="Workbook in Test Run"></select>
+                </label>
+                <label class="field">
+                  <span>Test suite</span>
+                  <select id="trSuite" aria-label="Test suite in Test Run"></select>
+                </label>
+              </div>
               <label class="field">
                 <span>Test case <span class="muted">(optional)</span></span>
                 <input id="trCase" type="text" list="trCases" autocomplete="off" spellcheck="false" placeholder="Type an ID or a few words" />

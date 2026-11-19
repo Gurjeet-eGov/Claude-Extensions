@@ -21,7 +21,7 @@ import { createRuntime, ROOT } from './lib/runtime.mjs';
 import { XSheetsApi, XBook } from './lib/xlsx-book.mjs';
 import { Library } from './lib/books.mjs';
 import { createMemoryStore } from './lib/store.mjs';
-import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, newAdminKey, publicAdmin, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, ROLES, MODES } from './lib/team.mjs';
+import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, newAdminKey, publicAdmin, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, cleanBooks, ROLES, MODES } from './lib/team.mjs';
 import { startTunnel, publishAddress, findCommand } from './lib/share.mjs';
 import { githubIssue, isGithubIssue } from './lib/issues.mjs';
 import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slugFor, newPublishId } from './lib/publish.mjs';
@@ -179,12 +179,16 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const owner = () => ({ role: 'owner', name: app.user, local: true });
   /** The owner: at the laptop, or elsewhere with the admin link. */
   const isOwnerPerson = (person) => !!person && person.role === 'owner';
+  /** May this person open this workbook? Teammates can be given one workbook instead of all. */
+  const mayOpen = (person, name) => isOwnerPerson(person) || !person || !Array.isArray(person.books) || person.books.includes(name);
+  const booksFor = (person) => lib.list().filter((b) => mayOpen(person, b.name));
 
   async function openBook(name, person) {
-    const books = lib.list();
+    if (name && !mayOpen(person, name) && lib.list().some((b) => b.name === name)) throw err('FORBIDDEN', 'This workbook is not shared with you. Ask your test lead.');
+    const books = booksFor(person);
     const has = (n) => n && books.some((b) => b.name === n);
     const want = has(name) ? name : has(app.last.book) ? app.last.book : books[0] && books[0].name;
-    if (!want) throw err('NO_BOOK', 'There are no workbooks yet. Put an .xlsx file in the sheets folder, or use Import.');
+    if (!want) throw err('NO_BOOK', lib.list().length ? 'No workbook is shared with you yet. Ask your test lead.' : 'There are no workbooks yet. Put an .xlsx file in the sheets folder, or use Import.');
     const entry = await lib.get(want);
     if (isOwnerPerson(person) && person.remember !== false && app.last.book !== want) { // only the owner's own choice is remembered
       app.last = { book: want, tab: '', cycle: '' };
@@ -235,8 +239,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       ok: true,
       settings: { user: app.user },
       me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin },
-      last: app.last,
-      books: lib.list().map((b) => (isOwnerPerson(person) ? b : { name: b.name, modified: b.modified, excelOpen: b.excelOpen })),
+      last: mayOpen(person, app.last.book) ? app.last : { book: '', tab: '', cycle: '' },
+      books: booksFor(person).map((b) => (isOwnerPerson(person) ? b : { name: b.name, modified: b.modified, excelOpen: b.excelOpen })),
       sheetsDir: person.local ? sheetsDir : '',
       team: { enabled: app.team.enabled },
       // for the host: published data to start from (a fresh clone), or a newer publish by someone else
@@ -460,7 +464,9 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     if (path === '/api/team/people') {
       if (!clip(body.name, 80)) return { ok: false, code: 'BAD_INPUT', error: 'Give the person a name.' };
       if (noLink()) return noLink();
-      const { person, key } = addPerson(t, { name: body.name, role: body.role }, stamp());
+      const books = cleanBooks(body.books);
+      if (books && !books.some((n) => lib.list().some((b) => b.name === n))) return { ok: false, code: 'BAD_INPUT', error: 'Choose a workbook, or All workbooks.' };
+      const { person, key } = addPerson(t, { name: body.name, role: body.role, books }, stamp());
       saveApp();
       const inv = linkFor(key);
       return teamInfo({ person: { id: person.id, name: person.name, role: person.role }, link: inv.link, linkWarning: inv.warning });
@@ -469,6 +475,11 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     if (!p) return { ok: false, code: 'GONE', error: 'That person is not in the team any more.' };
     if (path === '/api/team/people/update') {
       if (body.role != null) p.role = ROLES.includes(body.role) ? body.role : p.role;
+      if (body.books !== undefined) {
+        const books = cleanBooks(body.books);
+        if (books && !books.some((n) => lib.list().some((b) => b.name === n))) return { ok: false, code: 'BAD_INPUT', error: 'Choose a workbook, or All workbooks.' };
+        p.books = books;
+      }
       let extra = {};
       if (body.rotate) {
         if (noLink()) return noLink();
@@ -607,7 +618,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     if (pub.running) return pub.running;
     pub.running = (async () => {
       const P = app.publish;
-      if (!lib.list().some((b) => P.books[b.name])) return { ok: false, code: 'NOTHING', error: 'Tick at least one workbook to publish.' };
+      // With nothing ticked, publishing takes everything published down (after it was published once)
+      if (!lib.list().some((b) => P.books[b.name]) && !P.acknowledged) return { ok: false, code: 'NOTHING', error: 'Tick at least one workbook to publish.' };
       if (!P.acknowledged && !confirmPublic) {
         return { ok: false, code: 'CONFIRM_PUBLIC', error: 'Publishing puts the ticked workbooks, their findings and their reports in the public repository: anyone can read them, and they stay in its history.' };
       }
@@ -625,7 +637,9 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
           ...c,
           prefix: PUBLISHED,
           files,
-          message: `Test Run: publish ${index.workbooks.map((w) => w.title).join(', ')} (${index.publishedAt}, ${index.by})`,
+          message: index.workbooks.length
+            ? `Test Run: publish ${index.workbooks.map((w) => w.title).join(', ')} (${index.publishedAt}, ${index.by})`
+            : `Test Run: take the published reports down (${index.publishedAt}, ${index.by})`,
           minor: (path) => path.startsWith(`${PUBLISHED}/reports/`), // reports differ by their time stamp alone
         });
         writeReportsCache(files);
@@ -786,7 +800,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   /** Every test case tab of every workbook, for Bug Reporter's "which suite?" choice. */
   async function suites(person) {
     const out = [];
-    for (const b of lib.list()) {
+    for (const b of booksFor(person)) {
       const boot = await callApi('api_bootstrap', [], b.name, { ...person, remember: false });
       if (!boot.ok) continue;
       const tabs = boot.tabs.filter((x) => ((x.saved && x.saved.role) || x.detected.role) === 'manual').map((x) => x.name);
@@ -828,6 +842,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       body.pageUrl && `Page: ${clip(body.pageUrl, 300)}`,
     ].filter(Boolean).join('\n');
     // The suite chosen in Bug Reporter (workbook + tab), else the one open in Test Run.
+    if (body.book && !mayOpen(person, body.book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
     const list = (await suites(person)).suites;
     const suite = list.find((x) => x.book === body.book) || list.find((x) => x.book === app.last.book) || list[0];
     if (!suite) return { ok: false, code: 'NO_BOOK', error: 'Test Run has no workbook with test cases yet.' };
@@ -947,6 +962,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
   async function removeEvidence(body, person) {
     const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
+    if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
     const it = evidence.remove(book, String(body.tab || ''), String(body.cycle || ''), String(body.key || ''));
     if (!it) return { ok: false, code: 'NO_EVIDENCE', error: 'That case has no attachment any more.' };
     await callApi('api_setEvidenceNote', [{ tab: it.tab, key: it.caseKey, cycle: it.cycle, file: '' }], book, { ...person, remember: false });
@@ -961,6 +977,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const args = Array.isArray(body.args) ? body.args : [];
     const r = args[0] || {};
     const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
+    if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
     const it = book && r.tab && r.key ? evidence.get(book, r.tab, r.cycle || '', r.key) : null;
     const next = r.status == null ? null : String(r.status).trim();
     const changes = next != null && next !== String(r.expect == null ? '' : r.expect).trim();
@@ -1072,7 +1089,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (p) {
           person = p === app.team.admin
             ? { role: 'owner', name: app.user, id: 'admin', admin: true, local: false } // the owner's admin link
-            : { role: p.role, name: p.name, id: p.id, local: false };
+            : { role: p.role, name: p.name, id: p.id, local: false, books: Array.isArray(p.books) ? p.books : null };
           const now = stamp();
           if (p.lastSeen !== now) { p.lastSeen = now; saveApp(); }
         }
@@ -1109,7 +1126,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
       if (req.method === 'GET' && path === '/api/status') {
         if (!person) return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, auth: 'required' });
-        return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, book: app.last.book || null, tab: app.last.tab || null, cycle: app.last.cycle || null, user: app.user, me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin }, consoleUrl: consoleUrl(person) });
+        const seen = mayOpen(person, app.last.book); // the host's open workbook, only if it is shared with them
+        return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, book: (seen && app.last.book) || null, tab: (seen && app.last.tab) || null, cycle: (seen && app.last.cycle) || null, user: app.user, me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin }, consoleUrl: consoleUrl(person) });
       }
       if (!person) {
         return json(401, { ok: false, code: 'AUTH', error: app.team.enabled ? 'This Test Run is shared by invite. Open your invite link (or paste it in Bug Reporter settings).' : 'This Test Run is not shared. Only the laptop running it can open it.' });
@@ -1131,6 +1149,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       }
       if (req.method === 'GET' && path === '/api/evidence/file') {
         const book = url.searchParams.get('book') || '';
+        if (!mayOpen(person, book)) return json(403, { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' });
         const it = lib.list().some((b) => b.name === book) ? evidence.get(book, url.searchParams.get('tab') || '', url.searchParams.get('cycle') || '', url.searchParams.get('key') || '') : null;
         if (!it || !existsSync(evidence.pathOf(book, it))) return json(404, { ok: false, code: 'NO_EVIDENCE', error: 'That attachment is not there any more.' });
         return send(200, it.ext === 'png' ? 'image/png' : it.ext === 'mp4' ? 'video/mp4' : 'video/webm', readFileSync(evidence.pathOf(book, it)), { 'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(it.name)}` });
@@ -1152,6 +1171,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const name = url.searchParams.get('name') || '';
         const file = lib.path(name);
         if (!existsSync(file)) return send(404, 'text/plain', 'Not found');
+        if (!mayOpen(person, name)) return json(403, { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you.' });
         const buf = await downloadCopy(name, person.name);
         return send(200, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf, { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}` });
       }

@@ -90,7 +90,9 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 
 ## Sharing with your team
 
-Test Run runs on one laptop, yours. To share it, turn on **Setup → Sharing → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
+Test Run runs on one laptop, yours. To share it, turn on **Share with my team** in **Setup → Sharing → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
+
+The Team card has three parts: **Connection** (how the team reaches your laptop, with the hosted page and gist under **Link settings**), **Your admin link**, and **People**.
 
 ### 1. How your team reaches your laptop
 
@@ -131,7 +133,7 @@ Test Run only listens on your laptop, so a tunnel gives it an internet address. 
 
 ### 2. Invite people
 
-In **Setup → Sharing → Team**, add each person and choose their **Access** (it starts blank, on *Choose*):
+In **Setup → Sharing → Team → People**, add each person, choose their **Access** (it starts blank, on *Select access*) and the **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused. Change either one at any time in their row.
 
 | Access | Who | What they can do |
 |---|---|---|
@@ -169,8 +171,9 @@ The host can publish the reports to the GitHub repository, so they can be read o
 > **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site. It stays in the repository's history even if you stop publishing it. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
 
 **Setup → Publish** (the host only; testers and viewers cannot publish):
-- **Workbooks to publish:** tick the ones that may go out.
-- **When:** every day at **17:00** (change the time there) while Test Run runs, and **when Test Run stops** (Ctrl+C). These start after your first **Publish now**, which asks once that you know it is public. **Publish** on Summary does the same.
+- **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site (the commit removes them; earlier versions stay in the history).
+- **When:** every day at **17:00** (change the time there) while Test Run runs, and **when Test Run stops** (Ctrl+C in its terminal; Ctrl+C again stops at once without publishing). These start after your first publish. **Publish** on Summary publishes too.
+- **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
 - **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
   - `reports/`: the summary of every test suite and cycle, and the automation summary, which the Pages site shows.
@@ -178,7 +181,7 @@ The host can publish the reports to the GitHub repository, so they can be read o
 - Teammates' results are already saved on the host's laptop, so there is one copy, and that is what is published.
 - If someone else published after you last published or got the data, Test Run says so and does not overwrite theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
 
-**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite (or **Automation**) and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. **Preview here** in Setup → Publish shows the same from your laptop.
+**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite (or **Automation**) and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
 
 ### Carrying on from a clone (hand over)
 

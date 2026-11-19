@@ -463,12 +463,20 @@ dialog.zoom::backdrop {
 .tr-box {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--tr-accent, #188038);
   border-radius: 8px;
+  background: var(--bg-soft);
   margin-bottom: 10px;
 }
+.tr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tr-head label.row { margin: 0; }
+/* Test Run's mark: its green and blue square */
+.tr-mark { width: 16px; height: 16px; border-radius: 4px; flex: none; background: linear-gradient(135deg, #188038 0 50%, var(--accent) 50% 100%); }
+.tr-fields { display: flex; flex-direction: column; gap: 8px; }
 .tr-box .grid2 { margin: 0; }
+.tr-box select, .tr-box input[type="text"] { background: var(--bg); }
 .tr-box.off #trFields, .tr-box.off #trHint { display: none; }
 #trHint.bad { color: var(--bad, #b3261e); }

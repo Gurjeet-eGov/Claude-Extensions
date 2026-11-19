@@ -170,6 +170,40 @@ test('testers mark results under their own name; viewers only look; Setup stays 
   } finally { s.close(); }
 });
 
+test('a teammate can be given one workbook instead of all', async () => {
+  const s = await start();
+  try {
+    await s.local('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: s.fixed });
+    const OTHER = 'Bomet UAT.xlsx';
+    writeFileSync(join(s.sheets, OTHER), await buildSampleXlsx());
+    const bad = await s.local('POST', '/api/team/people', { name: 'Nobody', role: 'tester', books: ['Missing.xlsx'] });
+    assert.equal(bad.code, 'BAD_INPUT', 'only workbooks that exist');
+    const add = await s.local('POST', '/api/team/people', { name: 'Ravi', role: 'tester', books: [OTHER] });
+    assert.equal(add.ok, true, add.error);
+    assert.deepEqual(add.people.find((p) => p.name === 'Ravi').books, [OTHER], 'listed with their workbook');
+    const ravi = { key: keyOf(add.link) };
+    const app = await s.remote('GET', '/api/app', { key: ravi.key });
+    assert.deepEqual(app.books.map((b) => b.name), [OTHER], 'they see only their workbook');
+    assert.equal(app.last.book, '', 'not the host\'s open one');
+    assert.equal((await s.call('api_bootstrap', [], ravi)).code, 'FORBIDDEN', 'another workbook is refused');
+    assert.equal((await s.remote('POST', '/api/call/api_bootstrap', { key: ravi.key, body: { book: OTHER, args: [] } })).ok, true, 'theirs opens');
+    assert.equal((await s.remote('POST', '/api/books/select', { key: ravi.key, body: { name: BOOK } })).code, 'FORBIDDEN');
+    assert.equal((await s.remote('GET', `/api/books/download?name=${encodeURIComponent(BOOK)}`, { key: ravi.key })).status, 403);
+    assert.deepEqual((await s.remote('GET', '/api/suites', { key: ravi.key })).suites.map((x) => x.book), [OTHER], 'Bug Reporter offers only theirs');
+    assert.equal((await s.remote('GET', '/api/status', { key: ravi.key })).book, null, 'the host\'s open workbook is not named');
+    assert.equal((await s.remote('GET', `/api/evidence/file?book=${encodeURIComponent(BOOK)}&tab=x&cycle=x&key=x`, { key: ravi.key })).status, 403, 'nor its evidence');
+    assert.equal((await s.remote('POST', '/api/evidence/remove', { key: ravi.key, body: { book: BOOK, tab: TAB, cycle: 'v2.12', key: 'CMS/01' } })).code, 'FORBIDDEN');
+    assert.equal((await s.remote('GET', `/api/ext/suite?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}`, { key: ravi.key })).code, 'FORBIDDEN', 'nor in Test Run Extension');
+    // All workbooks again
+    const id = add.people.find((p) => p.name === 'Ravi').id;
+    const all = await s.local('POST', '/api/team/people/update', { id, books: 'all' });
+    assert.equal(all.people.find((p) => p.id === id).books, null);
+    assert.deepEqual((await s.remote('GET', '/api/app', { key: ravi.key })).books.map((b) => b.name).sort(), [OTHER, BOOK].sort());
+    // Kept across a restart (app.json), and never in the listing with keys
+    assert.equal(JSON.stringify(all.people).includes('hash'), false);
+  } finally { s.close(); }
+});
+
 test('the admin link: the owner from another computer can do everything the laptop can', async () => {
   const s = await start();
   try {

@@ -94,6 +94,32 @@ test('publish: the host ticks workbooks, confirms once, and one commit holds the
   } finally { h.close(); }
 });
 
+test('with nothing ticked, a publish takes every published report down', async () => {
+  const gh = makeFakeGh(mkdtempSync(join(tmpdir(), 'testrun-gh-')));
+  const h = await host({ gh });
+  try {
+    await h.local('POST', '/api/publish/settings', { books: { [BOOK]: true } });
+    assert.equal((await h.local('POST', '/api/publish/now', { confirmPublic: true })).ok, true);
+    const slug = slugFor(BOOK);
+    assert.ok(files(gh)[`${PREFIX}/reports/${slug}.json`]);
+    // Untick it: one commit removes it all; the index stays, listing no workbooks
+    await h.local('POST', '/api/publish/settings', { books: { [BOOK]: false } });
+    const down = await h.local('POST', '/api/publish/now', {});
+    assert.equal(down.ok, true, down.error);
+    assert.equal(down.result.committed, true);
+    assert.deepEqual(Object.keys(files(gh)).sort(), ['README.md', `${PREFIX}/reports/index.json`], 'workbooks, sidecars and reports removed');
+    assert.deepEqual(json(files(gh)[`${PREFIX}/reports/index.json`]).workbooks, []);
+    assert.match(gh.readRepo().message, /take the published reports down/);
+    assert.equal(down.last.note, '1 file updated, 4 removed.', 'the index, and the four files of the workbook');
+    // The laptop's copy of the reports follows
+    assert.deepEqual((await (await fetch(`${h.base}reports/index.json`)).json()).workbooks, []);
+    assert.equal((await fetch(`${h.base}reports/${slug}.json`)).status, 404);
+    // Again: nothing left to take down
+    const again = await h.local('POST', '/api/publish/now', {});
+    assert.deepEqual([again.ok, again.result.committed], [true, false]);
+  } finally { h.close(); }
+});
+
 test('only the host publishes: testers and viewers are refused', async () => {
   const gh = makeFakeGh(mkdtempSync(join(tmpdir(), 'testrun-gh-')));
   const h = await host({ gh });
