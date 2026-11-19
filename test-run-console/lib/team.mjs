@@ -5,9 +5,11 @@
 // at a fixed address: Tailscale Funnel, or a Cloudflare named tunnel). Every
 // request that comes through a tunnel must carry an invite key:
 //   Authorization: Bearer <key>
-// The owner makes one invite link per person in Setup → Team. Only a hash of
-// each key is kept (in sheets/.testrun/app.json), so a lost link is replaced,
-// never shown again.
+// The owner makes one invite link per person in Setup → Team. Requests are
+// checked against a hash of each key. The key itself is kept too, in
+// sheets/.testrun/app.json on the owner's laptop (git-ignored, readable only by
+// the owner), so the owner can copy a person's link again; it never leaves the
+// laptop except in that copied link.
 //
 // Who can do what:
 //   owner  - the person at the laptop (requests from 127.0.0.1, no key needed)
@@ -82,6 +84,8 @@ export function normalizeTeam(t = {}) {
         name: clip(p.name, 80) || 'Teammate',
         role: ROLES.includes(p.role) ? p.role : 'tester',
         hash: String(p.hash),
+        // the key, so the link can be copied again (kept only if it matches the hash)
+        key: /^[\w-]{16,200}$/.test(String(p.key || '')) && hashKey(p.key) === String(p.hash) ? String(p.key) : '',
         created: clip(p.created, 40),
         lastSeen: clip(p.lastSeen, 40),
       })),
@@ -102,7 +106,7 @@ export function personForKey(team, key) {
 /** Add a person; returns { person, key } (the key is shown to the owner once). */
 export function addPerson(team, { name, role }, now = '') {
   const key = newKey();
-  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: ROLES.includes(role) ? role : 'tester', hash: hashKey(key), created: now, lastSeen: '' };
+  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: ROLES.includes(role) ? role : 'tester', hash: hashKey(key), key, created: now, lastSeen: '' };
   team.people.push(person);
   return { person, key };
 }
@@ -111,12 +115,13 @@ export function addPerson(team, { name, role }, now = '') {
 export function rotateKey(person) {
   const key = newKey();
   person.hash = hashKey(key);
+  person.key = key;
   return key;
 }
 
-/** What the page shows about people (never the hashes). */
+/** What the page shows about people (never keys or hashes; canCopy: the link can be copied again). */
 export function publicPeople(team) {
-  return team.people.map(({ id, name, role, created, lastSeen }) => ({ id, name, role, created, lastSeen }));
+  return team.people.map(({ id, name, role, created, lastSeen, key }) => ({ id, name, role, created, lastSeen, canCopy: !!key }));
 }
 
 /**

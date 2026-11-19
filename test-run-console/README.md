@@ -119,7 +119,8 @@ In **Setup → Team**, add each person with what they can do:
 | Mark results | testers | Run: mark, clear, edit, deprecate and mark duplicates. Known issues: type titles and priorities. Findings: write them up. Summary. *Tested by* shows their name. |
 | View only | managers | Run, Known issues and Summary, read-only. |
 
-- Each person gets their own invite link. Send it to them privately. It is shown once; if it is lost, make a new one.
+- Each person gets their own invite link. Send it to them privately.
+- **Copy link** gives you the same link again if they lose it, with the current address. **New link** replaces it; the old one stops working. (People added before Copy link existed need one **New link** first.)
 - Opening the link signs them in. Their browser keeps it, so they bookmark the page.
 - **Remove** someone, or make them a **New link**: the old link stops working at once.
 - Setup, cycles, workbooks and the team stay with you, at the laptop.
@@ -129,7 +130,7 @@ In **Setup → Team**, add each person with what they can do:
 **How access works:**
 - Requests from your own laptop (http://127.0.0.1:5178) need no key, as before.
 - Everything that comes through the tunnel must carry an invite key.
-- Only a hash of each key is stored, in `sheets/.testrun/app.json`, never the key itself.
+- Keys are checked against a stored hash. The keys themselves are kept in `sheets/.testrun/app.json` so links can be copied again: on your laptop only, never in git, and readable only by your user account.
 - The page itself is public; the workbook, issues, findings and summary are not.
 
 ## With Bug Reporter

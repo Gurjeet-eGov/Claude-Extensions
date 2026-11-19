@@ -3,7 +3,7 @@
 // the gist that keeps its address findable. Fake cloudflared and gh.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import http from 'node:http';
@@ -111,8 +111,8 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     const boss = await s.local('POST', '/api/team/people', { name: 'Manager', role: 'viewer' });
     const tester = { key: keyOf(priya.link) };
     const viewer = { key: keyOf(boss.link) };
-    assert.equal(JSON.stringify(priya.people).includes('hash'), false, 'key hashes never leave the server');
-    assert.doesNotMatch(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8'), new RegExp(tester.key), 'only a hash of the key is stored');
+    assert.equal(/hash|"key"/.test(JSON.stringify(priya.people)), false, 'keys and hashes never leave the server in listings');
+    assert.equal(statSync(join(s.sheets, '.testrun', 'app.json')).mode & 0o777, 0o600, 'the file holding the keys is readable by the owner only');
 
     const me = await s.remote('GET', '/api/app', { key: tester.key });
     assert.deepEqual(me.me, { name: 'Priya (QA)', role: 'tester', local: false });
@@ -139,10 +139,17 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     const seen = await s.local('GET', '/api/team');
     assert.ok(seen.people.find((p) => p.name === 'Priya (QA)').lastSeen, 'last seen is kept');
 
-    // A new link replaces the old one; removing someone shuts them out at once.
+    // A lost link can be copied again: the same link, still working.
     const id = seen.people.find((p) => p.name === 'Priya (QA)').id;
+    assert.equal(seen.people.find((p) => p.id === id).canCopy, true);
+    const again = await s.local('POST', '/api/team/people/link', { id });
+    assert.equal(again.ok, true, again.error);
+    assert.equal(again.link, priya.link, 'the same link as when they were added');
+    assert.equal((await s.remote('POST', '/api/team/people/link', { key: tester.key, body: { id } })).status, 403, 'only the owner, at the laptop');
+    // A new link replaces the old one; removing someone shuts them out at once.
     const rot = await s.local('POST', '/api/team/people/update', { id, rotate: true });
     assert.equal((await s.remote('GET', '/api/app', { key: tester.key })).status, 401, 'old link stops working');
+    assert.equal((await s.local('POST', '/api/team/people/link', { id })).link, rot.link, 'Copy link now gives the new one');
     assert.equal((await s.remote('GET', '/api/app', { key: keyOf(rot.link) })).status, 200, 'new link works');
     await s.local('POST', '/api/team/people/update', { id, role: 'viewer' });
     assert.equal((await s.remote('GET', '/api/app', { key: keyOf(rot.link) })).me.role, 'viewer', 'role changes apply at once');
@@ -235,7 +242,8 @@ test('a dropped tunnel comes back by itself with its new address in the gist; sh
     assert.equal(on.address.tunnel.url, urls[0]);
     assert.equal(on.team.sharing, true);
     // cloudflared exits: Test Run notices, says so, and starts it again
-    const back = await until(async () => { const t = await s.local('GET', '/api/team'); return t.address.tunnel.url === urls[1] && t; });
+    const gistWrites = () => readFileSync(s.gh.log, 'utf8').trim().split('\n').length;
+    const back = await until(async () => { const t = await s.local('GET', '/api/team'); return t.address.tunnel.url === urls[1] && gistWrites() === 2 && t; });
     assert.equal(back.address.effective, urls[1]);
     const gists = readFileSync(s.gh.log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepEqual(gists.map((g) => JSON.parse(g.body.files['test-run.json'].content).url), urls, 'the gist follows the new address');
@@ -294,6 +302,10 @@ test('team helpers: invite links, keys, local requests, permissions, the Pages a
   const { person, key } = addPerson(team, { name: 'A', role: 'nonsense' });
   assert.equal(person.role, 'tester', 'unknown roles become tester');
   assert.equal(personForKey(team, key), person);
+  assert.equal(normalizeTeam({ enabled: true, people: [{ ...person }] }).people[0].key, key, 'the key is kept when it matches its hash');
+  assert.equal(normalizeTeam({ enabled: true, people: [{ ...person, key: 'x'.repeat(32) }] }).people[0].key, '', 'a key that does not match is dropped');
+  const { key: _k, ...older } = person;
+  assert.equal(normalizeTeam({ enabled: true, people: [older] }).people[0].key, '', 'people added before keys were kept: no copy, New link once');
   assert.equal(personForKey(team, key + 'x'), null);
   assert.equal(personForKey({ ...team, enabled: false }, key), null);
   assert.deepEqual(inviteLink(team, 'https://a.example', 'K'), { link: 'https://a.example/#join=K', warning: inviteLink(team, 'https://a.example', 'K').warning });

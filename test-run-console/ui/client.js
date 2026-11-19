@@ -1392,7 +1392,7 @@
     // 2. People
     h += '<div class="subsection"><h3>2. People</h3>';
     if (S.teamLink) {
-      h += '<div class="note info stack-s"><span>Invite link for <b>' + esc(S.teamLink.name) + '</b>. Send it to them privately; it is shown only now. If it is lost, make a new one.</span>' +
+      h += '<div class="note info stack-s"><span>Invite link for <b>' + esc(S.teamLink.name) + '</b>. Send it to them privately. If they lose it, <b>Copy link</b> in the list gives you the same link again.</span>' +
         '<div class="row"><input id="teamLink" readonly value="' + esc(S.teamLink.link) + '" class="grow mono"><button class="primary" data-action="copy-link">Copy</button><button class="ghost" data-action="hide-link">Done</button></div>' +
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
@@ -1401,7 +1401,10 @@
         return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="What ' + esc(p.name) + ' can do" data-change="team-role" data-id="' + esc(p.id) + '">' +
           opt('tester', 'Mark results', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
           '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
-          '<td class="num"><div class="row" style="justify-content:flex-end"><button class="ghost" data-action="team-rotate" data-id="' + esc(p.id) + '" title="Make a new link; the old one stops working">New link</button>' +
+          '<td class="num"><div class="row" style="justify-content:flex-end">' +
+          '<button class="ghost" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && r.canInvite ? '' : ' disabled') +
+          ' title="' + (!p.canCopy ? 'This link was made before links could be copied again: use New link once' : !r.canInvite ? 'Links need an address first' : 'Copy ' + esc(p.name) + '\'s link again (it keeps working)') + '">Copy link</button>' +
+          '<button class="ghost" data-action="team-rotate" data-id="' + esc(p.id) + '" title="Make a new link; the old one stops working">New link</button>' +
           '<button class="ghost danger" data-action="team-remove" data-id="' + esc(p.id) + '">Remove</button></div></td></tr>';
       }).join('') + '</tbody></table></div>';
     } else {
@@ -1822,6 +1825,22 @@
       teamCall('/api/team/people', { name: name, role: val('team:role', 'tester') }, function (r) {
         S.teamLink = { name: name, link: r.link, warn: r.linkWarning };
         clearForm('team:name');
+      });
+    },
+    'team-copy': function (el) {
+      var id = el.getAttribute('data-id');
+      var p = S.team.people.filter(function (x) { return x.id === id; })[0];
+      if (!p) return;
+      TR.http('POST', '/api/team/people/link', { id: id }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        S.team = r;
+        copyText(r.link).then(function (ok) {
+          // Shown as well, in case copying is blocked or the warning matters
+          S.teamLink = { name: p.name, link: r.link, warn: r.linkWarning };
+          render();
+          if (ok) toast(p.name + '\'s link is copied.');
+          else { var t = $('teamLink'); if (t) t.select(); toast('Press Cmd+C (Ctrl+C) to copy the selected link.'); }
+        });
       });
     },
     'team-rotate': function (el) {

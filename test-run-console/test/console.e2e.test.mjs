@@ -225,6 +225,13 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         });
         await mate.reload();
         await mate.locator('.who', { hasText: 'Priya (QA)' }).waitFor(); // the invite is kept in this browser
+        // The owner copies Priya's link again from Setup → Team: the same, working link.
+        await page.reload();
+        await page.locator('.nav [data-view=setup]').click();
+        await page.locator('#team tr', { hasText: 'Priya (QA)' }).getByRole('button', { name: 'Copy link' }).click();
+        await page.locator('#teamLink').waitFor();
+        assert.equal(await page.locator('#teamLink').inputValue(), inv.link);
+        await page.locator('[data-action=hide-link]').click();
         const boss = await api('/api/team/people', { name: 'Manager', role: 'viewer' });
         await mate.goto(boss.link);
         await mate.locator('.banner', { hasText: 'View only.' }).waitFor();
