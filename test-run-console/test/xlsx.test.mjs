@@ -94,6 +94,34 @@ test('deleting a row moves dropdowns, merges and conditional formats up; a merge
   assert.equal(s2.ws.conditionalFormattings[0].ref, 'B2:B6');
 });
 
+test('deleting a column moves dropdowns, merges, conditional formats and widths left', async () => {
+  const book = await bookWith((wb) => {
+    const ws = wb.addWorksheet('S');
+    ws.getRow(1).values = ['ID', 'Status v1', 'Comment v1', 'Status v2', 'Comment v2'];
+    ws.getColumn(4).width = 30;
+    for (let r = 2; r <= 4; r++) {
+      ws.getRow(r).values = [`T-${r}`, 'Pass', 'old', 'Fail', 'new'];
+      ws.getCell(r, 2).dataValidation = { type: 'list', formulae: ['"Pass,Fail"'] };
+      ws.getCell(r, 4).dataValidation = { type: 'list', formulae: ['"Pass,Fail"'] };
+    }
+    ws.mergeCells('D5:E5');
+    ws.getCell('D5').value = 'v2 notes';
+    ws.addConditionalFormatting({ ref: 'B2:E4', rules: [{ type: 'containsText', operator: 'containsText', text: 'Fail', style: { font: { bold: true } }, priority: 1 }] });
+  });
+  const sh = book.getSheetByName('S');
+  sh.deleteColumn(3);
+  sh.deleteColumn(2);
+  const again = await reload(book);
+  const s2 = again.getSheetByName('S');
+  assert.deepEqual(s2.getRange(1, 1, 2, 3).getDisplayValues(), [['ID', 'Status v2', 'Comment v2'], ['T-2', 'Fail', 'new']]);
+  assert.ok(dvAt(again, 'S', 'B2'), 'the v2 dropdown moved left');
+  assert.equal(dvAt(again, 'S', 'D2'), undefined);
+  assert.deepEqual(s2.ws.model.merges, ['B5:C5']);
+  assert.equal(s2.getRange(5, 2).getValue(), 'v2 notes');
+  assert.equal(s2.ws.conditionalFormattings[0].ref, 'B2:C4');
+  assert.equal(s2.ws.getColumn(2).width, 30, 'its width moved with it');
+});
+
 test('display text follows Sheets: dates, formulas, rich text, merged followers, apostrophes', async () => {
   const book = await bookWith((wb) => {
     const ws = wb.addWorksheet('S');

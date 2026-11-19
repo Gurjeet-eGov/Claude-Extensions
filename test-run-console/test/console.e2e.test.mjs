@@ -249,6 +249,13 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await page.locator('[data-action=setup-part][data-part=sharing]').click();
         const priyaRow = page.locator('#team tr', { hasText: 'Priya (QA)' });
         assert.equal(await priyaRow.locator('select option:checked').textContent(), 'Update status');
+        assert.equal(await page.locator('#team th', { hasText: 'Access' }).count(), 1, 'the column is Access');
+        // Adding someone: their access starts blank ("Choose") and must be chosen
+        assert.equal(await page.locator('#teamRole option:checked').textContent(), 'Choose');
+        await page.locator('#teamName').fill('Nobody yet');
+        await page.getByRole('button', { name: 'Add and make a link' }).click();
+        await page.locator('.toast', { hasText: 'Choose their access first.' }).waitFor();
+        await page.locator('#teamName').fill('');
         await priyaRow.getByRole('button', { name: 'Copy link' }).click();
         await page.locator('.toast', { hasText: "Priya (QA)'s invite link is copied" }).waitFor();
         assert.equal(await clipboard(), inv.link);
@@ -584,6 +591,32 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.keyboard.press('p');
       await page.locator('.banner', { hasText: 'View only.' }).waitFor();
       chmodSync(file, 0o644);
+    });
+
+    await t.test('Setup: × removes an earlier test cycle, after a pop-up saying it cannot be undone', async () => {
+      server.library.open.delete(BOOK); // writable again
+      await page.reload();
+      await page.locator('.nav [data-view=setup]').click();
+      const card = page.locator('section').filter({ has: page.getByRole('heading', { name: TAB, exact: true }) });
+      await card.locator('.cycle-chip', { hasText: 'v2.12' }).locator('[data-action=cycle-remove]').click();
+      await page.locator('.modal-box', { hasText: 'This cannot be undone.' }).waitFor();
+      await page.locator('.modal-box').getByRole('button', { name: 'Remove cycle' }).click();
+      await page.locator('.toast', { hasText: 'Removed the cycle' }).waitFor();
+      await eventually(async () => !(await disk())[0].some((h) => /v2\.12/.test(h)));
+      await card.locator('.cycle-chip', { hasText: 'v2.20.1' }).waitFor();
+      assert.equal(await card.locator('.cycle-chip').count(), 1);
+      assert.equal(await card.locator('[data-action=cycle-remove]').count(), 0, 'the last cycle stays');
+      await page.locator('.nav [data-view=run]').click();
+      assert.deepEqual(await page.locator('#cyclePick option').allTextContents(), ['Cycle v2.20.1']);
+    });
+
+    await t.test('the Workbook picker keeps one width, whatever the names', async () => {
+      const width = () => page.locator('#bookPick').evaluate((e) => Math.round(e.getBoundingClientRect().width));
+      const w1 = await width();
+      await page.locator('#bookPick').selectOption('Bomet Test Cases.xlsx');
+      await page.locator('#bookPick option:checked', { hasText: 'Bomet Test Cases' }).waitFor({ state: 'attached' });
+      await page.getByText('Welcome.').waitFor(); // its Setup has opened
+      assert.deepEqual([w1, await width()], [240, 240]);
     });
 
     assert.deepEqual(errors, [], 'no script errors on the page');
