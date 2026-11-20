@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseLink, consoleUrl, request, Offline } from '../lib/testrun.js';
-import { fitWithin, fmtBytes, fmtClip, fmtTime, limitsLine, stopAtBytes, pickMime, withoutEvidenceLine } from '../lib/media.js';
+import { fitWithin, fmtBytes, fmtClip, fmtTime, limitsLine, stopAtBytes, pickMime, withoutEvidenceLine, elapsedMs } from '../lib/media.js';
 
 test('access links: a teammate\'s link, a gist link, a link straight to Test Run, the laptop itself', () => {
   assert.deepEqual(parseLink('https://org.github.io/repo/test-run/#join=abc_DEF-123&server=https%3A%2F%2Fx.trycloudflare.com'),
@@ -33,7 +33,9 @@ test('media: photos fit 1920×1080, sizes and lengths read well, recordings stop
   assert.ok(at < max - 600000 && at > max - 800000, `stops ~2 s early (${max - at} bytes of room)`);
   assert.equal(pickMime((t) => t.startsWith('video/webm'), false), 'video/webm;codecs=vp9');
   assert.equal(pickMime((t) => t.startsWith('video/mp4'), true), 'video/mp4;codecs=avc1,mp4a.40.2', 'MP4 first where Chrome can make it');
-  assert.equal(withoutEvidenceLine('Labels missing\nEvidence: CMS-07_v2.12.png\n'), 'Labels missing');
+  assert.equal(withoutEvidenceLine('Labels missing\nEvidence: CMS-07_v2.12.png, CMS-07_v2.12.mp4\n'), 'Labels missing');
+  assert.equal(elapsedMs({ t0: 1000, pausedMs: 2000, pausedAt: 0 }, 10000), 7000, 'pauses do not count');
+  assert.equal(elapsedMs({ t0: 1000, pausedMs: 2000, pausedAt: 8000 }, 10000), 5000, 'nor does the pause going on');
 });
 
 test('requests carry the key; a moved address is found through the gist once', async () => {

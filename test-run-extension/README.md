@@ -16,10 +16,11 @@ The extension has a fixed ID (from the `key` in `manifest.json`), so Test Run on
 2. **Choose Workbook/Suite:** opens Test Run. Pick the workbook, test suite and cycle there, and click a case. The extension shows the same, and follows as you move. **‹ ›** and **Find a case by ID** move within the suite.
 3. **Evidence (optional the first time):**
    - **Screenshot:** the page you are on, as a PNG that fits 1920×1080.
-   - **Record:** a small Recorder window opens. **Choose what to record** (Chrome asks for a screen, window or tab, and whether to share audio), then **Stop and attach**. It stops by itself just before the size limit.
+   - **Record:** a small Recorder window opens. **Choose what to record** (Chrome asks for a screen, window or tab, and whether to share audio). The window then minimises itself, and in the popup **Pause** (then **Resume**) and **Stop** take the Record button's place. Stop attaches the recording. It stops by itself just before the size limit.
+   - A case can have one screenshot and one recording in each cycle; a new one replaces the one of the same kind.
 4. **Mark the result:** Pass, Fail, NA or Skip, with a comment if you like. It moves on to the next case.
 
-**Changing a result that has evidence:** pick the new result; the extension asks for new evidence, which replaces the old file, and then saves the result. Or remove the file first (✕): it is deleted from Test Run for good, and the result can then change freely.
+**Changing a result that has evidence:** pick the new result; the extension asks for new evidence (a screenshot or a recording) and then saves the result with it. The old result's other file is deleted then, as it showed the old result. Or remove the files first (✕, one at a time): they are deleted from Test Run for good, and the result can then change freely.
 
 The limits (720p or 1080p at 30 fps, 20 MB a file, photos up to 1920×1080) are set by the host in Test Run's **Setup → Media**, and shown at the bottom of the popup.
 

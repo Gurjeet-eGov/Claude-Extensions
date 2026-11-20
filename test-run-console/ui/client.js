@@ -836,13 +836,15 @@
     }).join('');
     var d = S.drafts[c.key] || {};
     var a = '<div class="status-btns" role="group" aria-label="Result">' + btns + '</div>';
-    var ev = m.evidence && m.evidence[c.key];
-    if (ev) {
-      a += '<div class="evidence-row"><span class="small"><span class="muted">Evidence' + (ev.usedFor ? ' for ' + esc(ev.usedFor) : '') + ':</span> <span class="mono">' + esc(ev.name) + '</span> <span class="faint">' + fmtBytes(ev.size) + (ev.by ? ' · ' + esc(ev.by) : '') + '</span></span>' +
-        '<span class="grow"></span><button class="link-btn" data-action="ev-view" data-key="' + esc(c.key) + '">View</button>' +
-        (S.readOnly ? '' : '<button class="link-btn danger" data-action="ev-remove" data-key="' + esc(c.key) + '" title="Delete the file for good">Remove</button>') + '</div>';
-      if (ev.usedFor && !S.readOnly) a += '<div class="small faint">To change this result, attach new evidence with Test Run Extension, or remove the file first.</div>';
-    }
+    var ev = (m.evidence && m.evidence[c.key]) || {};
+    var files = ['photo', 'video'].filter(function (k) { return ev[k]; });
+    files.forEach(function (k) {
+      var f = ev[k];
+      a += '<div class="evidence-row"><span class="small"><span class="muted">' + (k === 'photo' ? 'Screenshot' : 'Recording') + (f.usedFor ? ' for ' + esc(f.usedFor) : '') + ':</span> <span class="mono">' + esc(f.name) + '</span> <span class="faint">' + fmtBytes(f.size) + (f.by ? ' · ' + esc(f.by) : '') + '</span></span>' +
+        '<span class="grow"></span><button class="link-btn" data-action="ev-view" data-key="' + esc(c.key) + '" data-kind="' + k + '">View</button>' +
+        (S.readOnly ? '' : '<button class="link-btn danger" data-action="ev-remove" data-key="' + esc(c.key) + '" data-kind="' + k + '" title="Delete the file for good">Remove</button>') + '</div>';
+    });
+    if (files.some(function (k) { return ev[k].usedFor; }) && !S.readOnly) a += '<div class="small faint">To change this result, attach new evidence with Test Run Extension, or remove the files first.</div>';
     if (now) a += '<div class="row small"><span class="muted">Marked <b>' + esc(now) + '</b>.</span><button class="link-btn" data-action="clear-result"' + dis + ' title="Leave the case not run, to come back to it (0)">Clear result</button></div>';
     var failing = TR.classify(now) === 'fail';
     if (cur().hasComment) {
@@ -2537,16 +2539,17 @@
     'ev-view': function (el) {
       var k = el.getAttribute('data-key');
       var w = window.open('', '_blank');
-      TR.fetchBlob('/api/evidence/file?book=' + encodeURIComponent(book()) + '&tab=' + encodeURIComponent(S.tab) + '&cycle=' + encodeURIComponent(cycleLabel()) + '&key=' + encodeURIComponent(k)).then(function (r) {
+      TR.fetchBlob('/api/evidence/file?book=' + encodeURIComponent(book()) + '&tab=' + encodeURIComponent(S.tab) + '&cycle=' + encodeURIComponent(cycleLabel()) + '&key=' + encodeURIComponent(k) + '&kind=' + encodeURIComponent(el.getAttribute('data-kind') || '')).then(function (r) {
         if (!r.ok) { if (w) w.close(); toast(r.error, 'bad'); return; }
         if (w) w.location = URL.createObjectURL(r.blob); else TR.saveBlob(r.blob, k);
       });
     },
     'ev-remove': function (el) {
       var k = el.getAttribute('data-key');
-      var ev = S.model.evidence && S.model.evidence[k];
+      var kind = el.getAttribute('data-kind');
+      var ev = S.model.evidence && S.model.evidence[k] && S.model.evidence[k][kind];
       if (!ev || !window.confirm('Delete ' + ev.name + ' for good? It cannot be brought back.')) return;
-      TR.http('POST', '/api/evidence/remove', { book: book(), tab: S.tab, cycle: cycleLabel(), key: k }).then(function (r) {
+      TR.http('POST', '/api/evidence/remove', { book: book(), tab: S.tab, cycle: cycleLabel(), key: k, kind: kind }).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }
         toast('Deleted ' + r.removed + '.');
         loadTab(cycleLabel(), true);

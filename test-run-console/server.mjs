@@ -28,7 +28,7 @@ import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slug
 import { isWorkbookName } from './lib/books.mjs';
 import { randomBytes } from 'node:crypto';
 import { extensionIdFromKey } from '../bug-reporter/host/lib/extension-id.mjs';
-import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName } from './lib/evidence.mjs';
+import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
 
 const UI = join(ROOT, 'ui');
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js' };
@@ -911,11 +911,17 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const whoKey = (person) => (isOwnerPerson(person) ? 'owner' : `p:${person.id}`);
 
   /** Evidence as the pages see it: no paths on the laptop. */
-  const evidenceOut = (map) => {
-    const out = {};
-    for (const [k, it] of Object.entries(map)) out[k] = { name: it.name, size: it.size, kind: it.kind, by: it.by, at: it.at, usedFor: it.usedFor || '' };
-    return out;
-  };
+  const itemOut = (it) => ({ name: it.name, size: it.size, kind: it.kind, by: it.by, at: it.at, usedFor: it.usedFor || '' });
+  /** A case's files: { photo?, video? }. */
+  const filesOut = (byKind) => { const o = {}; for (const [k, it] of Object.entries(byKind || {})) o[k] = itemOut(it); return o; };
+  /** { caseKey: { photo?, video? } } */
+  const evidenceOut = (map) => { const out = {}; for (const [ck, byKind] of Object.entries(map)) out[ck] = filesOut(byKind); return out; };
+
+  /** The case's comment names the files that back its result: "Evidence: a.png, b.mp4" (none: no line). */
+  function writeEvidenceNote(book, tab, cycle, key, person) {
+    const used = Object.values(evidence.forCase(book, tab, cycle, key)).filter((x) => x.usedFor);
+    return callApi('api_setEvidenceNote', [{ tab, key, cycle, files: used.map((x) => x.name) }], book, { ...person, remember: false });
+  }
 
   /** One suite and cycle as the extension needs it: its result values and live cases, each with its evidence. */
   async function extSuite(q, person) {
@@ -934,12 +940,12 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       cases: m.cases.filter((c) => !c.retired).map((c) => ({
         key: c.key, id: c.id, sh: c.sh, row: c.row, scenario: clip(c.scenario, 400), group1: c.group1, group2: c.group2,
         status: ci >= 0 ? c.statuses[ci] || '' : '', comment: ci >= 0 ? String(c.comments[ci] || '') : '',
-        evidence: m.evidence[c.key] || null,
+        evidence: m.evidence[c.key] || null, // { photo?, video? }
       })),
     };
   }
 
-  /** A file from the extension, for one case and cycle. Replaces the case's earlier file. */
+  /** A file from the extension, for one case and cycle. Replaces the case's earlier file of the same kind. */
   async function addEvidence(q, buf, person) {
     if (!buf.length) return { ok: false, code: 'BAD_INPUT', error: 'The file is empty.' };
     const type = evidenceType(buf);
@@ -954,40 +960,51 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const forStatus = clip(q.forStatus, 60);
     const backsNow = !!c.status && (!forStatus || forStatus === c.status);
     const item = evidence.put(s.book, { tab: s.tab, cycle: s.cycle, caseKey: c.key, caseId: c.id, buf, type, by: person.name, usedFor: backsNow ? c.status : '' });
-    if (backsNow) await callApi('api_setEvidenceNote', [{ tab: s.tab, key: c.key, cycle: s.cycle, file: item.name }], s.book, { ...person, remember: false });
-    return { ok: true, book: s.book, tab: s.tab, cycle: s.cycle, key: c.key, evidence: evidenceOut({ [c.key]: item })[c.key] };
+    if (backsNow) await writeEvidenceNote(s.book, s.tab, s.cycle, c.key, person);
+    return { ok: true, book: s.book, tab: s.tab, cycle: s.cycle, key: c.key, added: itemOut(item), evidence: filesOut(evidence.forCase(s.book, s.tab, s.cycle, c.key)) };
   }
 
+  /** Remove a case's screenshot or recording (kind), or both (no kind): deleted for good. */
   async function removeEvidence(body, person) {
     const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
     if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
-    const it = evidence.remove(book, String(body.tab || ''), String(body.cycle || ''), String(body.key || ''));
-    if (!it) return { ok: false, code: 'NO_EVIDENCE', error: 'That case has no attachment any more.' };
-    await callApi('api_setEvidenceNote', [{ tab: it.tab, key: it.caseKey, cycle: it.cycle, file: '' }], book, { ...person, remember: false });
-    return { ok: true, removed: it.name };
+    const tab = String(body.tab || '');
+    const cycle = String(body.cycle || '');
+    const key = String(body.key || '');
+    const kinds = KINDS.includes(body.kind) ? [body.kind] : KINDS;
+    const gone = kinds.map((k) => evidence.remove(book, tab, cycle, key, k)).filter(Boolean);
+    if (!gone.length) return { ok: false, code: 'NO_EVIDENCE', error: 'That case has no such attachment any more.' };
+    await writeEvidenceNote(book, gone[0].tab, gone[0].cycle, gone[0].caseKey, person);
+    return { ok: true, removed: gone.map((x) => x.name).join(', '), evidence: filesOut(evidence.forCase(book, tab, cycle, key)) };
   }
 
   /**
-   * Marking a result that has evidence: a result backed by a file cannot change until the
-   * file is replaced (or removed). A file attached for the next result is used by it.
+   * Marking a result that has evidence: a result backed by files changes only with a new
+   * file (a screenshot or a recording) attached for it, or once the files are removed. When
+   * it changes, the new files back the new result and the old result's files are deleted.
    */
   async function markWithEvidence(body, person) {
     const args = Array.isArray(body.args) ? body.args : [];
     const r = args[0] || {};
     const book = lib.list().some((b) => b.name === body.book) ? body.book : app.last.book;
     if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
-    const it = book && r.tab && r.key ? evidence.get(book, r.tab, r.cycle || '', r.key) : null;
+    const cycle = r.cycle || '';
+    const items = book && r.tab && r.key ? Object.values(evidence.forCase(book, r.tab, cycle, r.key)) : [];
     const next = r.status == null ? null : String(r.status).trim();
     const changes = next != null && next !== String(r.expect == null ? '' : r.expect).trim();
-    if (it && changes && it.usedFor && next !== it.usedFor) {
-      return { ok: false, code: 'EVIDENCE', evidence: evidenceOut({ x: it }).x, error: `${it.caseId || 'This case'} is ${it.usedFor} with evidence (${it.name}). To change the result, attach new evidence with Test Run Extension (it replaces that file), or remove the file first.` };
+    const stale = items.filter((x) => x.usedFor && x.usedFor !== next);
+    const fresh = items.filter((x) => !x.usedFor);
+    if (changes && stale.length && !fresh.length) {
+      return { ok: false, code: 'EVIDENCE', evidence: filesOut(evidence.forCase(book, r.tab, cycle, r.key)), error: `${stale[0].caseId || 'This case'} is ${stale[0].usedFor} with evidence (${stale.map((x) => x.name).join(', ')}). To change the result, attach new evidence with Test Run Extension (a screenshot or a recording), or remove the files first.` };
     }
     const out = await callApi('api_mark', args, body.book, person);
-    if (out && out.ok && it && changes && !it.usedFor && out.status) {
-      evidence.setUsed(out.book, r.tab, r.cycle || '', r.key, out.status);
-      const note = await callApi('api_setEvidenceNote', [{ tab: r.tab, key: r.key, cycle: r.cycle || '', file: it.name }], out.book, { ...person, remember: false });
+    if (out && out.ok && changes && items.length) {
+      for (const x of stale) evidence.remove(out.book, r.tab, cycle, r.key, x.kind); // the old result's files are out of date
+      if (out.status) for (const x of fresh) evidence.setUsed(out.book, r.tab, cycle, r.key, x.kind, out.status);
+      const note = await writeEvidenceNote(out.book, r.tab, cycle, r.key, person);
       if (note.ok && note.comment != null) out.comment = note.comment;
-      out.evidence = evidenceOut({ x: { ...it, usedFor: out.status } }).x;
+      out.evidence = filesOut(evidence.forCase(out.book, r.tab, cycle, r.key));
+      if (stale.length) out.removedEvidence = stale.map((x) => x.name);
     }
     return out;
   }
@@ -1148,7 +1165,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       if (req.method === 'GET' && path === '/api/evidence/file') {
         const book = url.searchParams.get('book') || '';
         if (!mayOpen(person, book)) return json(403, { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' });
-        const it = lib.list().some((b) => b.name === book) ? evidence.get(book, url.searchParams.get('tab') || '', url.searchParams.get('cycle') || '', url.searchParams.get('key') || '') : null;
+        const files = lib.list().some((b) => b.name === book) ? evidence.forCase(book, url.searchParams.get('tab') || '', url.searchParams.get('cycle') || '', url.searchParams.get('key') || '') : {};
+        const it = files[url.searchParams.get('kind')] || files.photo || files.video || null;
         if (!it || !existsSync(evidence.pathOf(book, it))) return json(404, { ok: false, code: 'NO_EVIDENCE', error: 'That attachment is not there any more.' });
         return send(200, it.ext === 'png' ? 'image/png' : it.ext === 'mp4' ? 'video/mp4' : 'video/webm', readFileSync(evidence.pathOf(book, it)), { 'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(it.name)}` });
       }

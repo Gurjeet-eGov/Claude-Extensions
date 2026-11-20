@@ -62,3 +62,11 @@ textarea { resize: vertical; min-height: 44px; }
 .pill.pass { background: var(--pass-bg); color: var(--pass); } .pill.fail { background: var(--fail-bg); color: var(--fail); } .pill.other { background: var(--other-bg); color: var(--other); }
 .loading { padding: 24px 0; text-align: center; color: var(--muted); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* While recording: Pause (or Resume) and Stop share the Record button's place, half each */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.split button { padding: 7px 4px; font-weight: 600; }
+.split .stop { color: var(--fail); border-color: var(--fail); }
+.rec-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.rec-line .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); flex: none; }
+.rec-line .dot.paused { background: var(--other); }

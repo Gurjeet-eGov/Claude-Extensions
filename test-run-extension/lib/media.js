@@ -52,3 +52,9 @@ export function pickMime(isTypeSupported, withAudio) {
 export function withoutEvidenceLine(comment) {
   return String(comment || '').split(/\r?\n/).filter((l) => !/^Evidence:\s/.test(l.trim())).join('\n').replace(/\s+$/, '');
 }
+
+/** How long a recording has run, without its pauses: { t0, pausedMs, pausedAt } -> ms. */
+export function elapsedMs(r, now) {
+  if (!r || !r.t0) return 0;
+  return Math.max(0, now - r.t0 - (r.pausedMs || 0) - (r.pausedAt ? now - r.pausedAt : 0));
+}

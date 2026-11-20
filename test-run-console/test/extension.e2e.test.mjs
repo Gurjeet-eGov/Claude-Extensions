@@ -224,47 +224,73 @@ test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found
       assert.equal(up.ok, true, up.error);
       await popup.locator('#find').fill('CMS/08');
       await popup.locator('#find').press('Enter');
-      await popup.locator('.file .name', { hasText: up.evidence.name }).waitFor();
+      await popup.locator('.file .name', { hasText: up.added.name }).waitFor();
       await popup.locator('.st button[data-value="Fail"]').click();
       await popup.getByText('CMS/08: Fail, with evidence.').waitFor();
-      assert.match((await caseIn('CMS/08')).comment, new RegExp(`Evidence: ${up.evidence.name.replace(/\./g, '\\.')}`));
+      assert.match((await caseIn('CMS/08')).comment, new RegExp(`Evidence: ${up.added.name.replace(/\./g, '\\.')}`));
       await popup.locator('[data-action=prev]').click();
       await popup.locator('.lb', { hasText: 'with evidence' }).waitFor();
       await popup.locator('.st button[data-value="Pass"]').click();
-      await popup.getByText('To change this result to Pass, attach new evidence.').waitFor();
+      await popup.getByText(/To change this result to Pass, attach new evidence: a screenshot or a recording\. The files for Fail are replaced, or deleted once Pass is saved\./).waitFor();
       assert.equal((await caseIn('CMS/08')).status, 'Fail', 'nothing saved yet');
       await popup.getByRole('button', { name: 'Cancel' }).click();
       await popup.locator('[data-action=remove]').click();
-      await popup.getByText(`Delete ${up.evidence.name} for good?`).waitFor();
+      await popup.getByText(`Delete ${up.added.name} for good?`).waitFor();
       await popup.getByRole('button', { name: 'Delete', exact: true }).click();
-      await popup.getByText(`Deleted ${up.evidence.name}.`).waitFor();
+      await popup.getByText(`Deleted ${up.added.name}.`).waitFor();
       assert.equal((await caseIn('CMS/08')).evidence, null);
-      assert.equal(existsSync(join(sheets, '.testrun', 'evidence', 'CMS Sign Off (sample)', TAB, 'v2.12', up.evidence.name)), false, 'gone from the host');
+      assert.equal(existsSync(join(sheets, '.testrun', 'evidence', 'CMS Sign Off (sample)', TAB, 'v2.12', up.added.name)), false, 'gone from the host');
       await popup.locator('.st button[data-value="Pass"]').click();
       await popup.getByText('CMS/08: Pass.').waitFor();
     });
 
-    await t.test('a recording is attached and saves the result that was waiting for it', async () => {
+    await t.test('recording: the window gets out of the way; the popup has Pause and Stop in place of Record; a screenshot and a recording per case', async () => {
       const q = new URLSearchParams({ book: BOOK, tab: TAB, cycle: 'v2.12', key: 'CMS/10', id: 'CMS/10', scenario: 'Resolve with a photo', forStatus: 'Pass', test: 'pattern' });
       const rec = await ctx.newPage();
       await rec.goto(`chrome-extension://${TRX_ID}/recorder/recorder.html?${q}`);
       await rec.getByText('Pass is saved when this recording is attached.').waitFor();
       await rec.getByText(/1080p · 30 fps · up to 20 MB/).waitFor();
+      await rec.getByText(/pause and stop from the Test Run Extension button/).waitFor();
       await rec.getByRole('button', { name: 'Choose what to record' }).click();
-      await rec.getByRole('button', { name: 'Stop and attach' }).waitFor();
-      await rec.waitForTimeout(2500);
-      await rec.getByRole('button', { name: 'Stop and attach' }).click();
+      await rec.getByRole('button', { name: '■ Stop' }).waitFor();
+      // The popup while it records: Pause and Stop, half each, where Record was
+      await popup.locator('#find').fill('CMS/10');
+      await popup.locator('#find').press('Enter');
+      const pause = popup.locator('.split [data-action=rec-pause]');
+      const stop = popup.locator('.split [data-action=rec-stop]');
+      await pause.waitFor();
+      assert.equal(await popup.locator('[data-action=record]').count(), 0, 'no Record while recording');
+      const [pb, sb, shot] = await Promise.all([pause.boundingBox(), stop.boundingBox(), popup.locator('[data-action=screenshot]').boundingBox()]);
+      assert.ok(Math.abs(pb.width - sb.width) < 1, 'equal halves');
+      assert.ok(Math.abs(pb.width + sb.width + 6 - shot.width) < 2, 'together as wide as Record was');
+      await popup.locator('.rec-line', { hasText: 'Recording' }).waitFor();
+      await pause.click();
+      await rec.getByText('Paused').first().waitFor();
+      await popup.locator('.rec-line', { hasText: 'Paused' }).waitFor();
+      await popup.locator('.split [data-action=rec-resume]').click();
+      await rec.getByRole('button', { name: '❚❚ Pause' }).waitFor();
+      await rec.waitForTimeout(1500);
+      await popup.locator('.split [data-action=rec-stop]').click();
       await rec.getByText(/Saved CMS\/10 as Pass, with CMS-10_v2\.12_.+\.(mp4|webm) as evidence\./).waitFor({ timeout: 20000 });
+      await popup.locator('.flash', { hasText: 'Saved CMS/10 as Pass' }).waitFor();
+      await popup.locator('[data-action=record]').waitFor(); // Record is back
       const c = await caseIn('CMS/10');
-      assert.deepEqual([c.status, c.evidence.kind, c.evidence.usedFor], ['Pass', 'video', 'Pass']);
-      assert.ok(c.evidence.size > 1000 && c.evidence.size < 20 * 1024 * 1024);
+      assert.deepEqual([c.status, c.evidence.video.usedFor], ['Pass', 'Pass']);
+      assert.ok(c.evidence.video.size > 1000 && c.evidence.video.size < 20 * 1024 * 1024);
+      // and a screenshot: one of each, side by side
+      const shotUp = await api('POST', `/api/evidence?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12&key=CMS%2F10`, PNG);
+      assert.deepEqual(Object.keys(shotUp.evidence).sort(), ['photo', 'video']);
+      await popup.locator('.file .name', { hasText: shotUp.added.name }).waitFor();
+      await popup.locator('.file .name', { hasText: c.evidence.video.name }).waitFor();
+      assert.equal(await popup.locator('.file').count(), 2);
       await rec.close();
-      // Run in Test Run shows it, with View and Remove
+      // Run in Test Run shows both, each with View and Remove
       await consolePage.reload();
       await consolePage.locator('[data-action=show][data-show=all]').click();
       await consolePage.locator('.case', { hasText: 'CMS/10' }).click();
-      await consolePage.locator('.evidence-row', { hasText: 'Evidence for Pass:' }).locator('.mono', { hasText: c.evidence.name }).waitFor();
-      await consolePage.locator('.evidence-row [data-action=ev-remove]').waitFor();
+      await consolePage.locator('.evidence-row', { hasText: 'Screenshot for Pass:' }).locator('.mono', { hasText: shotUp.added.name }).waitFor();
+      await consolePage.locator('.evidence-row', { hasText: 'Recording for Pass:' }).locator('.mono', { hasText: c.evidence.video.name }).waitFor();
+      assert.equal(await consolePage.locator('.evidence-row [data-action=ev-remove]').count(), 2);
     });
 
     await t.test('the host: Media sets the limits the extension shows; Download offers a Complete Report', async () => {

@@ -3,7 +3,7 @@
 // screenshot or record the screen as evidence, and mark the result. A result that has
 // evidence can only change with new evidence (or after the file is removed).
 import { parseLink, request, consoleUrl, Offline } from '../lib/testrun.js';
-import { fitWithin, fmtBytes, limitsLine, withoutEvidenceLine } from '../lib/media.js';
+import { fitWithin, fmtBytes, fmtTime, limitsLine, withoutEvidenceLine, elapsedMs } from '../lib/media.js';
 
 const S = {
   screen: 'loading', // signin | loading | offline | viewonly | choose | testing
@@ -15,7 +15,8 @@ const S = {
   caseKey: '',
   draft: null, // comment being typed (null: not edited)
   pending: '', // a result waiting for new evidence
-  confirmRemove: false,
+  confirmRemove: '', // 'photo' | 'video': asking before deleting it
+  rec: null, // the recording in progress (from the Recorder window, through storage.session)
   busy: '',
   error: '',
   flash: null,
@@ -35,10 +36,21 @@ function call(method, path, opts = {}) {
 // ---------------------------------------------------------------------------
 
 async function init() {
+  const { rec } = await chrome.storage.session.get('rec');
+  if (rec && ['recording', 'paused'].includes(rec.state)) {
+    try { const a = await chrome.runtime.sendMessage({ target: 'recorder', type: 'status' }); S.rec = a && a.ok ? rec : null; } catch { S.rec = null; }
+    if (!S.rec) await chrome.storage.session.remove('rec');
+  } else if (rec) S.rec = rec;
+  chrome.storage.onChanged.addListener((changes, area) => { if (area === 'session' && changes.rec) onRec(changes.rec.newValue); });
+  setInterval(() => {
+    const clock = document.getElementById('recClock');
+    if (clock && S.rec) clock.textContent = fmtTime(elapsedMs(S.rec, Date.now()) / 1000);
+  }, 500);
   const { conn } = await chrome.storage.local.get('conn');
   if (!conn) { S.screen = 'signin'; render(); return; }
   S.conn = conn;
   await connect();
+  if (S.rec && S.rec.state === 'done') onRec(S.rec); // finished while the popup was closed
 }
 
 async function connect() {
@@ -87,8 +99,8 @@ async function follow(first) {
 }
 
 /** The suite again, quietly: redrawn only when its results or evidence changed. */
-async function refreshSuite() {
-  if (!S.suite || !S.current || S.busy || S.confirmRemove) return;
+async function refreshSuite(force) {
+  if (!S.suite || !S.current || (!force && (S.busy || S.confirmRemove))) return;
   const before = JSON.stringify(S.suite);
   const was = S.suite;
   await loadSuite();
@@ -109,10 +121,13 @@ function openCase(key) {
   S.caseKey = key;
   S.draft = null;
   S.pending = '';
-  S.confirmRemove = false;
+  S.confirmRemove = '';
 }
 
 const theCase = () => (S.suite ? S.suite.cases.find((x) => x.key === S.caseKey) : null);
+/** A case's attachments, screenshot first: [{ kind, name, size, usedFor, … }]. */
+const filesOf = (c) => ['photo', 'video'].filter((k) => c && c.evidence && c.evidence[k]).map((k) => c.evidence[k]);
+const recLive = () => !!(S.rec && ['recording', 'paused', 'saving'].includes(S.rec.state));
 const clsOf = (value) => { const o = S.suite && S.suite.statusOptions.find((x) => x.value === value); return o ? o.cls : value ? 'other' : 'none'; };
 
 // ---------------------------------------------------------------------------
@@ -181,17 +196,28 @@ function testingHtml() {
   const i = s.cases.indexOf(c);
   const cls = clsOf(c.status);
   h += `<div class="row"><button class="icon" data-action="prev" aria-label="Previous case" ${i <= 0 ? 'disabled' : ''}>‹</button>
-    <div class="grow"><div class="lb">${esc(c.id || `Row ${c.row}`)} · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>${c.evidence && c.evidence.usedFor ? ' with evidence' : ''}` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
+    <div class="grow"><div class="lb">${esc(c.id || `Row ${c.row}`)} · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>${filesOf(c).some((f) => f.usedFor) ? ' with evidence' : ''}` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
     <button class="icon" data-action="next" aria-label="Next case" ${i >= s.cases.length - 1 ? 'disabled' : ''}>›</button></div>
     <label class="sr" for="find">Find a case by ID</label><input id="find" list="ids" placeholder="Find a case by ID" autocomplete="off"><datalist id="ids">${s.cases.map((x) => `<option value="${esc(x.id || x.key)}">${esc(x.scenario.slice(0, 80))}</option>`).join('')}</datalist>`;
   if (S.pending) {
-    h += `<div class="warn">To change this result to <b>${esc(S.pending)}</b>, attach new evidence.${c.evidence ? ` It replaces ${esc(c.evidence.name)}.` : ''} <button class="link" data-action="cancel-pending">Cancel</button></div>`;
+    const old = filesOf(c).filter((f) => f.usedFor && f.usedFor !== S.pending);
+    h += `<div class="warn">To change this result to <b>${esc(S.pending)}</b>, attach new evidence: a screenshot or a recording.${old.length ? ` The files for ${esc(old[0].usedFor)} are replaced, or deleted once ${esc(S.pending)} is saved.` : ''} <button class="link" data-action="cancel-pending">Cancel</button></div>`;
   }
-  h += `<div class="cap-btns"><button data-action="screenshot" ${S.busy ? 'disabled' : ''}>◱ Screenshot</button><button data-action="record" ${S.busy ? 'disabled' : ''}>● Record</button></div>`;
-  if (c.evidence) {
-    h += S.confirmRemove
-      ? `<div class="box file"><span class="grow">Delete <b>${esc(c.evidence.name)}</b> for good?</span><button data-action="remove-yes" class="primary" style="background:var(--fail);border-color:var(--fail)">Delete</button><button data-action="remove-no">Keep</button></div>`
-      : `<div class="box file"><span aria-hidden="true">${c.evidence.kind === 'video' ? '▶' : '▣'}</span><span class="name" title="${esc(c.evidence.name)}">${esc(c.evidence.name)}</span><span class="faint">${fmtBytes(c.evidence.size)}</span><button class="link" data-action="remove" aria-label="Remove ${esc(c.evidence.name)}" title="Remove (deletes it from Test Run for good)">✕</button></div>`;
+  const r = S.rec;
+  const live = recLive();
+  h += `<div class="cap-btns"><button data-action="screenshot" ${S.busy ? 'disabled' : ''}>◱ Screenshot</button>${live
+    ? `<div class="split"><button data-action="${r.state === 'paused' ? 'rec-resume' : 'rec-pause'}" ${r.state === 'saving' ? 'disabled' : ''}>${r.state === 'paused' ? '▶ Resume' : '❚❚ Pause'}</button><button class="stop" data-action="rec-stop" ${r.state === 'saving' ? 'disabled' : ''}>■ Stop</button></div>`
+    : `<button data-action="record" ${S.busy ? 'disabled' : ''}>● Record</button>`}</div>`;
+  if (live) {
+    const other = r.key !== c.key || r.tab !== s.tab ? ` · for ${esc(r.id || r.key)}` : '';
+    h += r.state === 'saving'
+      ? `<div class="rec-line">${esc(r.msg || 'Attaching the recording…')}</div>`
+      : `<div class="rec-line"><span class="dot${r.state === 'paused' ? ' paused' : ''}" aria-hidden="true"></span><b>${r.state === 'paused' ? 'Paused' : 'Recording'}</b> <span id="recClock">${fmtTime(elapsedMs(r, Date.now()) / 1000)}</span> <span class="muted">· <span id="recSize">~${fmtBytes(r.bytes)} of ${fmtBytes(r.maxBytes)}</span>${other}</span></div>`;
+  }
+  for (const f of filesOf(c)) {
+    h += S.confirmRemove === f.kind
+      ? `<div class="box file"><span class="grow">Delete <b>${esc(f.name)}</b> for good?</span><button data-action="remove-yes" data-kind="${f.kind}" class="primary" style="background:var(--fail);border-color:var(--fail)">Delete</button><button data-action="remove-no">Keep</button></div>`
+      : `<div class="box file"><span aria-hidden="true" title="${f.kind === 'video' ? 'Recording' : 'Screenshot'}">${f.kind === 'video' ? '▶' : '▣'}</span><span class="name" title="${esc(f.name)}">${esc(f.name)}</span><span class="faint">${fmtBytes(f.size)}</span><button class="link" data-action="remove" data-kind="${f.kind}" aria-label="Remove ${esc(f.name)}" title="Remove (deletes it from Test Run for good)">✕</button></div>`;
   }
   const shown = S.draft != null ? S.draft : withoutEvidenceLine(c.comment);
   h += `<label class="sr" for="comment">Comment</label><textarea id="comment" rows="2" placeholder="Comment (optional)">${esc(shown)}</textarea>`;
@@ -255,7 +281,8 @@ async function mark(value) {
   const commentEdited = S.draft != null && S.draft !== withoutEvidenceLine(c.comment);
   if (value === c.status && !commentEdited) return;
   // A result backed by evidence changes only with new evidence.
-  if (value !== c.status && c.evidence && c.evidence.usedFor && c.evidence.usedFor !== value) {
+  const files = filesOf(c);
+  if (value !== c.status && files.some((f) => f.usedFor && f.usedFor !== value) && !files.some((f) => !f.usedFor)) {
     S.pending = value;
     render();
     return;
@@ -267,18 +294,19 @@ async function saveMark(c, value, commentEdited) {
   S.busy = 'Saving…';
   render();
   const req = { tab: S.suite.tab, key: c.key, sh: c.sh, row: c.row, cycle: S.suite.cycle, expect: c.status, status: value };
-  if (commentEdited) req.comment = S.draft + (c.evidence ? `\nEvidence: ${c.evidence.name}` : '');
+  const backing = filesOf(c).filter((f) => f.usedFor && f.usedFor === c.status).map((f) => f.name);
+  if (commentEdited) req.comment = S.draft + (backing.length ? `\nEvidence: ${backing.join(', ')}` : '');
   let r;
   try { r = await call('POST', '/api/call/api_mark', { body: { book: S.suite.book, args: [req] } }); } catch (e) { r = { ok: false, error: e.message }; }
   S.busy = '';
   if (r.ok) {
     c.status = r.status;
     if (r.comment != null) c.comment = r.comment;
-    if (r.evidence) c.evidence = r.evidence;
+    if (r.evidence) c.evidence = Object.keys(r.evidence).length ? r.evidence : null;
     S.draft = null;
     S.pending = '';
     const i = S.suite.cases.indexOf(c);
-    flash(`${c.id || 'The case'}: ${value || 'not run'}${r.evidence ? ', with evidence' : ''}.`);
+    flash(`${c.id || 'The case'}: ${value || 'not run'}${r.evidence && Object.keys(r.evidence).length ? ', with evidence' : ''}.${r.removedEvidence ? ` Deleted the old ${r.removedEvidence.length === 1 ? 'file' : 'files'}.` : ''}`);
     if (i >= 0 && i < S.suite.cases.length - 1) openCase(S.suite.cases[i + 1].key);
     render();
     return;
@@ -329,7 +357,7 @@ async function screenshot() {
   if (!r.ok) { flash(r.error || 'Could not attach it.', true); return; }
   c.evidence = r.evidence;
   if (forStatus) { await saveMark(c, forStatus, S.draft != null && S.draft !== withoutEvidenceLine(c.comment)); return; }
-  flash(`Screenshot attached to ${c.id || 'the case'} (${fmtBytes(r.evidence.size)}).`);
+  flash(`Screenshot attached to ${c.id || 'the case'} (${fmtBytes(r.added.size)}).`);
 }
 
 async function record() {
@@ -340,20 +368,52 @@ async function record() {
   window.close();
 }
 
-async function removeEvidence() {
+async function removeEvidence(kind) {
   const c = theCase();
-  if (!c || !c.evidence) return;
+  if (!c || !c.evidence || !c.evidence[kind]) return;
   S.busy = 'Deleting…';
-  S.confirmRemove = false;
+  S.confirmRemove = '';
   render();
   let r;
-  try { r = await call('POST', '/api/evidence/remove', { body: { book: S.suite.book, tab: S.suite.tab, cycle: S.suite.cycle, key: c.key } }); } catch (e) { r = { ok: false, error: e.message }; }
+  try { r = await call('POST', '/api/evidence/remove', { body: { book: S.suite.book, tab: S.suite.tab, cycle: S.suite.cycle, key: c.key, kind } }); } catch (e) { r = { ok: false, error: e.message }; }
   S.busy = '';
   if (!r.ok) { flash(r.error, true); return; }
-  c.evidence = null;
-  c.comment = withoutEvidenceLine(c.comment);
-  S.pending = '';
+  c.evidence = r.evidence && Object.keys(r.evidence).length ? r.evidence : null;
+  if (!c.evidence) { c.comment = withoutEvidenceLine(c.comment); S.pending = ''; }
   flash(`Deleted ${r.removed}.`);
+}
+
+/** The Recorder window's buttons, from here. */
+async function recCommand(type) {
+  try {
+    const r = await chrome.runtime.sendMessage({ target: 'recorder', type });
+    if (!r || !r.ok) throw new Error('no answer');
+  } catch {
+    await chrome.storage.session.remove('rec'); // its window was closed
+    S.rec = null;
+    flash('The recording window was closed, so the recording stopped.', true);
+  }
+}
+
+/** The recording's state changed (the Recorder window writes it). */
+async function onRec(rec) {
+  const was = S.rec;
+  S.rec = rec || null;
+  // the same recording, still going: just its size (the clock ticks by itself)
+  if (was && rec && was.state === rec.state && was.key === rec.key && ['recording', 'paused'].includes(rec.state)) {
+    const size = document.getElementById('recSize');
+    if (size) size.textContent = `~${fmtBytes(rec.bytes)} of ${fmtBytes(rec.maxBytes)}`;
+    return;
+  }
+  if (rec && rec.state === 'done') {
+    await chrome.storage.session.remove('rec');
+    S.rec = null;
+    flash(rec.msg || 'Recording attached.');
+    await refreshSuite(true);
+    return;
+  }
+  if (rec && rec.state === 'error') flash(rec.msg || 'The recording could not be attached.', true);
+  render();
 }
 
 function findCase(text) {
@@ -377,9 +437,12 @@ const ACTIONS = {
   'cancel-pending': () => { S.pending = ''; render(); },
   screenshot,
   record,
-  remove: () => { S.confirmRemove = true; render(); },
-  'remove-no': () => { S.confirmRemove = false; render(); },
-  'remove-yes': removeEvidence,
+  remove: (el) => { S.confirmRemove = el.getAttribute('data-kind'); render(); },
+  'remove-no': () => { S.confirmRemove = ''; render(); },
+  'remove-yes': (el) => removeEvidence(el.getAttribute('data-kind')),
+  'rec-pause': () => recCommand('pause'),
+  'rec-resume': () => recCommand('resume'),
+  'rec-stop': () => recCommand('stop'),
 };
 
 document.addEventListener('click', (e) => {
