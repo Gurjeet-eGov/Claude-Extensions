@@ -198,6 +198,16 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=run]').click();
       await page.locator('.cycle-switch #cyclePick option:checked', { hasText: 'v2.20.1' }).waitFor({ state: 'attached' });
       assert.deepEqual((await disk())[0].slice(7, 11), ['Test Status / v2.12', 'Comment / v2.12', 'Test Status / v2.20.1', 'Comment / v2.20.1']);
+      // ✎ renames a cycle (both its columns); then back, as the later steps use v2.12
+      await page.locator('.nav [data-view=setup]').click();
+      for (const [from, to] of [['v2.12', 'v2.12 retest'], ['v2.12 retest', 'v2.12']]) {
+        await page.locator(`.cycle-chip:has-text("Test Status / ${from}") [data-action=cycle-rename]`).first().click();
+        await page.locator('#cycRename').fill(to);
+        await page.locator('#cycRename').press('Enter');
+        await page.locator('.toast', { hasText: `Renamed the cycle ${from} to ${to}` }).waitFor();
+        await eventually(async () => (await disk())[0][7] === `Test Status / ${to}` && (await disk())[0][8] === `Comment / ${to}`);
+      }
+      await page.locator('.nav [data-view=run]').click();
     });
 
     await t.test('a teammate joins on the hosted page with an invite link and marks results under their name', async () => {

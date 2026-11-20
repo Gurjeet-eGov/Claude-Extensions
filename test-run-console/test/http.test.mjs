@@ -153,6 +153,46 @@ test('a bug noted as a finding (no test case) is an open failure in its suite\'s
   } finally { s.close(); }
 });
 
+test('a bug finding mapped to a test case (covered by it, or written up as it) fails that case with the issue linked', async () => {
+  const s = await start();
+  try {
+    const note = (n) => s.req('POST', '/api/note-bug', { title: `Login lands on the wrong realm ${n}`, number: n, url: `https://github.com/example/repo/issues/${n}`, book: BOOK, tab: TAB }, { Origin: EXT_ORIGIN });
+    const row = (rows, id) => rows.find((r) => r[0] === id);
+    // Covered by CMS/12
+    const a = await note(68);
+    assert.equal(a.kind, 'finding', a.error);
+    const cov = await s.call('api_setFindingState', a.key, 'covered', 'CMS/12');
+    assert.equal(cov.ok, true, cov.error);
+    assert.deepEqual([cov.linked.status, cov.linked.previous, cov.linked.cycle], ['Fail', '', 'v2.12']);
+    let disk = await s.disk();
+    const h = disk[0];
+    const r12 = row(disk, 'CMS/12');
+    assert.equal(r12[h.indexOf('Test Status / v2.12')], 'Fail');
+    assert.equal(r12[h.indexOf('Comment / v2.12')], 'Bug #68: Login lands on the wrong realm 68');
+    assert.equal(r12[h.indexOf('Linked issue')], '#68');
+    const sum = (await s.call('api_summary', TAB, 'v2.12')).summary;
+    assert.equal(sum.failures.find((x) => x.id === 'CMS/12').issues[0].ref, '#68', 'in Open failures, with its issue');
+    assert.equal(sum.failures.some((x) => x.id === a.key), false, 'the finding itself is done');
+    assert.equal((await s.call('api_setFindingState', a.key, 'covered', 'CMS/12')).linked, null, 'covering again changes nothing');
+    disk = await s.disk();
+    assert.equal(row(disk, 'CMS/12')[h.indexOf('Linked issue')], '#68', 'not linked twice');
+    // Written up as a new test case
+    const b = await note(69);
+    const up = await s.call('api_addCases', TAB, [{ scenario: 'Login after a password update stays on the right realm', issue: 'https://github.com/example/repo/issues/69', fromFinding: b.key }], 'v2.12');
+    assert.equal(up.ok, true, up.error);
+    assert.equal(up.added[0].linked.status, 'Fail');
+    disk = await s.disk();
+    const nr = row(disk, up.added[0].id);
+    assert.deepEqual([nr[h.indexOf('Test Status / v2.12')], nr[h.indexOf('Linked issue')]], ['Fail', '#69']);
+    assert.equal((await s.call('api_listFindings')).findings.find((x) => x.key === b.key).state, 'written');
+    // A finding with no issue link: covering only marks it done
+    await s.call('api_saveFinding', { text: 'An odd thing, no issue', tab: TAB });
+    const plain = (await s.call('api_listFindings')).findings.find((x) => x.text === 'An odd thing, no issue');
+    assert.equal((await s.call('api_setFindingState', plain.key, 'covered', 'CMS/04')).linked, null);
+    assert.equal(row(await s.disk(), 'CMS/04')[h.indexOf('Test Status / v2.12')], '');
+  } finally { s.close(); }
+});
+
 test('suite cases: one suite\'s test cases for Bug Reporter to pick from, without changing what the owner has open', async () => {
   const s = await start();
   try {
@@ -326,6 +366,38 @@ test('export summary writes one standalone HTML file', async () => {
     assert.match(html, /Open failures/);
     assert.doesNotMatch(html, /<script/);
 
+  } finally { s.close(); }
+});
+
+test('rename a test cycle: both its column headers; results, evidence and the current cycle follow', async () => {
+  const s = await start();
+  try {
+    const d = await s.call('api_loadTab', TAB, 'v2.12');
+    const c = d.cases.find((x) => x.id === 'CMS/04');
+    assert.equal((await s.call('api_mark', { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: '', status: 'Pass' })).ok, true);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100, 1)]);
+    const up = await fetch(`${s.base}api/evidence?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12&key=CMS%2F04`, { method: 'POST', headers: { 'X-Test-Run': '1' }, body: png }).then((x) => x.json());
+    assert.equal(up.ok, true, up.error);
+    await s.call('api_setTabPrefs', TAB, { cycle: 'v2.12' });
+
+    const r = await s.call('api_renameCycle', TAB, 'Test Status / v2.12', 'v2.13');
+    assert.deepEqual([r.ok, r.from, r.to], [true, 'v2.12', 'v2.13'], r.error);
+    const head = (await s.disk())[0];
+    assert.ok(head.includes('Test Status / v2.13') && head.includes('Comment / v2.13'), head.join(' | '));
+    assert.equal(head.includes('Test Status / v2.12'), false);
+    const after = await s.call('api_loadTab', TAB, '');
+    assert.equal(after.cycles[after.cycleIdx].label, 'v2.13', 'it is still the current cycle');
+    assert.equal(after.cases.find((x) => x.id === 'CMS/04').statuses[after.cycleIdx], 'Pass', 'results stay');
+    const ext = await s.req('GET', `/api/ext/suite?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.13`);
+    assert.equal(ext.cases.find((x) => x.id === 'CMS/04').evidence.photo.name, up.added.name, 'its evidence follows');
+
+    assert.equal((await s.call('api_startCycle', TAB, 'v2.20')).ok, true);
+    assert.equal((await s.call('api_renameCycle', TAB, 'Test Status / v2.13', 'V2.20')).code, 'EXISTS', 'not the name of another cycle');
+    assert.equal((await s.call('api_renameCycle', TAB, 'Test Status / v2.13', '  ')).code, 'BAD_INPUT');
+    assert.equal((await s.call('api_renameCycle', TAB, 'Test Status / v9', 'x1')).code, 'NO_CYCLE');
+    const words = await s.call('api_renameCycle', TAB, 'Test Status / v2.13', 'Sprint A');
+    assert.equal(words.ok, true, words.error);
+    assert.ok((await s.disk())[0].includes('Test Status / Sprint A'), 'a name without a digit still reads as a cycle');
   } finally { s.close(); }
 });
 
