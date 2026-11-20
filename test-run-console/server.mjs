@@ -1271,7 +1271,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (!/^api_\w+$/.test(fn)) return json(404, { ok: false, code: 'NO_FUNCTION', error: 'Unknown function.' });
         if (!mayCall(person, fn)) return json(403, { ok: false, code: 'FORBIDDEN', error: person.role === 'viewer' ? 'You can view this Test Run, not change it.' : 'Only the person running Test Run can do that.' });
         if (fn === 'api_mark') return json(200, await markWithEvidence(body, person));
-        return json(200, await callApi(fn, Array.isArray(body.args) ? body.args : [], body.book, person));
+        const out = await callApi(fn, Array.isArray(body.args) ? body.args : [], body.book, person);
+        if (fn === 'api_renameCycle' && out && out.ok && !out.unchanged) {
+          // what refers to the cycle by name follows: its evidence, the host's last place, what people have open
+          evidence.renameCycle(out.book, out.tab, out.from, out.to);
+          if (app.last.book === out.book && app.last.tab === out.tab && app.last.cycle === out.from) { app.last.cycle = out.to; saveApp(); }
+          for (const v of selections.values()) if (v.book === out.book && v.tab === out.tab && v.cycle === out.from) { v.cycle = out.to; v.at = Date.now(); }
+        }
+        return json(200, out);
       }
       if (path === '/api/note-bug') {
         if (person.role === 'viewer') return json(403, { ok: false, code: 'FORBIDDEN', error: 'Your invite is view-only, so bugs cannot be added to Test Run with it.' });

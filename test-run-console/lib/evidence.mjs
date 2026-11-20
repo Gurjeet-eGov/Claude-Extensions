@@ -176,6 +176,19 @@ export class EvidenceStore {
     return it;
   }
 
+  /** A cycle was renamed: its files now belong to the new name (they stay where they are). */
+  renameCycle(book, tab, from, to) {
+    const idx = this.read(book);
+    let n = 0;
+    const items = {};
+    for (const it of Object.values(idx.items)) {
+      if (it.tab === tab && (it.cycle || '') === (from || '')) { it.cycle = to; n++; }
+      items[keyOf(it.tab, it.cycle, it.caseKey, it.kind)] = it;
+    }
+    if (n) this.write(book, { version: 2, items });
+    return n;
+  }
+
   /** Detach and delete one of a case's files for good. Returns the removed item, or null. */
   remove(book, tab, cycle, caseKey, kind) {
     const idx = this.read(book);

@@ -55,6 +55,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 - **Automation badges.** If the workbook has the automation sign-off tab, cases whose comment names a spec (e.g. `inbox-search.spec`) show its latest result: **Auto ✓**, **Auto ✗** or **Auto ~**.
 - **Cycles.** Each cycle is a pair of columns, `Test Status` and `Comment`, as your sheets already have.
   - **Setup → Workbook → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
+  - **✎** on a cycle renames it: the name changes in both its column headers (results and comments stay), and its evidence and the current-cycle setting follow. A name without a digit is written as `Test Status / name`, so it still reads as a cycle.
   - Earlier cycles stay, so you can compare. **Test cycle**, next to the test suites, switches between them.
   - **×** on a cycle in Setup removes it, to keep the workbook and the reports tidy: its two columns are deleted from the workbook, with their results. A pop-up says first that this cannot be undone (today's backup in `sheets/.testrun/backups/` still has it). The cycle leaves the Test cycle list, Summary and downloads, and the published reports at the next publish. A tab's last cycle stays.
 - **Release in scope** (Setup → Workbook, on a tab with a *Release* column) is the release you are testing, for example `2.20.1`. Cases whose Release column says it are tagged **New in 2.20.1** and come first in Run. A cycle is different: it is one round of results (a status and comment column pair), and a release can take several cycles, for example a first run and a retest.
@@ -73,6 +74,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - Each finding lists up to three similar test cases already in its suite. **Covered by this** moves it to **Done** in one click.
   - **Write up as test case** opens the case, prefilled from the bug, right there. **Add to workbook** appends it to the finding's suite with the next ID (`CMS/183`) and the last row's formatting.
   - **Already covered…** links it to an existing case by its ID instead.
+  - A finding with an issue link (a bug filed with Bug Reporter, say) takes its bug along when it is mapped to a case, by **Covered by this**, **Already covered…** or **Write up as test case**: the case gets the issue in its *Linked issue* column, is marked failed in the current cycle with `Bug #68: <title>` in its comment, and shows in Summary's Open failures. (A suite with no cycle yet only gets the link.)
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
@@ -253,7 +255,7 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
-  - and only when you ask: new cycle columns (and removing a cycle's columns), added rows, the optional *Release* column, and the *Test Run Summary* tab.
+  - and only when you ask: new cycle columns (and renaming or removing a cycle's columns), added rows, the optional *Release* column, and the *Test Run Summary* tab.
   - *Tested by* and *Tested on* are required: **Import** adds them at the right of each test suite tab that has none (and uses them where they are already there). For a workbook added another way, Setup → Workbook has **Add Tested by + Tested on columns**.
   - an `Evidence: <file>` line in a cycle's comment, while that case has evidence from Test Run Extension.
 - **Safe saving:** each change is written to a temporary file first, which then replaces the workbook. The first save each day also keeps a copy in `sheets/.testrun/backups/` (14 days).

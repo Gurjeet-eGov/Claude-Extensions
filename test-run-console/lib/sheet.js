@@ -398,6 +398,54 @@ function tr_removeCycle(tabName, header) {
   });
 }
 
+/**
+ * A header with its cycle name changed: "Test Status / v2.12" -> "Test Status / v2.13".
+ * A name on its own (on the next line, say) needs a digit to read as a cycle, so a name
+ * without one gets " / " before it.
+ */
+function tr_renameHeader_(raw, from, to) {
+  raw = String(raw == null ? '' : raw);
+  var i = from ? raw.lastIndexOf(from) : -1;
+  var prefix = (i >= 0 ? raw.slice(0, i) : raw).replace(/[\s\/|:\-\u2013]+$/, '');
+  var sep = i >= 0 ? raw.slice(prefix.length, i) : ' / ';
+  if (!/[\/|:\-\u2013]/.test(sep) && !/\d/.test(to)) sep = ' / ';
+  return prefix + sep + to + (i >= 0 ? raw.slice(i + from.length) : '');
+}
+
+/**
+ * Rename a test cycle of a tab: the name in its status and comment column headers. header:
+ * its status column's header, as Setup shows it. Results and comments stay as they are.
+ */
+function tr_renameCycle(tabName, header, label) {
+  label = TRCore.cleanText(label, 40);
+  if (!label) throw tr_err_('BAD_INPUT', 'Give the cycle a name, for example v2.20.1.');
+  var want = String(header == null ? '' : header).replace(/\s+/g, ' ').trim().toLowerCase();
+  return tr_withLock_(function () {
+    var cfg = tr_config_();
+    if (!cfg || !cfg.tabs || !cfg.tabs[tabName]) throw tr_err_('NOT_SET_UP', 'Save Setup for this tab first.');
+    var m = tr_open_(tabName, cfg);
+    var ci = -1;
+    m.cycles.forEach(function (c, i) { if (String(m.headers[c.status]).replace(/\s+/g, ' ').trim().toLowerCase() === want) ci = i; });
+    if (ci < 0) throw tr_err_('NO_CYCLE', 'That test cycle is not in ' + m.tab + ' any more. Refresh.');
+    var cy = m.cycles[ci];
+    if (cy.label === label) return { ok: true, tab: m.tab, from: cy.label, to: label, unchanged: true };
+    m.cycles.forEach(function (c, i) {
+      if (i !== ci && c.label.toLowerCase() === label.toLowerCase()) throw tr_err_('EXISTS', 'A cycle called "' + label + '" already exists in ' + m.tab + '.');
+    });
+    var sh = m.sheet;
+    sh.getRange(m.headerRow, cy.status + 1).setValue(TRCore.cellSafe(tr_renameHeader_(m.headers[cy.status], cy.label, label)));
+    if (cy.comment >= 0) sh.getRange(m.headerRow, cy.comment + 1).setValue(TRCore.cellSafe(tr_renameHeader_(m.headers[cy.comment], cy.label, label)));
+    var after = tr_open_(tabName, cfg);
+    if (!after.cycles.some(function (c) { return c.label === label; })) throw tr_err_('BAD_INPUT', '"' + label + '" does not read as a cycle name in the column header. Try another name, for example v2.20.1.');
+    var t = cfg.tabs[tabName];
+    if (String(t.cycle || '').toLowerCase() === cy.label.toLowerCase()) {
+      t.cycle = label;
+      tr_metaPut_('config', 'global', cfg);
+    }
+    return { ok: true, tab: m.tab, from: cy.label, to: label };
+  });
+}
+
 /** Per-tab preferences changed from the console: current cycle, release in scope. */
 function tr_setTabPrefs(tabName, prefs) {
   prefs = prefs || {};
@@ -744,7 +792,11 @@ function tr_addCases_(tabName, items, cycleLabel) {
   items.forEach(function (it, i) { if (it.issue && f.linkedIssue >= 0) tr_writeIssueCell_(sh, lastData + 1 + i, f.linkedIssue, it.issue); });
   var added = rows.map(function (r, i) { return { id: newIds[i] || '', row: lastData + 1 + i, scenario: items[i].scenario }; });
   items.forEach(function (it, i) {
-    if (it.fromFinding) tr_setFindingState_(it.fromFinding, 'written', added[i].id || ('row ' + added[i].row));
+    if (!it.fromFinding) return;
+    // its bug too: the new case is failed in this cycle (unless a result was picked) with the issue linked
+    var fnd = tr_metaGet_('finding', it.fromFinding);
+    if (fnd && cy) added[i].linked = tr_findingBugToCase_(fnd, m.tab, added[i].id || '#', added[i].row, !!it.status, cy.label);
+    tr_setFindingState_(it.fromFinding, 'written', added[i].id || ('row ' + added[i].row));
   });
   return { ok: true, added: added };
 }
@@ -951,7 +1003,14 @@ function tr_setFindingState_(key, state, caseId) {
 
 function tr_setFindingState(key, state, caseId) {
   if (['open', 'written', 'covered'].indexOf(state) < 0) throw tr_err_('BAD_INPUT', 'Unknown state.');
-  return tr_withLock_(function () { tr_setFindingState_(key, state, TRCore.cleanText(caseId, 80)); return { ok: true }; });
+  caseId = TRCore.cleanText(caseId, 80);
+  return tr_withLock_(function () {
+    var f = tr_metaGet_('finding', key);
+    // Covered by a case: the finding's bug goes onto that case (failed, issue linked)
+    var linked = state === 'covered' && f && caseId && f.state !== 'covered' ? tr_findingBugToCase_(f, f.tab, caseId, 0, false) : null;
+    tr_setFindingState_(key, state, caseId);
+    return { ok: true, linked: linked };
+  });
 }
 
 function tr_deleteFinding(key) {
@@ -970,11 +1029,17 @@ function tr_deleteFinding(key) {
  */
 function tr_linkBug(req) {
   req = req || {};
+  if (!TRCore.cleanLink(req.url)) throw tr_err_('BAD_INPUT', 'The bug needs its link (https://…).');
+  return tr_withLock_(function () { return tr_linkBug_(req); });
+}
+
+/** tr_linkBug without the lock (callers hold it). req.row: find the case by its row too (one just added). */
+function tr_linkBug_(req) {
   var url = TRCore.cleanLink(req.url);
   if (!url) throw tr_err_('BAD_INPUT', 'The bug needs its link (https://…).');
-  return tr_withLock_(function () {
+  {
     var m = tr_open_(req.tab);
-    var c = tr_cases_(m).filter(function (x) { return x.key === req.key || (x.id && x.id === req.key); })[0];
+    var c = tr_cases_(m).filter(function (x) { return x.key === req.key || (x.id && x.id === req.key) || (req.row && x.row === req.row); })[0];
     if (!c) throw tr_err_('NO_CASE', 'There is no test case "' + req.key + '" in ' + m.tab + ' any more.');
     if (c.retired) throw tr_err_('RETIRED', c.id + ' is retired (struck out), so it cannot be marked. Restore it first, or note the bug as a finding.');
     var ci = tr_findCycle_(m, req.cycle, true);
@@ -1001,10 +1066,29 @@ function tr_linkBug(req) {
       }
     }
     m = tr_ensureIssueColumn_(m);
-    var list = tr_writeIssueCell_(sh, r, m.fields.linkedIssue, TRCore.issueValue(c.issues.concat([{ ref: ref, url: url }])),
+    var linked = c.issues.some(function (i) { return (i.url && i.url === url) || i.ref === ref; }); // already in the cell: not twice
+    var list = tr_writeIssueCell_(sh, r, m.fields.linkedIssue, TRCore.issueValue(linked ? c.issues : c.issues.concat([{ ref: ref, url: url }])),
       { url: url, title: title, priority: req.priority, source: TRCore.cleanText(req.source, 40) || 'bug-reporter' });
     return { ok: true, key: c.key, id: c.id, row: r, tab: m.tab, cycle: cy ? cy.label : '', status: !markFailed || TRCore.classifyStatus(prev) === 'fail' ? prev : fail.value, previous: prev, issues: list };
-  });
+  }
+}
+
+/**
+ * A finding's bug goes onto the test case it is mapped to (covered by, or written up as):
+ * the issue in the case's Linked issue cell, the case failed in the current cycle (only
+ * linked when the suite has no cycle to mark, or when keepResult) and "Bug #12: …" in the
+ * cycle's comment. Nothing when the finding has no issue link. Callers hold the lock.
+ */
+function tr_findingBugToCase_(f, tab, caseKey, row, keepResult, cycle) {
+  var url = f.url || (TRCore.parseIssues(f.issue || '', '', tr_issueRefs_()).filter(function (i) { return i.url; })[0] || {}).url;
+  if (!url) return null;
+  var req = { tab: tab, key: caseKey, row: row, cycle: cycle || '', url: url, title: f.text, source: f.source || 'finding', markFailed: !keepResult };
+  try {
+    return tr_linkBug_(req);
+  } catch (e) {
+    if (e && (e.code === 'NO_CYCLE' || e.code === 'NO_FAIL') && req.markFailed) { req.markFailed = false; return tr_linkBug_(req); }
+    throw e;
+  }
 }
 
 /** Manual tabs of the workbook (saved as manual in Setup, or detected as such). */

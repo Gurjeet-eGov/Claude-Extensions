@@ -1360,6 +1360,20 @@
   }
 
   /** A first draft of the test case for a finding: its text, bug, area and the expected result Bug Reporter noted. */
+  /** " marked Fail, with #68 linked" (what a finding's bug did to its case), or ''. */
+  function linkedText(l) {
+    if (!l) return '';
+    var refs = (l.issues || []).map(function (i) { return i.ref; }).filter(Boolean);
+    var changed = l.status && l.status !== l.previous;
+    return (changed ? ', marked ' + l.status + (l.cycle ? ' in cycle ' + l.cycle : '') : '') + (refs.length ? ', with ' + refs[refs.length - 1] + ' linked' : '');
+  }
+
+  /** After a finding's bug went onto a case: Run and Known issues show it. */
+  function afterLinked(tab) {
+    if (tab === S.tab) loadTab(cycleLabel(), true); else delete S.suites[tab];
+    loadIssues();
+  }
+
   function draftFromFinding(f, sm) {
     var expected = [];
     String(f.details || '').split(/\r?\n/).forEach(function (l) {
@@ -1871,10 +1885,17 @@
     var cycles = headers.filter(isStatusHeader);
     // An earlier cycle can be removed (×) to keep the workbook and the reports tidy; the last one stays.
     var canRemove = t.saved && cycles.length > 1 && !S.readOnly;
+    var canRename = t.saved && !S.readOnly;
+    var editing = S.form.cycRen && S.form.cycRen.tab === t.name ? S.form.cycRen.header : null;
     var h = '<div class="subsection"><h3>Test cycles</h3><p class="small muted">A cycle is a pair of columns: <i>Test Status / name</i> and <i>Comment / name</i>. Earlier cycles stay, so you can compare' + (canRemove ? ', until you remove one with <b>×</b>' : '') + '.</p>' +
       '<div class="small cycle-chips">Status columns: ' + (cycles.length ? cycles.map(function (x) {
         var name = String(x).replace(/\s+/g, ' ').trim();
-        return '<span class="pill outline cycle-chip">' + esc(name) + (canRemove ? '<button class="chip-x" data-action="cycle-remove" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Remove the cycle ' + esc(name) + '" title="Remove this cycle and its results">×</button>' : '') + '</span>';
+        if (editing === name) {
+          return '<span class="cycle-edit"><label class="sr" for="cycRename">New name for ' + esc(name) + '</label><input id="cycRename" data-bind="cycRen:label" value="' + esc(val('cycRen:label', cycleName(name))) + '" size="14" autocomplete="off">' +
+            '<button class="primary" data-action="cycle-rename-save">Save</button><button class="ghost" data-action="cycle-rename-cancel">Cancel</button></span>';
+        }
+        return '<span class="pill outline cycle-chip">' + esc(name) +
+          (canRename ? '<button class="chip-edit" data-action="cycle-rename" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Rename the cycle ' + esc(name) + '" title="Rename this cycle">✎</button>' : '') + (canRemove ? '<button class="chip-x" data-action="cycle-remove" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Remove the cycle ' + esc(name) + '" title="Remove this cycle and its results">×</button>' : '') + '</span>';
       }).join(' ') : '<span class="faint">none yet</span>') + '</div>';
     if (!t.saved) return h + '<p class="small faint">Save first to start cycles here.</p></div>';
     h += '<div class="row"><label class="sr" for="newCycle' + ti + '">New cycle name</label><input id="newCycle' + ti + '" data-bind="newCycle:' + ti + '" placeholder="New cycle, e.g. v2.20.1" value="' + esc(val('newCycle:' + ti)) + '">' +
@@ -1884,6 +1905,30 @@
         '<button data-action="save-release" data-tab="' + esc(t.name) + '" data-index="' + ti + '">Save</button><span class="small faint">The release you are testing. Cases whose <i>' + esc(t.columns.release) + '</i> column says it are tagged <b>New in</b> it and come first in Run. Cycles are rounds of results; a release can take several.</span></div>';
     }
     return h + '</div>';
+  }
+
+  /** The cycle's own name in its status header: "Test Status / v2.12" -> "v2.12". */
+  function cycleName(header) {
+    var m = /^(?:test )?(?:execution )?(?:status|result)s?(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(\S*\d.*))?$/i.exec(String(header || '').replace(/\s+/g, ' ').trim());
+    return m ? (m[1] || m[2] || '').trim() : '';
+  }
+
+  function renameCycle() {
+    var r = S.form.cycRen;
+    if (!r) return;
+    var label = String(val('cycRen:label', cycleName(r.header))).trim();
+    if (!label) { toast('Give the cycle a name, for example v2.20.1.', 'bad'); return; }
+    if (label === cycleName(r.header)) { delete S.form.cycRen; delete S.form['cycRen:label']; render(); return; }
+    queueWrite(function () { return api('api_renameCycle', r.tab, r.header, label); }).then(function (x) {
+      if (!x.ok) { writeError(x); var i = $('cycRename'); if (i) i.focus(); return; }
+      delete S.form.cycRen;
+      delete S.form['cycRen:label'];
+      toast('Renamed the cycle ' + x.from + ' to ' + x.to + ' in ' + x.tab + '.');
+      S.keep = {};
+      S.summary = null;
+      if (r.tab === S.tab) S.model = null;
+      refreshBoot(false, null);
+    });
   }
 
   /** Setup, in two parts: Workbook (test suites, cycles, columns) and Sharing (you and your team). */
@@ -2477,8 +2522,8 @@
         if (!r.ok) { el.disabled = false; writeError(r); return; }
         delete S.writeUp[k];
         clearForm('wu:' + k + ':');
-        toast(k + ' added to ' + tab + ' as ' + (r.added[0].id || 'row ' + r.added[0].row) + '.');
-        if (tab === S.tab) loadTab(cycleLabel(), true); else delete S.suites[tab];
+        toast(k + ' added to ' + tab + ' as ' + (r.added[0].id || 'row ' + r.added[0].row) + linkedText(r.added[0].linked) + '.');
+        afterLinked(tab);
         loadSide();
       });
     },
@@ -2494,7 +2539,8 @@
         if (!r.ok) { writeError(r); return; }
         S.covering = null;
         delete S.form['cov:' + k];
-        toast(k + ' is covered by ' + caseLabel(c) + '.');
+        toast(k + ' is covered by ' + caseLabel(c) + linkedText(r.linked) + '.');
+        if (r.linked) afterLinked(fd.tab || S.tab);
         loadSide();
       });
     },
@@ -2575,6 +2621,15 @@
       });
     },
     'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
+    'cycle-rename': function (el) {
+      S.form.cycRen = { tab: el.getAttribute('data-tab'), header: el.getAttribute('data-header') };
+      delete S.form['cycRen:label'];
+      render();
+      var i = $('cycRename');
+      if (i) { i.focus(); i.select(); }
+    },
+    'cycle-rename-save': function () { renameCycle(); },
+    'cycle-rename-cancel': function () { delete S.form.cycRen; delete S.form['cycRen:label']; render(); },
     'cycle-remove-confirm': function (el) {
       var tab = el.getAttribute('data-tab');
       var header = el.getAttribute('data-header');
@@ -2658,9 +2713,11 @@
     'cover-with': function (el) {
       var k = el.getAttribute('data-key');
       var id = el.getAttribute('data-case');
+      var cf = S.findings.filter(function (x) { return x.key === k; })[0] || {};
       queueWrite(function () { return api('api_setFindingState', k, 'covered', id); }).then(function (r) {
         if (!r.ok) { writeError(r); return; }
-        toast(k + ' is covered by ' + id + '. It is under Done.');
+        toast(k + ' is covered by ' + id + linkedText(r.linked) + '. It is under Done.');
+        if (r.linked) afterLinked(cf.tab || S.tab);
         loadSide();
       });
     },
@@ -3090,6 +3147,8 @@
     if (e.metaKey || e.ctrlKey || e.altKey || modalOpen) return;
     var t = e.target && e.target.matches ? e.target : document.body;
     if (t.matches('input, textarea, select')) {
+      if (t.id === 'cycRename' && e.key === 'Enter') { e.preventDefault(); renameCycle(); return; }
+      if (t.id === 'cycRename' && e.key === 'Escape') { delete S.form.cycRen; delete S.form['cycRen:label']; render(); return; }
       if (e.key === 'Escape') { t.blur(); return; }
       if (e.key === 'Enter' && !e.shiftKey && (t.hasAttribute('data-comment') || t.hasAttribute('data-issue'))) { e.preventDefault(); t.blur(); saveNote(); }
       if (e.key === 'Enter' && t.id === 'fText') { e.preventDefault(); ACTIONS['add-finding'](); }
