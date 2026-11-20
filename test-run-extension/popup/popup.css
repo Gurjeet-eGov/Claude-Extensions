@@ -70,3 +70,5 @@ textarea { resize: vertical; min-height: 44px; }
 .rec-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .rec-line .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); flex: none; }
 .rec-line .dot.paused { background: var(--other); }
+.ask { font-size: 12.5px; }
+.case-link { color: var(--accent); text-decoration: underline; font-weight: 600; }

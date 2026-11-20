@@ -279,6 +279,12 @@
       S.excelOpen = !!m.excelOpen;
       if (m.reloaded) toast('The workbook changed on disk, so it was reloaded.');
       TR.store.set('tab:' + book(), S.tab);
+      // ?case=CMS/07 (from Test Run Extension): open on that case, once
+      if (PARAMS.case) {
+        var want = findCase(PARAMS.case);
+        PARAMS.case = '';
+        if (want) { S.view = 'run'; ACTIONS['goto-case']({ getAttribute: function () { return want.key; } }); return; }
+      }
       render();
     });
   }
@@ -352,7 +358,8 @@
     if (!S.app || !S.boot || S.connect || S.reportsMode) return;
     try {
       var u = new URL(window.location.href);
-      if (u.searchParams.get('view') === S.view) return;
+      if (!PARAMS.case && u.searchParams.has('case')) u.searchParams.delete('case'); // opened on it once; a refresh need not jump back
+      else if (u.searchParams.get('view') === S.view) return;
       u.searchParams.set('view', S.view);
       window.history.replaceState(null, '', u.pathname + u.search + u.hash);
     } catch (e) { /* keep the address as it is */ }
@@ -856,7 +863,7 @@
         '<span class="grow"></span><button class="link-btn" data-action="ev-view" data-key="' + esc(c.key) + '" data-kind="' + k + '">View</button>' +
         (S.readOnly ? '' : '<button class="link-btn danger" data-action="ev-remove" data-key="' + esc(c.key) + '" data-kind="' + k + '" title="Delete the file for good">Remove</button>') + '</div>';
     });
-    if (files.some(function (k) { return ev[k].usedFor; }) && !S.readOnly) a += '<div class="small faint">To change this result, attach new evidence with Test Run Extension, or remove the files first.</div>';
+    if (files.some(function (k) { return ev[k].usedFor && !ev[k].fresh; }) && !files.some(function (k) { return ev[k].fresh; }) && !S.readOnly) a += '<div class="small faint">To change this result, add a new screenshot or screen recording with Test Run Extension, or remove the files first.</div>';
     if (now) a += '<div class="row small"><span class="muted">Marked <b>' + esc(now) + '</b>.</span><button class="link-btn" data-action="clear-result"' + dis + ' title="Leave the case not run, to come back to it (0)">Clear result</button></div>';
     var failing = TR.classify(now) === 'fail';
     if (cur().hasComment) {

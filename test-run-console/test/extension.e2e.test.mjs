@@ -221,6 +221,16 @@ test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found
       await popup.reload();
       await popup.locator('.lb', { hasText: 'CMS/10' }).waitFor();
       assert.equal(await popup.locator('.lb', { hasText: 'CMS/09' }).count(), 0);
+      // the case ID is a link: Test Run opens on that case
+      const [run] = await Promise.all([ctx.waitForEvent('page'), popup.locator('.lb .case-link', { hasText: 'CMS/10' }).click()]);
+      await run.waitForLoadState();
+      assert.match(run.url(), /view=run&book=.+&tab=.+&cycle=v2\.12&case=CMS%2F10/);
+      await run.locator('.case.sel', { hasText: 'CMS/10' }).waitFor();
+      await run.waitForFunction(() => !/[?&]case=/.test(location.search)); // a refresh will not jump back to it
+      await run.close();
+      popup = await ctx.newPage();
+      await popup.goto(popupUrl);
+      await popup.locator('.lb', { hasText: 'CMS/10' }).waitFor();
     });
 
     await t.test('evidence: used by the next result; changing that result needs new evidence; removing deletes it', async () => {
@@ -235,7 +245,8 @@ test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found
       await popup.locator('[data-action=prev]').click();
       await popup.locator('.lb', { hasText: 'with evidence' }).waitFor();
       await popup.locator('.st button[data-value="Pass"]').click();
-      await popup.getByText(/To change this result to Pass, attach new evidence: a screenshot or a recording\. The files for Fail are replaced, or deleted once Pass is saved\./).waitFor();
+      await popup.locator('.ask', { hasText: 'Add a new screenshot or screen recording to mark it Pass.' }).waitFor();
+      assert.equal(await popup.locator('.warn').count(), 0, 'no yellow box');
       assert.equal((await caseIn('CMS/08')).status, 'Fail', 'nothing saved yet');
       await popup.getByRole('button', { name: 'Cancel' }).click();
       await popup.locator('[data-action=remove]').click();

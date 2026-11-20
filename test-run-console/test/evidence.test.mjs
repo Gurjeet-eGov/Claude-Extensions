@@ -145,9 +145,15 @@ test('evidence: a screenshot and a recording per case; used by the next result; 
     // A file for a case that already has a result backs that result at once
     await s.mark('CMS/07', 'Pass');
     const d = await s.upload('CMS/07', PNG);
-    assert.equal(d.evidence.photo.usedFor, 'Pass');
+    assert.deepEqual([d.evidence.photo.usedFor, d.evidence.photo.fresh], ['Pass', true]);
     assert.match((await s.caseOf('CMS/07')).comments[ci], /Evidence: CMS-07_/);
+    // ... and, added after Pass was marked, it is new evidence: the result can change with it
+    const m3 = await s.mark('CMS/07', 'Fail', 'Pass');
+    assert.equal(m3.ok, true, m3.error);
+    assert.deepEqual([m3.evidence.photo.usedFor, m3.evidence.photo.fresh], ['Fail', false]);
+    assert.equal((await s.mark('CMS/07', 'Pass', 'Fail')).code, 'EVIDENCE', 'once used by a mark, it is not new any more');
     const file = await s.raw('GET', `/api/evidence/file?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=${CYCLE}&key=CMS%2F07&kind=photo`);
+    assert.equal(file.status, 200);
     assert.deepEqual([file.status, file.headers.get('content-type')], [200, 'image/png']);
     assert.equal(Buffer.from(await file.arrayBuffer()).length, PNG.length);
 
