@@ -536,7 +536,8 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('[data-action=setup-part][data-part=publish]').click();
       const save = page.getByRole('button', { name: 'Save preferences' });
-      await page.locator('#publish [data-action=publish-onstop]').uncheck();
+      assert.equal(await page.getByText('When Test Run stops').count(), 0, 'no publishing on stop');
+      await page.locator('#publishTime').fill('18:30');
       await save.click();
       await page.locator('.toast', { hasText: 'Preferences saved.' }).waitFor();
       assert.equal(await page.locator('#modal .modal-box').count(), 0, 'no pop-up for these');

@@ -205,11 +205,9 @@ test('daily at the set time (5 pm by default) and when Test Run stops, once the 
     assert.equal((await run).committed, true);
     assert.equal(h.server.publish.tick(new Date(2026, 10, 20, 18, 0)), null, 'once a day');
     assert.equal((await h.local('POST', '/api/publish/settings', { time: '25:00' })).code, 'BAD_INPUT');
-    // When Test Run stops
-    const c2 = (await h.call('api_loadTab', TAB, '')).cases.find((x) => x.id === 'CMS/10');
-    await h.call('api_mark', { tab: TAB, key: c2.key, sh: c2.sh, row: c2.row, cycle: 'v2.12', expect: '', status: 'Pass' });
-    const stop = await h.server.publish.onStop();
-    assert.equal(stop.committed, true);
+    // Stopping Test Run does not publish (there is no such option any more)
+    assert.equal(h.server.publish.onStop, undefined);
+    assert.equal('onStop' in (await h.local('GET', '/api/publish')).settings, false);
   } finally { h.close(); }
 });
 
