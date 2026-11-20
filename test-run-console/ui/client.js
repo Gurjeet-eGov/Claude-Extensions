@@ -330,6 +330,7 @@
     var b = body();
     app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>' + readyBubble();
     shareSelection();
+    keepViewInUrl();
     var tb = document.querySelector('.topbar');
     if (tb) document.documentElement.style.setProperty('--header-h', tb.offsetHeight + 'px');
     if (focus) {
@@ -344,6 +345,17 @@
       var sel = document.querySelector('.case.sel');
       if (sel) { sel.scrollIntoView({ block: 'nearest' }); if (!focus) sel.focus({ preventScroll: true }); }
     }
+  }
+
+  /** The screen is in the address (?view=summary), so a browser refresh comes back to it. */
+  function keepViewInUrl() {
+    if (!S.app || !S.boot || S.connect || S.reportsMode) return;
+    try {
+      var u = new URL(window.location.href);
+      if (u.searchParams.get('view') === S.view) return;
+      u.searchParams.set('view', S.view);
+      window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+    } catch (e) { /* keep the address as it is */ }
   }
 
   /** Test Run Extension follows what this person has open: workbook, suite, cycle and case. */
@@ -2958,6 +2970,7 @@
       S.summary = null;
       S.filters.type = '';
       S.view = 'run';
+      PARAMS.view = ''; // a new workbook opens on Run, whatever the address said when the page loaded
       boot(TR.store.get('tab:' + name), '');
     });
   }

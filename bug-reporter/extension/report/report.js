@@ -1062,23 +1062,29 @@ async function noteInTestRun(filed) {
   const box = document.createElement('div');
   box.className = 'notice small';
   box.textContent = 'Adding it to Test Run…';
-  $('result').appendChild(box);
+  // with the filed issue, above Start recording / Close
+  $('result').insertBefore(box, $('recActions'));
   try {
     const suite = trSuite();
     const testCase = trCase();
     const note = buildBugNote({ title: $('title').value.trim(), filed, repo: S.project?.repo, draft: S.draft, extra: $('extra').value, module: moduleValue(), pageUrl: S.report.pageUrl, suite, testCase, priority: priority() });
     const res = await noteBugInTestRun(S.settings, note, { base: S.testRun.base });
     box.className = 'notice ok small';
-    const open = `<a href="${esc(consoleLink(S.testRun, S.testRun.base, res.kind === 'case' ? 'issues' : 'findings'))}" target="_blank" rel="noopener">Open Test Run ↗</a>`;
-    box.innerHTML = res.kind === 'case'
-      ? `In Test Run, <b>${esc(res.key)}</b> is marked ${esc(res.status || 'failed')}${res.cycle ? ` in cycle ${esc(res.cycle)}` : ''}, with this issue linked (${esc(whereLabel({ book: res.book, tab: res.tab }))}). ${open}`
-      : `Added to Test Run as finding <b>${esc(res.key)}</b> (${esc(whereLabel(res))}). ${open}`;
+    box.innerHTML = trNoteHtml(res);
     S.report.filed.testRun = res;
     await put('reports', S.report);
   } catch (e) {
     box.className = 'notice warn small';
     box.textContent = `The issue is filed, but it could not be added to Test Run: ${e.message}`;
   }
+}
+
+/** What happened in Test Run, under the filed issue. */
+function trNoteHtml(res) {
+  const open = `<a class="nowrap" href="${esc(consoleLink(S.testRun, S.testRun?.base || '', res.kind === 'case' ? 'issues' : 'findings'))}" target="_blank" rel="noopener">Open Test Run ↗</a>`;
+  return res.kind === 'case'
+    ? `In Test Run, <b>${esc(res.key)}</b> is marked ${esc(res.status || 'failed')}${res.cycle ? ` in cycle ${esc(res.cycle)}` : ''}, with this issue linked (${esc(whereLabel({ book: res.book, tab: res.tab }))}). ${open}`
+    : `Added to Test Run as finding <b>${esc(res.key)}</b> (${esc(whereLabel(res))}). ${open}`;
 }
 
 function showFiled(filed) {
@@ -1094,6 +1100,7 @@ function showFiled(filed) {
        <button id="retryFields">Retry remaining fields</button> <span class="muted">(the issue is not created again)</span></div>`,
     );
   }
+  if (filed.testRun) parts.push(`<div class="notice ok small">${trNoteHtml(filed.testRun)}</div>`);
   parts.push('<div class="row actions" id="recActions"><span class="grow"></span><button id="closeTab">Close</button></div><div id="recMsg" class="small"></div>');
   $('result').innerHTML = parts.join('');
   $('result').classList.remove('hidden');

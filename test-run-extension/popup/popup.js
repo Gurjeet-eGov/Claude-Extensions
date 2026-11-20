@@ -90,10 +90,16 @@ async function follow(first) {
   const changed = first || !S.current || !cur || cur.at !== S.current.at;
   if (!changed) return;
   const was = S.current;
+  // where the extension was when it was last open (read before loading the suite moves it)
+  const { pos } = first ? await chrome.storage.local.get('pos') : {};
   S.current = cur;
   if (!cur || !cur.book || !cur.tab) { S.suite = null; S.screen = 'choose'; render(); return; }
   if (first || !was || !S.suite || cur.book !== S.suite.book || cur.tab !== S.suite.tab || cur.cycle !== S.suite.cycle) await loadSuite();
-  if (cur.caseKey && (first || !was || cur.caseKey !== was.caseKey)) openCase(cur.caseKey);
+  // Reopened: carry on where the extension was (after a mark it moved on), unless a case
+  // was picked in Test Run since then.
+  const resume = pos && pos.at === cur.at && pos.book === cur.book && pos.tab === cur.tab && (pos.cycle || '') === (cur.cycle || '') && S.suite && S.suite.cases.some((x) => x.key === pos.caseKey);
+  if (resume) openCase(pos.caseKey);
+  else if (cur.caseKey && (first || !was || cur.caseKey !== was.caseKey)) openCase(cur.caseKey);
   S.screen = 'testing';
   render();
 }
@@ -122,6 +128,8 @@ function openCase(key) {
   S.draft = null;
   S.pending = '';
   S.confirmRemove = '';
+  // where the extension is, for the next time it opens (tied to what Test Run had picked then)
+  if (key && S.current && S.current.book) chrome.storage.local.set({ pos: { book: S.current.book, tab: S.current.tab, cycle: S.current.cycle || '', caseKey: key, at: S.current.at } }).catch(() => {});
 }
 
 const theCase = () => (S.suite ? S.suite.cases.find((x) => x.key === S.caseKey) : null);
@@ -265,7 +273,7 @@ async function signIn() {
 }
 
 async function signOut(why) {
-  await chrome.storage.local.remove('conn');
+  await chrome.storage.local.remove(['conn', 'pos']);
   Object.assign(S, { conn: null, me: null, current: null, suite: null, caseKey: '', limits: null, pending: '', screen: 'signin', error: why || '' });
   render();
 }

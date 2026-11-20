@@ -217,6 +217,10 @@ test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found
       await popup.getByText('CMS/09: Pass.').waitFor();
       assert.equal((await caseIn('CMS/09')).status, 'Pass');
       await popup.locator('.lb', { hasText: 'CMS/10' }).waitFor();
+      // closed and opened again: it carries on at CMS/10, not back at CMS/09 (picked in Test Run)
+      await popup.reload();
+      await popup.locator('.lb', { hasText: 'CMS/10' }).waitFor();
+      assert.equal(await popup.locator('.lb', { hasText: 'CMS/09' }).count(), 0);
     });
 
     await t.test('evidence: used by the next result; changing that result needs new evidence; removing deletes it', async () => {

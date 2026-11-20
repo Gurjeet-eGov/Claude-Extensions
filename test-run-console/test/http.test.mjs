@@ -133,6 +133,26 @@ test('a bug filed against a test case marks it failed with the bug linked (no fi
   } finally { s.close(); }
 });
 
+test('a bug noted as a finding (no test case) is an open failure in its suite\'s Summary', async () => {
+  const s = await start();
+  try {
+    const url = 'https://github.com/example/repo/issues/66';
+    const r = await s.req('POST', '/api/note-bug', { title: 'Employee redirected to citizen login after password update', number: 66, url, book: BOOK, tab: TAB }, { Origin: EXT_ORIGIN });
+    assert.equal(r.kind, 'finding', r.error);
+    await s.call('api_saveFinding', { text: 'Something odd, no issue yet', tab: TAB }); // no issue link: not a failure
+    const sum = (await s.call('api_summary', TAB, '')).summary;
+    const f = sum.failures.find((x) => x.id === r.key);
+    assert.ok(f, JSON.stringify(sum.failures.map((x) => x.id)));
+    assert.deepEqual([f.scenario, f.issue, f.comment, f.finding], ['Employee redirected to citizen login after password update', '#66', '', true]);
+    assert.equal(f.issues[0].url, url);
+    assert.equal(sum.failures.some((x) => /Something odd/.test(x.scenario)), false);
+    const other = (await s.call('api_summary', 'CMS 2.20.1 Features', '')).summary;
+    assert.equal(other.failures.some((x) => x.id === r.key), false, 'only in its own suite');
+    await s.call('api_setFindingState', r.key, 'covered', 'CMS/12');
+    assert.equal((await s.call('api_summary', TAB, '')).summary.failures.some((x) => x.id === r.key), false, 'not once it is done');
+  } finally { s.close(); }
+});
+
 test('suite cases: one suite\'s test cases for Bug Reporter to pick from, without changing what the owner has open', async () => {
   const s = await start();
   try {
