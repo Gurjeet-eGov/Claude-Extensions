@@ -20,6 +20,8 @@ test('Choose Workbook/Suite opens Test Run signed in, on the right screen', () =
   const conn = parseLink('https://org.github.io/repo/test-run/#join=k1&server=https%3A%2F%2Fx.example');
   assert.equal(consoleUrl(conn, 'run'), 'https://org.github.io/repo/test-run/?view=run#join=k1&server=https%3A%2F%2Fx.example');
   assert.equal(consoleUrl(parseLink('http://127.0.0.1:5178'), 'summary'), 'http://127.0.0.1:5178/?view=summary');
+  assert.equal(consoleUrl(conn, 'run', { book: 'CMS Sign Off.xlsx', tab: 'CMS 2.20.1', cycle: 'v2.12', case: 'CMS/07' }),
+    'https://org.github.io/repo/test-run/?view=run&book=CMS+Sign+Off.xlsx&tab=CMS+2.20.1&cycle=v2.12&case=CMS%2F07#join=k1&server=https%3A%2F%2Fx.example', 'the case ID opens Test Run on that case');
 });
 
 test('media: photos fit 1920×1080, sizes and lengths read well, recordings stop before the cap', () => {

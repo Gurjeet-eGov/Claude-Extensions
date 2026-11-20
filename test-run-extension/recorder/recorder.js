@@ -41,7 +41,7 @@ function render() {
   const el = elapsedMs(S, Date.now());
   let h = `<div class="hd"><span class="mk" aria-hidden="true"></span><span class="title">Test Run Extension</span><span class="grow"></span><span class="muted">Recording evidence</span></div>
     <div><div class="lb">${esc(q.tab)} · cycle ${esc(q.cycle || 'Status')}</div><div class="scenario">${esc(label)}</div></div>`;
-  if (q.forStatus) h += `<div class="warn">${esc(q.forStatus)} is saved when this recording is attached.</div>`;
+  if (q.forStatus) h += `<div class="muted">${esc(q.forStatus)} is saved when this recording is attached.</div>`;
   if (S.state === 'loading') h += '<div class="loading">Connecting to Test Run…</div>';
   else if (S.state === 'error') h += `<div class="flash bad">${esc(S.error)}</div><button data-action="close">Close</button>`;
   else if (S.state === 'ready') {

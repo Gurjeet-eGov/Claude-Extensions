@@ -44,13 +44,18 @@ export function parseLink(text) {
   return { link: s, server, key, gist, local: false };
 }
 
-/** Where to open Test Run for this connection, on a screen ('run', 'summary'). */
-export function consoleUrl(conn, view) {
+/**
+ * Where to open Test Run for this connection, on a screen ('run', 'summary'); at: { book, tab,
+ * cycle, case } opens on that workbook, suite, cycle and test case.
+ */
+export function consoleUrl(conn, view, at = {}) {
   if (!conn) return '';
-  if (conn.local) return `${conn.server}/?view=${encodeURIComponent(view)}`;
+  const q = new URLSearchParams({ view });
+  for (const k of ['book', 'tab', 'cycle', 'case']) if (at[k] != null && at[k] !== '') q.set(k, at[k]);
+  if (conn.local) return `${conn.server}/?${q}`;
   const i = conn.link.indexOf('#');
   const page = conn.link.slice(0, i);
-  return `${page}${page.includes('?') ? '&' : '?'}view=${encodeURIComponent(view)}${conn.link.slice(i)}`;
+  return `${page}${page.includes('?') ? '&' : '?'}${q}${conn.link.slice(i)}`;
 }
 
 async function timedFetch(url, opts, ms) {

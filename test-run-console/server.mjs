@@ -911,7 +911,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const whoKey = (person) => (isOwnerPerson(person) ? 'owner' : `p:${person.id}`);
 
   /** Evidence as the pages see it: no paths on the laptop. */
-  const itemOut = (it) => ({ name: it.name, size: it.size, kind: it.kind, by: it.by, at: it.at, usedFor: it.usedFor || '' });
+  const itemOut = (it) => ({ name: it.name, size: it.size, kind: it.kind, by: it.by, at: it.at, usedFor: it.usedFor || '', fresh: !!it.fresh });
   /** A case's files: { photo?, video? }. */
   const filesOut = (byKind) => { const o = {}; for (const [k, it] of Object.entries(byKind || {})) o[k] = itemOut(it); return o; };
   /** { caseKey: { photo?, video? } } */
@@ -980,8 +980,9 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
   /**
    * Marking a result that has evidence: a result backed by files changes only with a new
-   * file (a screenshot or a recording) attached for it, or once the files are removed. When
-   * it changes, the new files back the new result and the old result's files are deleted.
+   * file (a screenshot or a recording added since the result was marked), or once the files
+   * are removed. When it changes, the new files back the new result and the old result's
+   * other files are deleted.
    */
   async function markWithEvidence(body, person) {
     const args = Array.isArray(body.args) ? body.args : [];
@@ -992,8 +993,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const items = book && r.tab && r.key ? Object.values(evidence.forCase(book, r.tab, cycle, r.key)) : [];
     const next = r.status == null ? null : String(r.status).trim();
     const changes = next != null && next !== String(r.expect == null ? '' : r.expect).trim();
-    const stale = items.filter((x) => x.usedFor && x.usedFor !== next);
-    const fresh = items.filter((x) => !x.usedFor);
+    const stale = items.filter((x) => !x.fresh && x.usedFor && x.usedFor !== next);
+    const fresh = items.filter((x) => x.fresh);
     if (changes && stale.length && !fresh.length) {
       return { ok: false, code: 'EVIDENCE', evidence: filesOut(evidence.forCase(book, r.tab, cycle, r.key)), error: `${stale[0].caseId || 'This case'} is ${stale[0].usedFor} with evidence (${stale.map((x) => x.name).join(', ')}). To change the result, attach new evidence with Test Run Extension (a screenshot or a recording), or remove the files first.` };
     }

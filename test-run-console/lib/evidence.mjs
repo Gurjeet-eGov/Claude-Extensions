@@ -101,7 +101,11 @@ export class EvidenceStore {
     if (!idx || !idx.items || typeof idx.items !== 'object') return { version: 2, items: {} };
     // version 1 kept one file per case: key it by its kind now
     const items = {};
-    for (const it of Object.values(idx.items)) if (it && KINDS.includes(it.kind)) items[keyOf(it.tab, it.cycle, it.caseKey, it.kind)] = it;
+    for (const it of Object.values(idx.items)) {
+      if (!it || !KINDS.includes(it.kind)) continue;
+      if (typeof it.fresh !== 'boolean') it.fresh = !it.usedFor; // kept before "fresh" existed
+      items[keyOf(it.tab, it.cycle, it.caseKey, it.kind)] = it;
+    }
     return { version: 2, items };
   }
 
@@ -139,7 +143,8 @@ export class EvidenceStore {
   /**
    * Attach a file to a case and cycle: one screenshot and one recording each. An earlier
    * file of the same kind is deleted for good. usedFor: the result it backs ('' until a
-   * result is marked with it).
+   * result is marked with it). A new file is fresh: it can back a change of the result,
+   * until a result is marked with it.
    */
   put(book, { tab, cycle, caseKey, caseId, buf, type, by, usedFor = '' }) {
     const idx = this.read(book);
@@ -154,7 +159,7 @@ export class EvidenceStore {
     const tmp = join(this.dirOf(book), `${rel}.${process.pid}.tmp`);
     writeFileSync(tmp, buf);
     renameSync(tmp, join(this.dirOf(book), rel));
-    const item = { tab, cycle: cycle || '', caseKey, caseId: caseId || '', file: rel, name, kind: type.kind, ext: type.ext, size: buf.length, by: by || '', at: new Date().toISOString(), usedFor };
+    const item = { tab, cycle: cycle || '', caseKey, caseId: caseId || '', file: rel, name, kind: type.kind, ext: type.ext, size: buf.length, by: by || '', at: new Date().toISOString(), usedFor, fresh: true };
     idx.items[k] = item;
     this.write(book, idx);
     if (old) this.unlinkItem(book, old);
@@ -166,6 +171,7 @@ export class EvidenceStore {
     const it = idx.items[keyOf(tab, cycle, caseKey, kind)];
     if (!it) return null;
     it.usedFor = status;
+    it.fresh = false; // a result was marked with it
     this.write(book, idx);
     return it;
   }

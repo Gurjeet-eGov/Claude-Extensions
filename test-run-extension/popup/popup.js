@@ -204,12 +204,11 @@ function testingHtml() {
   const i = s.cases.indexOf(c);
   const cls = clsOf(c.status);
   h += `<div class="row"><button class="icon" data-action="prev" aria-label="Previous case" ${i <= 0 ? 'disabled' : ''}>‹</button>
-    <div class="grow"><div class="lb">${esc(c.id || `Row ${c.row}`)} · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>${filesOf(c).some((f) => f.usedFor) ? ' with evidence' : ''}` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
+    <div class="grow"><div class="lb"><a href="#" class="case-link" data-action="open-case" title="Open ${esc(c.id || 'this case')} in Test Run">${esc(c.id || `Row ${c.row}`)}</a> · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>${filesOf(c).some((f) => f.usedFor) ? ' with evidence' : ''}` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
     <button class="icon" data-action="next" aria-label="Next case" ${i >= s.cases.length - 1 ? 'disabled' : ''}>›</button></div>
     <label class="sr" for="find">Find a case by ID</label><input id="find" list="ids" placeholder="Find a case by ID" autocomplete="off"><datalist id="ids">${s.cases.map((x) => `<option value="${esc(x.id || x.key)}">${esc(x.scenario.slice(0, 80))}</option>`).join('')}</datalist>`;
   if (S.pending) {
-    const old = filesOf(c).filter((f) => f.usedFor && f.usedFor !== S.pending);
-    h += `<div class="warn">To change this result to <b>${esc(S.pending)}</b>, attach new evidence: a screenshot or a recording.${old.length ? ` The files for ${esc(old[0].usedFor)} are replaced, or deleted once ${esc(S.pending)} is saved.` : ''} <button class="link" data-action="cancel-pending">Cancel</button></div>`;
+    h += `<div class="ask">Add a new screenshot or screen recording to mark it <b>${esc(S.pending)}</b>. <button class="link" data-action="cancel-pending">Cancel</button></div>`;
   }
   const r = S.rec;
   const live = recLive();
@@ -230,7 +229,6 @@ function testingHtml() {
   const shown = S.draft != null ? S.draft : withoutEvidenceLine(c.comment);
   h += `<label class="sr" for="comment">Comment</label><textarea id="comment" rows="2" placeholder="Comment (optional)">${esc(shown)}</textarea>`;
   h += `<div class="st" role="group" aria-label="Result">${s.statusOptions.map((o) => `<button class="${o.cls}${o.value === c.status ? ' on' : ''}${o.value === S.pending ? ' want' : ''}" data-action="mark" data-value="${esc(o.value)}" ${S.busy ? 'disabled' : ''} aria-pressed="${o.value === c.status}">${esc(o.value)}</button>`).join('')}</div>`;
-  if (S.pending) h += `<div class="muted">${esc(S.pending)} is saved when the screenshot or recording is attached.</div>`;
   if (S.busy) h += `<div class="muted">${esc(S.busy)}</div>`;
   if (S.flash) h += `<div class="flash${S.flash.bad ? ' bad' : ''}">${esc(S.flash.text)}</div>`;
   return h + footer();
@@ -278,8 +276,8 @@ async function signOut(why) {
   render();
 }
 
-function open(view) {
-  chrome.tabs.create({ url: consoleUrl(S.conn, view) });
+function open(view, at) {
+  chrome.tabs.create({ url: consoleUrl(S.conn, view, at) });
   window.close();
 }
 
@@ -290,7 +288,8 @@ async function mark(value) {
   if (value === c.status && !commentEdited) return;
   // A result backed by evidence changes only with new evidence.
   const files = filesOf(c);
-  if (value !== c.status && files.some((f) => f.usedFor && f.usedFor !== value) && !files.some((f) => !f.usedFor)) {
+  // Needs a new file only when none was added since the result was marked
+  if (value !== c.status && files.some((f) => !f.fresh && f.usedFor && f.usedFor !== value) && !files.some((f) => f.fresh)) {
     S.pending = value;
     render();
     return;
@@ -439,6 +438,7 @@ const ACTIONS = {
   retry: connect,
   choose: () => open('run'),
   'open-summary': () => open('summary'),
+  'open-case': () => { const c = theCase(); if (c && S.suite) open('run', { book: S.suite.book, tab: S.suite.tab, cycle: S.suite.cycle, case: c.id || c.key }); },
   prev: () => { const i = S.suite.cases.findIndex((x) => x.key === S.caseKey); if (i > 0) { openCase(S.suite.cases[i - 1].key); render(); } },
   next: () => { const i = S.suite.cases.findIndex((x) => x.key === S.caseKey); if (i < S.suite.cases.length - 1) { openCase(S.suite.cases[i + 1].key); render(); } },
   mark: (el) => mark(el.getAttribute('data-value')),
