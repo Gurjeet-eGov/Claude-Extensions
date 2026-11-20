@@ -172,7 +172,7 @@ The host can publish the reports to the GitHub repository, so they can be read o
 
 **Setup → Publish** (the host only; testers and viewers cannot publish):
 - **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site (the commit removes them; earlier versions stay in the history).
-- **When:** every day at **17:00** (change the time there) while Test Run runs, and **when Test Run stops** (Ctrl+C in its terminal; Ctrl+C again stops at once without publishing). These start after your first publish. **Publish** on Summary publishes too.
+- **When:** every day at **17:00** (change the time there) while Test Run runs. It starts after your first publish. **Publish** on Summary publishes too. Stopping Test Run (Ctrl+C) does not publish.
 - **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
 - **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
@@ -185,7 +185,7 @@ The host can publish the reports to the GitHub repository, so they can be read o
 
 ### Carrying on from a clone (hand over)
 
-1. The current host publishes (or it happens at 17:00 or when their Test Run stops).
+1. The current host publishes (or it happens at 17:00).
 2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`.
 3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied into `sheets/`.
 4. They turn on **Setup → Sharing** and add people (invite links belong to each host's laptop), and publish from then on.

@@ -68,7 +68,6 @@ function normalizePublish(p = {}) {
     books,
     nightly: p.nightly !== false,
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(p.time || '')) ? String(p.time) : '17:00',
-    onStop: p.onStop !== false,
     acknowledged: p.acknowledged === true, // the owner confirmed once that publishing makes these public
     knownId: clip(p.knownId, 32), // the publish this laptop made or fetched last
     autoDate: clip(p.autoDate, 10),
@@ -682,7 +681,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       folder: PUBLISHED,
       pagesUrl: pagesUrlFromRemote(gitRemote()),
       books: lib.list().map((b) => ({ name: b.name, on: !!P.books[b.name] })),
-      settings: { nightly: P.nightly, time: P.time, onStop: P.onStop },
+      settings: { nightly: P.nightly, time: P.time },
       acknowledged: P.acknowledged,
       last: P.last,
       remote: remote ? { id: remote.id || '', by: remote.by || '', at: remote.publishedAt || '', workbooks: (remote.workbooks || []).map((w) => w.name) } : null,
@@ -767,7 +766,6 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.time))) return { ok: false, code: 'BAD_INPUT', error: 'Give the time as HH:MM, for example 17:00.' };
         P.time = String(body.time);
       }
-      if (body.onStop != null) P.onStop = body.onStop === true;
       saveApp();
       return publishStatus();
     }
@@ -1290,8 +1288,6 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     now: publishNow,
     status: publishStatus,
     tick: publishTick,
-    /** When Test Run stops: publish what changed (if the host asked for that). */
-    onStop: () => (app.publish.acknowledged && app.publish.onStop ? publishNow({ auto: true }) : Promise.resolve(null)),
     /** The once-a-minute check for the daily publish, and a look at GitHub for newer publishes every 30 minutes. */
     startSchedule: () => {
       pub.timers.push(setInterval(() => publishTick(), 60000));
@@ -1344,9 +1340,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     if (quitting) process.exit(0); // Ctrl+C again: stop now
     quitting = true;
     server.share.stop({ forget: false }); // sharing starts again with Test Run
-    const late = new Promise((r) => setTimeout(r, 15000));
-    const done = server.publish.onStop().then((r) => { if (r && r.ok && r.committed) console.log(`Published to GitHub: ${r.url}`); else if (r && !r.ok) console.log(r.error); });
-    await Promise.race([done, late]);
     process.exit(0);
   };
   process.on('SIGINT', quit);

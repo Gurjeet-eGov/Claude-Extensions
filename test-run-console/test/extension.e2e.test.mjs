@@ -308,7 +308,9 @@ test('Test Run Extension end to end', { skip: !chromium && 'Playwright not found
       await popup.getByText('Only view access, click here for summary').waitFor();
       assert.equal(await popup.getByText('Choose Workbook/Suite').count(), 0);
       const [summary] = await Promise.all([ctx.waitForEvent('page'), popup.getByRole('link', { name: 'here' }).click()]);
-      assert.match(summary.url(), /\?view=summary#join=/);
+      await summary.locator('.user-btn[title="Manager · View only"]').waitFor(); // signed in with the link
+      assert.match(summary.url(), /\?view=summary/);
+      assert.doesNotMatch(summary.url(), /join=/, 'the key leaves the address bar');
     });
 
     assert.deepEqual(errors, [], 'no script errors');

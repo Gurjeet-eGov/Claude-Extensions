@@ -1968,7 +1968,7 @@
     if (!S.pubDraft) {
       var books = {};
       r.books.forEach(function (b) { books[b.name] = !!b.on; });
-      S.pubDraft = { books: books, nightly: !!r.settings.nightly, time: r.settings.time, onStop: !!r.settings.onStop };
+      S.pubDraft = { books: books, nightly: !!r.settings.nightly, time: r.settings.time };
     }
     return S.pubDraft;
   }
@@ -1981,14 +1981,14 @@
     var st = r.settings;
     return {
       books: r.books.filter(function (b) { return !!d.books[b.name] !== !!b.on; }).map(function (b) { return { name: b.name, on: !!d.books[b.name] }; }),
-      other: d.nightly !== !!st.nightly || d.time !== st.time || d.onStop !== !!st.onStop
+      other: d.nightly !== !!st.nightly || d.time !== st.time
     };
   }
   function pubDirty() { var c = pubChanges(); return c.books.length > 0 || c.other; }
 
   function savePublishPrefs(publishAfter) {
     var d = S.pubDraft;
-    var body = { books: d.books, nightly: d.nightly, time: d.time, onStop: d.onStop };
+    var body = { books: d.books, nightly: d.nightly, time: d.time };
     TR.http('POST', '/api/publish/settings', body).then(function (r) {
       if (!r.ok) { toast(r.error, 'bad'); return; }
       S.publish = r;
@@ -2036,8 +2036,7 @@
       (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') + '</div>';
     h += '<div class="subsection"><h3>When</h3>' +
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
-      '<label class="check"><input type="checkbox" data-action="publish-onstop"' + (d.onStop ? ' checked' : '') + '> When Test Run stops (Ctrl+C in its terminal)</label>' +
-      (r.acknowledged ? '' : '<p class="small faint">These start after your first Publish now.</p>') + '</div>';
+      (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
     // Changes above apply only once saved
     h += '<div class="row"><button class="primary" data-action="publish-save"' + (dirty ? '' : ' disabled') + ' title="' + (dirty ? 'Save these choices' : 'Nothing changed') + '">Save preferences</button>' +
       (dirty ? '<span class="small muted">Unsaved changes</span><button class="ghost" data-action="publish-discard">Discard</button>' : '') + '</div>';
@@ -2810,7 +2809,6 @@
     },
     'publish-book': function (el) { pubDraft().books[el.getAttribute('data-name')] = el.checked; render(); },
     'publish-nightly': function (el) { pubDraft().nightly = el.checked; render(); },
-    'publish-onstop': function (el) { pubDraft().onStop = el.checked; render(); },
     'publish-save': function () {
       var c = pubChanges();
       if (c.books.length) { publishConfirmModal(c.books); return; }
