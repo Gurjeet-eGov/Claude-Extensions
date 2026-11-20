@@ -4,7 +4,7 @@
 // Tested on added on import.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import JSZip from 'jszip';
@@ -81,7 +81,7 @@ test('what each person has open in Test Run is what the extension shows', async 
   } finally { s.close(); }
 });
 
-test('evidence: attached, used by the next result, required again to change it, and deleted for good when removed', async () => {
+test('evidence: a screenshot and a recording per case; used by the next result; a changed result needs a new file; removing deletes it', async () => {
   assert.deepEqual(evidenceType(PNG), { kind: 'photo', ext: 'png' });
   assert.deepEqual(evidenceType(WEBM), { kind: 'video', ext: 'webm' });
   assert.equal(evidenceType(Buffer.from('<html><script>alert(1)</script></html>')), null);
@@ -93,51 +93,61 @@ test('evidence: attached, used by the next result, required again to change it, 
     const big = await s.raw('POST', `/api/evidence?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=${CYCLE}&key=CMS%2F04`, Buffer.alloc(MAX_FILE_BYTES + 10), { 'content-type': 'application/octet-stream' });
     assert.equal(big.status, 413, 'over 20 MB is refused');
 
-    // CMS/04 not run yet: the file waits for the result
+    // CMS/04 not run yet: a screenshot and a recording, both waiting for the result
     const a = await s.upload('CMS/04', PNG);
     assert.equal(a.ok, true, a.error);
-    assert.match(a.evidence.name, /^CMS-04_v2\.12_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.png$/);
-    assert.equal(a.evidence.usedFor, '');
+    assert.match(a.added.name, /^CMS-04_v2\.12_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.png$/);
+    const v = await s.upload('CMS/04', WEBM);
+    assert.deepEqual(Object.keys(v.evidence).sort(), ['photo', 'video'], 'one of each');
+    assert.deepEqual([v.evidence.photo.usedFor, v.evidence.video.usedFor], ['', '']);
     const dir = join(s.sheets, '.testrun', 'evidence', 'CMS Sign Off (sample)', TAB, CYCLE);
-    assert.ok(existsSync(join(dir, a.evidence.name)), 'kept on the host');
+    assert.ok(existsSync(join(dir, a.added.name)) && existsSync(join(dir, v.added.name)), 'kept on the host');
+    const a2 = await s.upload('CMS/04', PNG);
+    assert.equal(existsSync(join(dir, a.added.name)), false, 'a new screenshot replaces the screenshot only');
+    assert.ok(existsSync(join(dir, v.added.name)));
+
     const m1 = await s.mark('CMS/04', 'Pass');
     assert.equal(m1.ok, true, m1.error);
-    assert.equal(m1.evidence.usedFor, 'Pass');
-    const c1 = await s.caseOf('CMS/04');
+    assert.deepEqual([m1.evidence.photo.usedFor, m1.evidence.video.usedFor], ['Pass', 'Pass']);
     const ci = (await s.call('api_loadTab', TAB, CYCLE)).cycleIdx;
-    assert.match(c1.comments[ci], new RegExp(`Evidence: ${a.evidence.name.replace(/\./g, '\\.')}$`), 'the file name goes in the cycle comment');
-    assert.equal((await s.call('api_loadTab', TAB, CYCLE)).evidence[c1.key].usedFor, 'Pass', 'Run sees it');
+    const c1 = await s.caseOf('CMS/04');
+    assert.ok(c1.comments[ci].endsWith(`Evidence: ${a2.added.name}, ${v.added.name}`), 'both file names go in the cycle comment');
+    assert.deepEqual(Object.keys((await s.call('api_loadTab', TAB, CYCLE)).evidence[c1.key]).sort(), ['photo', 'video'], 'Run sees both');
 
-    // Changing a result backed by a file needs a new file first
+    // Changing a result backed by files needs a new file first
     const no = await s.mark('CMS/04', 'Fail', 'Pass');
     assert.equal(no.code, 'EVIDENCE');
     assert.match(no.error, /attach new evidence/);
     assert.equal((await s.caseOf('CMS/04')).statuses[ci], 'Pass', 'still Pass');
     assert.equal((await s.mark('CMS/04', 'Pass', 'Pass')).ok, true, 'saving the same result (a comment, say) is fine');
 
-    const b = await s.upload('CMS/04', WEBM, '&forStatus=Fail');
+    // A new screenshot for Fail: once Fail is saved, the old result's recording is out of date and goes
+    const b = await s.upload('CMS/04', PNG, '&forStatus=Fail');
     assert.equal(b.ok, true, b.error);
-    assert.equal(b.evidence.usedFor, '', 'for the result about to be marked');
-    assert.equal(existsSync(join(dir, a.evidence.name)), false, 'the replaced file is deleted for good');
+    assert.deepEqual([b.evidence.photo.usedFor, b.evidence.video.usedFor], ['', 'Pass']);
     const m2 = await s.mark('CMS/04', 'Fail', 'Pass');
     assert.equal(m2.ok, true, m2.error);
+    assert.deepEqual(m2.removedEvidence, [v.added.name]);
+    assert.deepEqual(Object.keys(m2.evidence), ['photo']);
+    assert.equal(m2.evidence.photo.usedFor, 'Fail');
+    assert.equal(existsSync(join(dir, v.added.name)), false, 'the old recording is deleted');
     const c2 = (await s.caseOf('CMS/04')).comments[ci];
-    assert.equal((c2.match(/Evidence:/g) || []).length, 1, 'one evidence line, the new file');
-    assert.match(c2, new RegExp(b.evidence.name.replace(/\./g, '\\.')));
+    assert.equal((c2.match(/Evidence:/g) || []).length, 1);
+    assert.match(c2, new RegExp(`Evidence: ${b.added.name.replace(/\./g, '\\.')}$`));
 
     // Removed: deleted from the host and the comment; the result can change again freely
-    const r = await s.req('POST', '/api/evidence/remove', { book: BOOK, tab: TAB, cycle: CYCLE, key: 'CMS/04' });
+    const r = await s.req('POST', '/api/evidence/remove', { book: BOOK, tab: TAB, cycle: CYCLE, key: 'CMS/04', kind: 'photo' });
     assert.equal(r.ok, true, r.error);
-    assert.equal(existsSync(join(dir, b.evidence.name)), false);
+    assert.equal(existsSync(join(dir, b.added.name)), false);
     assert.doesNotMatch((await s.caseOf('CMS/04')).comments[ci], /Evidence:/);
     assert.equal((await s.mark('CMS/04', 'Pass', 'Fail')).ok, true, 'no file, no rule');
 
     // A file for a case that already has a result backs that result at once
     await s.mark('CMS/07', 'Pass');
     const d = await s.upload('CMS/07', PNG);
-    assert.equal(d.evidence.usedFor, 'Pass');
+    assert.equal(d.evidence.photo.usedFor, 'Pass');
     assert.match((await s.caseOf('CMS/07')).comments[ci], /Evidence: CMS-07_/);
-    const file = await s.raw('GET', `/api/evidence/file?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=${CYCLE}&key=CMS%2F07`);
+    const file = await s.raw('GET', `/api/evidence/file?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=${CYCLE}&key=CMS%2F07&kind=photo`);
     assert.deepEqual([file.status, file.headers.get('content-type')], [200, 'image/png']);
     assert.equal(Buffer.from(await file.arrayBuffer()).length, PNG.length);
 
@@ -147,13 +157,26 @@ test('evidence: attached, used by the next result, required again to change it, 
   } finally { s.close(); }
 });
 
+test('evidence kept by the first version (one file per case) is read as that kind', async () => {
+  const s = await start();
+  try {
+    const a = await s.upload('CMS/09', PNG);
+    const file = join(s.sheets, '.testrun', 'evidence', 'CMS Sign Off (sample)', 'index.json');
+    const idx = JSON.parse(readFileSync(file, 'utf8'));
+    const it = Object.values(idx.items)[0];
+    writeFileSync(file, JSON.stringify({ version: 1, items: { [`${TAB}\u0001${CYCLE}\u0001${it.caseKey}`]: it } }));
+    const v = await s.upload('CMS/09', WEBM);
+    assert.deepEqual([v.evidence.photo.name, v.evidence.video.name], [a.added.name, v.added.name], 'the old file is still there, as the screenshot');
+  } finally { s.close(); }
+});
+
 test('Complete Report: the workbook and every suite\'s evidence in one zip, made in the background, kept for a while', async () => {
   const s = await start();
   try {
     await s.req('POST', '/api/media', { keepMinutes: 15 });
     assert.equal((await s.req('GET', `/api/complete-report?book=${encodeURIComponent(BOOK)}`)).state, 'none');
     await s.mark('CMS/07', 'Pass');
-    const a = await s.upload('CMS/07', PNG);
+    const a = (await s.upload('CMS/07', PNG)).added;
     // another suite of the same workbook
     const feat = await s.call('api_loadTab', 'CMS 2.20.1 Features', '');
     const fc = feat.cases[0];
@@ -178,8 +201,8 @@ test('Complete Report: the workbook and every suite\'s evidence in one zip, made
     const names = Object.keys(zip.files).filter((n) => !zip.files[n].dir).sort();
     assert.deepEqual(names, [
       BOOK,
-      `Evidence/CMS 2.20.1 Features/${cyc}/${safeName(fc.id || fc.key)}/${up.evidence.name}`,
-      `Evidence/CMS 2.20.1/v2.12/CMS-07/${a.evidence.name}`,
+      `Evidence/CMS 2.20.1 Features/${cyc}/${safeName(fc.id || fc.key)}/${up.added.name}`,
+      `Evidence/CMS 2.20.1/v2.12/CMS-07/${a.name}`,
     ]);
     const xbook = await XBook.fromBuffer(await zip.file(BOOK).async('nodebuffer'), 'x');
     assert.ok(xbook.getSheetByName(TAB), 'the workbook as Summary Report gives it');

@@ -482,8 +482,8 @@ function tr_requireTestedColumns() {
 }
 
 /**
- * The evidence line in a case's cycle comment: "Evidence: <file name>", replacing an
- * earlier one; file '' removes it. req: { tab, key, cycle, file }
+ * The evidence line in a case's cycle comment: "Evidence: <file>, <file>", replacing an
+ * earlier one; no files removes it. req: { tab, key, cycle, files } (or file)
  */
 function tr_setEvidenceNote(req) {
   req = req || {};
@@ -497,8 +497,8 @@ function tr_setEvidenceNote(req) {
     var before = String(c.comments[ci] || '');
     var lines = before.split(/\r?\n/).filter(function (l) { return !/^Evidence:\s/.test(l.trim()); });
     while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-    var file = TRCore.cleanText(req.file, 200);
-    if (file) lines.push('Evidence: ' + file);
+    var files = (Array.isArray(req.files) ? req.files : [req.file]).map(function (f) { return TRCore.cleanText(f, 200); }).filter(Boolean);
+    if (files.length) lines.push('Evidence: ' + files.join(', '));
     var after = lines.join('\n');
     if (after !== before) m.sheet.getRange(c.row, cy.comment + 1).setValue(TRCore.cellSafe(after));
     return { ok: true, comment: after };

@@ -1,5 +1,5 @@
 // Evidence from Test Run Extension: screenshots and screen recordings attached to test
-// cases, one per case and cycle. They stay on the host, in sheets/.testrun/evidence/
+// cases: one screenshot and one recording per case and cycle. They stay on the host, in sheets/.testrun/evidence/
 // (never published), with an index per workbook. Also the media limits everyone records
 // with (set by the host in Setup → Media), and the Complete Report zip: the workbook
 // plus every suite's evidence.
@@ -72,7 +72,8 @@ export function fileStamp(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
-const keyOf = (tab, cycle, caseKey) => `${tab}\u0001${cycle || ''}\u0001${caseKey}`;
+export const KINDS = ['photo', 'video'];
+const keyOf = (tab, cycle, caseKey, kind) => `${tab}\u0001${cycle || ''}\u0001${caseKey}\u0001${kind}`;
 
 function walkBytes(dir) {
   let n = 0;
@@ -95,12 +96,13 @@ export class EvidenceStore {
   indexFile(book) { return join(this.dirOf(book), 'index.json'); }
 
   read(book) {
-    try {
-      const idx = JSON.parse(readFileSync(this.indexFile(book), 'utf8'));
-      return idx && idx.items && typeof idx.items === 'object' ? idx : { version: 1, items: {} };
-    } catch {
-      return { version: 1, items: {} };
-    }
+    let idx;
+    try { idx = JSON.parse(readFileSync(this.indexFile(book), 'utf8')); } catch { idx = null; }
+    if (!idx || !idx.items || typeof idx.items !== 'object') return { version: 2, items: {} };
+    // version 1 kept one file per case: key it by its kind now
+    const items = {};
+    for (const it of Object.values(idx.items)) if (it && KINDS.includes(it.kind)) items[keyOf(it.tab, it.cycle, it.caseKey, it.kind)] = it;
+    return { version: 2, items };
   }
 
   write(book, idx) {
@@ -111,14 +113,21 @@ export class EvidenceStore {
     renameSync(tmp, file);
   }
 
-  get(book, tab, cycle, caseKey) {
-    return this.read(book).items[keyOf(tab, cycle, caseKey)] || null;
+  get(book, tab, cycle, caseKey, kind) {
+    return this.read(book).items[keyOf(tab, cycle, caseKey, kind)] || null;
   }
 
-  /** The evidence of one suite and cycle: { caseKey: item }. */
+  /** A case's files in a cycle: { photo?, video? }. */
+  forCase(book, tab, cycle, caseKey) {
+    const out = {};
+    for (const kind of KINDS) { const it = this.get(book, tab, cycle, caseKey, kind); if (it) out[kind] = it; }
+    return out;
+  }
+
+  /** The evidence of one suite and cycle: { caseKey: { photo?, video? } }. */
   forCycle(book, tab, cycle) {
     const out = {};
-    for (const it of Object.values(this.read(book).items)) if (it.tab === tab && (it.cycle || '') === (cycle || '')) out[it.caseKey] = it;
+    for (const it of Object.values(this.read(book).items)) if (it.tab === tab && (it.cycle || '') === (cycle || '')) (out[it.caseKey] = out[it.caseKey] || {})[it.kind] = it;
     return out;
   }
 
@@ -128,12 +137,13 @@ export class EvidenceStore {
   }
 
   /**
-   * Attach a file to a case and cycle. One per case and cycle: an earlier file is deleted
-   * for good. usedFor: the result it backs ('' until a result is marked with it).
+   * Attach a file to a case and cycle: one screenshot and one recording each. An earlier
+   * file of the same kind is deleted for good. usedFor: the result it backs ('' until a
+   * result is marked with it).
    */
   put(book, { tab, cycle, caseKey, caseId, buf, type, by, usedFor = '' }) {
     const idx = this.read(book);
-    const k = keyOf(tab, cycle, caseKey);
+    const k = keyOf(tab, cycle, caseKey, type.kind);
     const old = idx.items[k];
     const folder = join(safeName(tab, 'suite'), safeName(cycle, 'status'));
     mkdirSync(join(this.dirOf(book), folder), { recursive: true });
@@ -151,19 +161,19 @@ export class EvidenceStore {
     return item;
   }
 
-  setUsed(book, tab, cycle, caseKey, status) {
+  setUsed(book, tab, cycle, caseKey, kind, status) {
     const idx = this.read(book);
-    const it = idx.items[keyOf(tab, cycle, caseKey)];
+    const it = idx.items[keyOf(tab, cycle, caseKey, kind)];
     if (!it) return null;
     it.usedFor = status;
     this.write(book, idx);
     return it;
   }
 
-  /** Detach and delete a case's file for good. Returns the removed item, or null. */
-  remove(book, tab, cycle, caseKey) {
+  /** Detach and delete one of a case's files for good. Returns the removed item, or null. */
+  remove(book, tab, cycle, caseKey, kind) {
     const idx = this.read(book);
-    const k = keyOf(tab, cycle, caseKey);
+    const k = keyOf(tab, cycle, caseKey, kind);
     const it = idx.items[k];
     if (!it) return null;
     delete idx.items[k];

@@ -200,12 +200,12 @@ One host at a time: if two hosts work at once, the second to publish is warned b
 - **What you are testing:** **Choose Workbook/Suite** opens Test Run. The workbook, suite, cycle and case you have open there are what the extension shows, and it follows as you move. **‹ ›** and **Find a case by ID** move within the suite.
 - **Results:** Pass, Fail, NA, Skip (the suite's own result values), and a comment. Marking moves on to the next case.
 - **Evidence:**
-  - **Screenshot** takes the page you are on, scaled to fit 1920×1080, as a PNG. **Record** opens a small Recorder window: **Choose what to record** (Chrome asks which screen, window or tab, and whether to share audio), then **Stop and attach**.
-  - One file per case and cycle, kept on the laptop running Test Run, in `sheets/.testrun/evidence/<workbook>/<suite>/<cycle>/`, named like `CMS-07_v2.12_2026-11-20_14-32-05.png`. **It is never published.**
+  - **Screenshot** takes the page you are on, scaled to fit 1920×1080, as a PNG. **Record** opens a small Recorder window: **Choose what to record** (Chrome asks which screen, window or tab, and whether to share audio). Once it records, that window minimises itself, and in the popup **Pause** (then **Resume**) and **Stop** take Record's place, half each. Stop attaches the recording.
+  - One screenshot and one recording per case and cycle (a new one replaces the one of the same kind), kept on the laptop running Test Run, in `sheets/.testrun/evidence/<workbook>/<suite>/<cycle>/`, named like `CMS-07_v2.12_2026-11-20_14-32-05.png`. **They are never published.**
   - The file name goes in the cycle's comment: `Evidence: CMS-07_v2.12_….png`.
-  - The first time, evidence is optional. Once a result has evidence, it can only change with new evidence: pick the new result, then take a screenshot or record; it replaces the old file and the result is saved. The same rule applies in Run.
-  - Anyone who can mark results can remove a case's file (✕ in the extension, **Remove** in Run). It is deleted from the laptop for good, its comment line goes, and the result can then change freely.
-- **Run** shows a case's evidence next to its result, with **View** and **Remove**.
+  - The first time, evidence is optional. Once a result has evidence, it can only change with new evidence: pick the new result, then take a screenshot or record. The result is saved with the new file, and the old result's other file is deleted (it showed the old result). The same rule applies in Run.
+  - Anyone who can mark results can remove a case's files, one at a time (✕ in the extension, **Remove** in Run). A removed file is deleted from the laptop for good and leaves the comment line; with no files left, the result can change freely.
+- **Run** shows a case's screenshot and recording next to its result, each with **View** and **Remove**.
 
 ### Setup → Media (host)
 
