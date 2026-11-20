@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "kinds": {
+    "config": {
+      "global": {
+        "value": {
+          "version": 1,
+          "claude": false,
+          "tabs": {
+            "CMS Sign Off - CMS Automation (": {
+              "role": "automation",
+              "headerRow": 1,
+              "columns": {
+                "scenario": "Test Scenario",
+                "feature": "Suite",
+                "preCondition": "Pre-requisites",
+                "expected": "Acceptance Criteria",
+                "linkedIssue": "Issue/Story Ref"
+              },
+              "fillDown": true,
+              "cycle": "",
+              "release": ""
+            },
+            "CMS 2.20.1": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "id": "S .No",
+                "scenario": "Scenario",
+                "subFeature": "Sub feature",
+                "testType": "Test Type",
+                "testData": "Test Data",
+                "preCondition": "Pre Condition",
+                "expected": "Expected result",
+                "linkedIssue": "Linked issue",
+                "testedBy": "Tested by",
+                "testedOn": "Tested on"
+              },
+              "fillDown": true,
+              "cycle": "2.20.1",
+              "release": ""
+            },
+            "CMS 2.20.1 Features": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "id": "S .No",
+                "scenario": "Scenario",
+                "feature": "Feature",
+                "subFeature": "Sub feature",
+                "testType": "Test Type",
+                "testData": "Test Data",
+                "preCondition": "Pre Condition",
+                "expected": "Expected result",
+                "linkedIssue": "Linked issue"
+              },
+              "fillDown": true,
+              "cycle": "2.20.1",
+              "release": ""
+            },
+            "Dashboard KPI": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "scenario": "KPI"
+              },
+              "fillDown": true,
+              "cycle": "2.20.1",
+              "release": ""
+            }
+          }
+        },
+        "updated": "2026-11-20 01:09",
+        "by": "Gurjeet Singh"
+      }
+    }
+  }
+}

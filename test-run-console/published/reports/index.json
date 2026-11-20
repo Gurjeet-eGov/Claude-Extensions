@@ -1,9 +1,21 @@
 {
  "app": "test-run",
- "id": "47f271961df9b466",
- "publishedAt": "2026-11-19 23:45",
+ "id": "b757326a856eb051",
+ "publishedAt": "2026-11-20 10:32",
  "by": "Gurjeet Singh",
  "workbooks": [
+  {
+   "name": "CMS Duplicate.xlsx",
+   "title": "CMS Duplicate",
+   "slug": "cms-duplicate-36b941",
+   "suites": [
+    "CMS 2.20.1",
+    "CMS 2.20.1 Features",
+    "Dashboard KPI"
+   ],
+   "automation": true,
+   "xlsx": true
+  },
   {
    "name": "CMS Sign Off - CMS Automation (naipepea net-two) 17_Nov_2026.xlsx",
    "title": "CMS Sign Off - CMS Automation (naipepea net-two) 17_Nov_2026",
