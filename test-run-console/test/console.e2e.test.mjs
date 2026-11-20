@@ -565,6 +565,11 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await s.close();
       await page.locator('.nav [data-view=summary]').click();
       await page.locator('.report-tools .updated', { hasText: /^Updated on: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/ }).waitFor();
+      // a browser refresh stays on Summary
+      assert.match(page.url(), /[?&]view=summary/);
+      await page.reload();
+      await page.locator('.nav [data-view=summary][aria-current=page]').waitFor();
+      await page.locator('.report-tools .updated').waitFor();
       for (const gone of ['Open summary page', 'Export summary', 'Update summary tab']) assert.equal(await page.getByText(gone).count(), 0, gone);
       // CMS/13 is still deprecated: Summary has nothing about retired cases, here or in the top bar
       assert.equal(await page.locator('main', { hasText: /retired/i }).count(), 0, 'no Retired cases section');

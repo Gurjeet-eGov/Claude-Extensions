@@ -480,3 +480,6 @@ dialog.zoom::backdrop {
 .tr-box select, .tr-box input[type="text"] { background: var(--bg); }
 .tr-box.off #trFields, .tr-box.off #trHint { display: none; }
 #trHint.bad { color: var(--bad, #b3261e); }
+
+/* "Open Test Run ↗" stays on one line */
+.notice a.nowrap { white-space: nowrap; }

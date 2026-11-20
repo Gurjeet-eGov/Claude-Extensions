@@ -1368,6 +1368,14 @@ function tr_summary(tabName, cycleLabel) {
   var ci = data.cycleIdx;
   var hasG1 = data.cases.some(function (c) { return c.group1; });
   var s = TRCore.summarize(data.cases, { cycleIdx: ci, prevIdx: data.prevIdx, groupBy: hasG1 ? 'group1' : 'group2' });
+  // Bugs noted in this suite as findings (filed with Bug Reporter, not test cases yet) are open failures too
+  tr_metaList_('finding').forEach(function (r) {
+    var f = r.value || {};
+    if ((f.state && f.state !== 'open') || (f.tab || '') !== data.tab) return;
+    var issues = f.url ? TRCore.parseIssues(f.url, '', null) : TRCore.parseIssues(f.issue || '', '', tr_issueRefs_());
+    if (!issues.length) return;
+    s.failures.push({ key: r.key, id: r.key, scenario: f.text, comment: '', issue: TRCore.issueCellText(issues), issues: issues, group: 'Finding, not in the test cases yet', finding: true });
+  });
   return {
     ok: true,
     sheetName: tr_ss_().getName(),

@@ -75,7 +75,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **Already covered…** links it to an existing case by its ID instead.
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
-- **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links, and a comparison with the previous cycle. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
+- **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
   - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation. Its **Test cycle** shows which status column the results come from (each automation tab's latest).
 - **Setup** has three parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team) and **Publish**.
   - **Save** keeps you on Setup, with a *Setup saved.* message.
@@ -197,7 +197,7 @@ One host at a time: if two hosts work at once, the second to publish is warned b
 [Test Run Extension](../test-run-extension/) is a Chrome extension for marking cases while you test, with a screenshot or a screen recording as evidence. It works with this Test Run, on the laptop or through an access link.
 
 - **Signing in:** it only asks for the access link your test lead sent (the host can paste `http://127.0.0.1:5178`, or their admin link). Nothing else shows until it is signed in. A **View only** link shows *Only view access, click here for summary*, which opens the Summary.
-- **What you are testing:** **Choose Workbook/Suite** opens Test Run. The workbook, suite, cycle and case you have open there are what the extension shows, and it follows as you move. **‹ ›** and **Find a case by ID** move within the suite.
+- **What you are testing:** **Choose Workbook/Suite** opens Test Run. The workbook, suite, cycle and case you have open there are what the extension shows, and it follows as you move. **‹ ›** and **Find a case by ID** move within the suite. Closed and opened again, it carries on where it was (after marking, the next case), unless you picked another case in Test Run meanwhile.
 - **Results:** Pass, Fail, NA, Skip (the suite's own result values), and a comment. Marking moves on to the next case.
 - **Evidence:**
   - **Screenshot** takes the page you are on, scaled to fit 1920×1080, as a PNG. **Record** opens a small Recorder window: **Choose what to record** (Chrome asks which screen, window or tab, and whether to share audio). Once it records, that window minimises itself, and in the popup **Pause** (then **Resume**) and **Stop** take Record's place, half each. Stop attaches the recording.
