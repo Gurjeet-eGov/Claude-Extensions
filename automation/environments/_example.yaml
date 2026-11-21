@@ -1,0 +1,15 @@
+# An example environment. Copy it to environments/<name>.yaml and fill it in.
+# Files starting with "_" are examples and are never listed in Test Run.
+# Never put a password, token or key in this file: list only the NAMES of the secrets a run needs.
+# Every field is described in ../CATALOGUE.md.
+
+name: County A UAT                        # what people see in Test Run
+baseUrl: https://uat.county-a.example.org/
+tenant: ke.county-a                       # optional, if the product uses tenants
+implementation: county-a                  # optional: picks the matching entry in a suite's implementations
+productVersion: "2.9"                     # optional: picks the matching entry in a suite's versions
+
+# Names only. The values stay on the host and are passed to the run as environment variables.
+secrets:
+  - TEST_USER
+  - TEST_PASSWORD
