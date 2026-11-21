@@ -104,24 +104,24 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     const on = await s.local('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: s.fixed });
     assert.equal(on.ok, true, on.error);
     assert.deepEqual([on.checks.fixed.ok, on.checks.fixed.message], [true, 'Reaches this Test Run.'], 'saving a fixed address checks it reaches this Test Run');
-    const priya = await s.local('POST', '/api/team/people', { name: 'Priya (QA)', role: 'tester' });
-    assert.equal(priya.ok, true, priya.error);
-    assert.equal(priya.linkWarning, '', 'a fixed address lasts');
-    assert.ok(priya.link.startsWith(`${s.fixed}/#join=`));
+    const johnDoe = await s.local('POST', '/api/team/people', { name: 'John Doe (QA)', role: 'tester' });
+    assert.equal(johnDoe.ok, true, johnDoe.error);
+    assert.equal(johnDoe.linkWarning, '', 'a fixed address lasts');
+    assert.ok(johnDoe.link.startsWith(`${s.fixed}/#join=`));
     const boss = await s.local('POST', '/api/team/people', { name: 'Manager', role: 'viewer' });
-    const tester = { key: keyOf(priya.link) };
+    const tester = { key: keyOf(johnDoe.link) };
     const viewer = { key: keyOf(boss.link) };
-    assert.equal(/hash|"key"/.test(JSON.stringify(priya.people)), false, 'keys and hashes never leave the server in listings');
+    assert.equal(/hash|"key"/.test(JSON.stringify(johnDoe.people)), false, 'keys and hashes never leave the server in listings');
     assert.equal(statSync(join(s.sheets, '.testrun', 'app.json')).mode & 0o777, 0o600, 'the file holding the keys is readable by the owner only');
 
     const me = await s.remote('GET', '/api/app', { key: tester.key });
-    assert.deepEqual(me.me, { name: 'Priya (QA)', role: 'tester', local: false, admin: false });
+    assert.deepEqual(me.me, { name: 'John Doe (QA)', role: 'tester', local: false, admin: false });
     assert.equal(me.sheetsDir, '', 'no laptop paths for remote people');
     const d = await s.call('api_loadTab', [TAB, ''], tester);
     const c = d.cases.find((x) => x.id === 'CMS/04');
     const m = await s.call('api_mark', [{ tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: '', status: 'Pass' }], tester);
     assert.equal(m.ok, true, m.error);
-    assert.equal(m.testedBy, 'Priya (QA)', 'Tested by is the teammate, not the laptop owner');
+    assert.equal(m.testedBy, 'John Doe (QA)', 'Tested by is the teammate, not the laptop owner');
     assert.equal((await s.call('api_saveSetup', [{ tabs: [] }], tester)).status, 403, 'Setup is the owner\'s');
     assert.equal((await s.call('api_startCycle', [TAB, 'v9'], tester)).status, 403, 'so are cycles');
     assert.equal((await s.call('api_removeCycle', [TAB, 'Test Status / v2.12'], tester)).status, 403, 'starting or removing them');
@@ -147,14 +147,14 @@ test('testers mark results under their own name; viewers only look; Setup stays 
     const status = await s.remote('GET', '/api/status', { key: tester.key });
     assert.equal(status.consoleUrl, `${s.fixed}/`, 'Bug Reporter is told where to open the console');
     const seen = await s.local('GET', '/api/team');
-    assert.ok(seen.people.find((p) => p.name === 'Priya (QA)').lastSeen, 'last seen is kept');
+    assert.ok(seen.people.find((p) => p.name === 'John Doe (QA)').lastSeen, 'last seen is kept');
 
     // A lost link can be copied again: the same link, still working.
-    const id = seen.people.find((p) => p.name === 'Priya (QA)').id;
+    const id = seen.people.find((p) => p.name === 'John Doe (QA)').id;
     assert.equal(seen.people.find((p) => p.id === id).canCopy, true);
     const again = await s.local('POST', '/api/team/people/link', { id });
     assert.equal(again.ok, true, again.error);
-    assert.equal(again.link, priya.link, 'the same link as when they were added');
+    assert.equal(again.link, johnDoe.link, 'the same link as when they were added');
     assert.equal((await s.remote('POST', '/api/team/people/link', { key: tester.key, body: { id } })).status, 403, 'only the owner, at the laptop');
     // A new link replaces the old one; removing someone shuts them out at once.
     const rot = await s.local('POST', '/api/team/people/update', { id, rotate: true });

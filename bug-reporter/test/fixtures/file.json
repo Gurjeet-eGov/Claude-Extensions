@@ -4,8 +4,8 @@
   "title": "Bomet: Employee: Assign fails with INVALID_ASSIGNEE for department LME",
   "body": "### Description\nTest body.\n\n### Actual Behavior\nToast shows Something went wrong.\n",
   "label": "bug",
-  "assignee": "dev-priya",
-  "defaultAssignee": "dev-priya",
+  "assignee": "dev-john-doe",
+  "defaultAssignee": "dev-john-doe",
   "attachments": [],
   "board": {
     "owner": "eGov-Global",

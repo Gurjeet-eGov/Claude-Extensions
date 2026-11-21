@@ -656,6 +656,8 @@
   // A long list opens with a search box at the top and scrolls within a fixed height.
   // ---------------------------------------------------------------------------
 
+  /** A circular arrow: resets a filter. */
+  var RESET_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8.5A5.25 5.25 0 1 1 11.7 4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.2 1.5v3.3H8.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var CHEVRON = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   /** Where a dropdown keeps its choice: S.form[bind], or the Test Type filter. */
@@ -1616,8 +1618,10 @@
     var rail = '<div class="rail-group" role="group" aria-label="Show"><span class="rail-title">Show</span>' +
       '<button class="chip" data-action="findings-show" data-show="open" aria-pressed="' + (show === 'open') + '">Open <span class="n">' + open.length + '</span></button>' +
       '<button class="chip" data-action="findings-show" data-show="done" aria-pressed="' + (show === 'done') + '" title="Written up as test cases, or covered by one">Done <span class="n">' + done.length + '</span></button></div>' +
-      (tabs.length > 1 ? '<div class="rail-group"><label class="rail-title" for="findingsSuite">Test suite</label>' +
-        dropdown({ bind: 'findingsSuite', id: 'findingsSuite', change: 'findings-suite', value: only, options: [{ value: '', label: 'All test suites' }].concat(tabs.map(function (t) { return { value: t.name, label: TR.tabLabel(t.name) }; })) }) + '</div>' : '');
+      // Nothing chosen = every test suite (the field reads "Select"); ↻ on the title's row clears the choice.
+      (tabs.length > 1 ? '<div class="rail-group"><div class="rail-head"><label class="rail-title" for="findingsSuite">Test suite</label>' +
+        '<button type="button" class="help-btn" data-action="findings-suite-reset" title="Show every test suite" aria-label="Reset the test suite filter"' + (only ? '' : ' disabled') + '>' + RESET_ICON + '</button></div>' +
+        dropdown({ bind: 'findingsSuite', id: 'findingsSuite', change: 'findings-suite', value: only, options: tabs.map(function (t) { return { value: t.name, label: TR.tabLabel(t.name) }; }) }) + '</div>' : '');
     var h = '<div class="row section-head"><div class="grow"><h2>Findings</h2><p class="small muted">Things found while testing that are not test cases yet. Write each one up as a test case, or mark it covered by one.</p></div>' +
       (S.readOnly ? '' : '<button data-action="note-toggle" aria-expanded="' + !!val('noteOpen') + '" title="Note something you found, to write up later (Bug Reporter adds them when you tick its Test Run box)"' + dis + '>+ Add finding</button>' +
         '<button data-action="new-case" aria-expanded="' + (S.manual.length > 0) + '" title="Add a test case to the workbook now"' + dis + '>+ New test case</button>') + '</div>';
@@ -2073,7 +2077,7 @@
       h += '<p class="small faint">Nobody yet.</p>';
     }
     var off = r.canInvite ? '' : ' disabled';
-    h += '<div class="row add-person"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. Priya (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
+    h += '<div class="row add-person"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. John Doe (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
       // No access chosen for them until you choose one
       '<label class="sr" for="teamRole">Access</label><select id="teamRole" class="choose" data-bind="team:role"' + off + '>' +
       '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Select access</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
@@ -3049,6 +3053,7 @@
     },
     'pick-auto': function () { S.autoMode = true; S.selected = null; S.caseTool = null; render(); window.scrollTo(0, 0); },
     'auto-refresh': function () { S.autoSummary = null; render(); },
+    'findings-suite-reset': function () { S.form.findingsSuite = ''; render(); },
     'findings-show': function (el) { S.form.findingsShow = el.getAttribute('data-show'); render(); },
     'note-toggle': function () { var open = !val('noteOpen'); closeBlocks(); S.form.noteOpen = open; render(); var t = open && $('fText'); if (t) t.focus(); },
     'cover-with': function (el) {

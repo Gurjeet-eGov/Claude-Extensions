@@ -13,12 +13,12 @@ test('board assignees: counted per item, sorted by count then login', () => {
 });
 
 test('assignee dropdown: board people first, the rest A–Z, Unassigned last, default selected', () => {
-  const assignees = [{ login: 'zed', name: 'Zed' }, { login: 'dev-priya', name: 'Priya' }, { login: 'amy', name: '' }, { login: 'Dev-Hari', name: 'Hari' }];
-  const g = assigneeGroups({ assignees, boardAssignees: [{ login: 'dev-priya', count: 33 }, { login: 'dev-hari', count: 27 }, { login: 'left-org', count: 2 }] });
-  assert.deepEqual(g.onBoard.map((p) => p.login), ['dev-priya', 'Dev-Hari']); // not-assignable people are dropped
+  const assignees = [{ login: 'zed', name: 'Zed' }, { login: 'dev-john-doe', name: 'John Doe' }, { login: 'amy', name: '' }, { login: 'Dev-Hari', name: 'Hari' }];
+  const g = assigneeGroups({ assignees, boardAssignees: [{ login: 'dev-john-doe', count: 33 }, { login: 'dev-hari', count: 27 }, { login: 'left-org', count: 2 }] });
+  assert.deepEqual(g.onBoard.map((p) => p.login), ['dev-john-doe', 'Dev-Hari']); // not-assignable people are dropped
   assert.deepEqual(g.others.map((p) => p.login), ['amy', 'zed']);
-  const html = assigneeOptionsHtml({ assignees, boardAssignees: [{ login: 'dev-priya', count: 33 }], repo: 'o/r', selected: 'dev-priya' });
-  assert.match(html, /<optgroup label="On this board"><option value="dev-priya" selected>Priya \(dev-priya\) · 33 items<\/option>/);
+  const html = assigneeOptionsHtml({ assignees, boardAssignees: [{ login: 'dev-john-doe', count: 33 }], repo: 'o/r', selected: 'dev-john-doe' });
+  assert.match(html, /<optgroup label="On this board"><option value="dev-john-doe" selected>John Doe \(dev-john-doe\) · 33 items<\/option>/);
   assert.match(html, /<optgroup label="Everyone who can be assigned in o\/r">/);
   assert.match(html, /<option value="" >Unassigned<\/option>$/);
   assert.match(assigneeOptionsHtml({ assignees, selected: '' }), /<option value="" selected>Unassigned/);
