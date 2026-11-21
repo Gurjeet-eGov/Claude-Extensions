@@ -20,19 +20,27 @@ import { syncLocScripts, startLoc, stopLoc, saveLoc, storeFound, locStatus, expo
 
 // ---------- lifecycle ----------
 
+/** Brings the registered content scripts in line with the settings; a failure is logged, not thrown. */
+async function syncScripts() {
+  try {
+    await syncContentScripts();
+    await syncLocScripts();
+  } catch (e) {
+    console.warn('Bug Reporter: could not set up the content scripts', e);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async (details) => {
-  await syncContentScripts();
-  await syncLocScripts();
+  await syncScripts();
   if (details.reason === 'install') chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await syncContentScripts();
-  await syncLocScripts();
+  await syncScripts();
   await updateBadge('idle');
 });
 
-chrome.permissions.onRemoved.addListener(() => syncContentScripts());
+chrome.permissions.onRemoved.addListener(() => { syncScripts(); });
 
 (async function housekeeping() {
   try {
