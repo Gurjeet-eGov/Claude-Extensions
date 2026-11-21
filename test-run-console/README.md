@@ -1,31 +1,56 @@
 # Test Run console
 
-A small app for **manual test runs on your test case workbooks** (`.xlsx`). It shows you what to test next, colour coded, and you mark results with one click or one key. Each result is saved straight into the workbook on your computer. Managers get a clean summary page you can print or send.
+A small app for **manual test runs on your test case workbooks** (`.xlsx`). It shows what to test next, colour coded, and you mark results with one click or one key. Each result is saved straight into the workbook on the computer running Test Run. Testers can join from their own browsers, managers get a summary page, and the reports can be published for anyone to read.
 
-The workbooks stay on your laptop, in `sheets/`, which git ignores. To test as a team, share your Test Run: teammates open an invite link and mark results at the same time, and managers follow the summary (see [Sharing with your team](#sharing-with-your-team)). To let anyone read the reports, even when your laptop is off, and to let someone else carry on from a clone, publish them (see [Publishing the reports](#publishing-the-reports)).
+**[Test Run Extension](extension/)**, in this folder, lets testers mark cases from Chrome's toolbar while they test, with a screenshot or a screen recording as evidence. It only works with this console.
 
 | Run | Summary for management |
 |---|---|
 | ![Run screen](docs/screenshots/run.png) | ![Summary page](docs/screenshots/summary.png) |
 
-## Start it
+**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [The screens](#the-screens) · [Sharing with your team](#sharing-with-your-team) · [Publishing the reports](#publishing-the-reports) · [Test Run Extension](#test-run-extension) · [With Bug Reporter](#with-bug-reporter) · [Automation results](#automation-results) · [Your workbooks and data](#your-workbooks-and-data) · [Running a cycle well](#running-a-cycle-well) · [Options](#options) · [Updating](#updating) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
-You need Node.js 18 or later.
+## Quick start
+
+**You need:**
+
+| | Needed for | Install |
+|---|---|---|
+| Node.js 18 or later | running Test Run | [nodejs.org](https://nodejs.org) or `brew install node` |
+| Git | getting the code; your name in Test Run comes from `git config user.name` | usually already there |
+| GitHub CLI (`gh`), signed in | optional: issue titles and states in Known issues, the gist that keeps a quick tunnel's address, publishing | `brew install gh`, then `gh auth login` |
+| `cloudflared` or Tailscale | optional: sharing with your team | see [Sharing with your team](#sharing-with-your-team) |
+
+It's used on macOS; Linux should work too, but isn't tested. Testers and managers who join through a link need only a browser.
+
+**Try it with a sample workbook** (a throwaway copy; nothing you do is kept):
 
 ```bash
-cd test-run-console
+git clone https://github.com/Gurjeet-eGov/Claude-Extensions.git
+cd Claude-Extensions/test-run-console
 npm install
+npm run demo
 ```
+
+**Use it with your own workbooks:**
 
 ```bash
 npm start
 ```
 
-That opens http://127.0.0.1:5178. Put your workbooks in `test-run-console/sheets/`, or use **Import** in the console. Stop it with Ctrl+C in that terminal.
+It opens http://127.0.0.1:5178 (on macOS it opens the browser for you; elsewhere, open that address). Put your workbooks in `test-run-console/sheets/`, or use **Import** in the console. Stop it with Ctrl+C in that terminal.
 
-Want to look around first? Run `npm run demo`. It uses a throwaway copy of a sample workbook.
+Clone the whole repository, not just this folder: Test Run also reads Bug Reporter's manifest, when it's there, to let that extension in.
 
-## What it does
+## How it works
+
+- **Workbook › test suite › cycle › case.** A **workbook** is one `.xlsx` file (often one per environment). Each tab with test cases is a **test suite** (a module, such as PGR). A **cycle** is one round of results: a pair of columns, *Test Status* and *Comment*, side by side with earlier cycles. A **case** is one row.
+- **One host.** Test Run runs on one computer, the host's. The workbooks, results, screenshots and recordings stay there, in `sheets/`, which git ignores.
+- **People.** On the host's computer you're the **host**: everything is open to you. Others join with an invite link that gives them **Update status** (testers: mark results, add issues and findings) or **View only** (managers: follow the run and the summary). The host's **admin link** gives full access from another computer.
+- **Reaching the host.** Test Run only listens on the host's own computer. For a team, a tunnel (Cloudflare or Tailscale) gives it an internet address; invite links point there.
+- **Publishing.** The host can publish the reports, and the ticked workbooks, to this repository, where the GitHub Pages site shows them to anyone. **What's published is public.**
+
+## The screens
 
 Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**.
 
@@ -79,7 +104,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
   - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation. Its **Test cycle** shows which status column the results come from (each automation tab's latest).
-- **Setup** has three parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team) and **Publish**.
+- **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
   - **Save** keeps you on Setup, with a *Setup saved.* message.
   - **Delete**, next to **Cancel** and **Save** at the bottom of Setup → Workbook (the host only, here or with the admin link), removes the open workbook for everyone: the file in `sheets/` and its Test Run data (setup, findings, known issues). A pop-up says first that this cannot be undone. The daily backups in `sheets/.testrun/backups/` stay, and copies already published to GitHub stay until the next publish.
 - **Cells on several lines.** Legacy sheets often have several lines in one cell. The console reads them the way a person would:
@@ -194,9 +219,9 @@ The host can publish the reports to the GitHub repository, so they can be read o
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
 
-## With Test Run Extension
+## Test Run Extension
 
-[Test Run Extension](../test-run-extension/) is a Chrome extension for marking cases while you test, with a screenshot or a screen recording as evidence. It works with this Test Run, on the laptop or through an access link.
+[Test Run Extension](extension/) is a Chrome extension for marking cases while you test, with a screenshot or a screen recording as evidence. It works with this Test Run, on the laptop or through an access link. To install it, see [its README](extension/README.md).
 
 - **Signing in:** it only asks for the access link your test lead sent (the host can paste `http://127.0.0.1:5178`, or their admin link). Nothing else shows until it is signed in. A **View only** link shows *Only view access, click here for summary*, which opens the Summary.
 - **What you are testing:** **Choose Workbook/Suite** opens Test Run. The workbook, suite, cycle and case you have open there are what the extension shows, and it follows as you move. **‹ ›** and **Find a case by ID** move within the suite. Closed and opened again, it carries on where it was (after marking, the next case), unless you picked another case in Test Run meanwhile.
@@ -239,7 +264,7 @@ Others keep the plain **Download** (the workbook).
 When Test Run is reachable, Bug Reporter's **Report Issue** form has a Test Run box, above the Claude options:
 
 - **Also add this to Test Run:** tick it to add the bug once it is filed. The choice is remembered.
-- **Test suite:** the workbook › tab. It starts on the one you picked last, else the one open in Test Run.
+- **Workbook** and **Test suite:** where the bug goes. They start on the ones you picked last, else the ones open in Test Run. Someone given one workbook sees only that one.
 - **Test case (optional):** type an ID or a few words and pick from the list.
   - **With a test case:** that case is marked failed in the current cycle, the issue is linked to it, and its comment gets `Bug #123: <title>`. A case already failing keeps its result.
   - **Without one:** the bug becomes a finding in that suite, with the title, issue link, drafted Actual and Expected text and module, ready to **Write up as test case**.
@@ -247,9 +272,17 @@ When Test Run is reachable, Bug Reporter's **Report Issue** form has a Test Run 
 - The review screen repeats what will happen in Test Run, next to **File issue**.
 - **Settings:** Bug Reporter options → **Test Run**: the on/off switch; **Test Run address** (empty for Test Run on this computer); **Invite link** (paste the link your test lead sent; when the shared address changes, Bug Reporter finds the new one through the gist); **Check now**.
 
-Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Reporter you have loaded, then **Load unpacked** this worktree's `bug-reporter/extension` folder. Both copies have the same extension ID, so only one can be loaded at a time; the native helper keeps working without reinstalling.
+Bug Reporter is a separate product with its own setup: see [its README](../bug-reporter/README.md).
 
-## Your workbooks
+## Automation results
+
+Automated test results come in through the workbook today: set a tab to **Automation results** in Setup › Workbook (it needs a spec-file column and a status column per cycle; the sample workbook from `npm run demo` has one).
+- **Summary › Automation** shows the totals, results per test file and the failing tests.
+- Manual cases whose comment or *Automated by* column names a spec (e.g. `inbox-search.spec`) show its latest result in Run: **Auto ✓**, **Auto ✗** or **Auto ~**.
+
+Running automated suites from Test Run against a chosen environment, and publishing their own reports, is planned: see [automation/](../automation/README.md).
+
+## Your workbooks and data
 
 - **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy in `test-run-console/published/`). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
 - **What changes in the workbook:**
@@ -262,6 +295,20 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
 - **Excel:** if you edit the workbook in Excel and save, Test Run reloads it and never overwrites a cell that changed. While Excel has it open, a banner reminds you to close it there.
 - **Publishing:** **Download** the workbook and upload it to Google Drive. If you keep it there as an `.xlsx` file, *Manage versions → Upload new version* keeps the same link.
 
+**Where everything is kept** (all under `sheets/` unless you start with `--sheets`; none of it is committed):
+
+| What | Where |
+|---|---|
+| Workbooks | `sheets/*.xlsx` |
+| Each workbook's setup, findings and issue list | `sheets/.testrun/<workbook>.json` |
+| Your name, the team with its invite keys, publish and media settings | `sheets/.testrun/app.json` (readable only by your user account) |
+| Daily backups, kept 14 days | `sheets/.testrun/backups/` |
+| Screenshots and recordings from Test Run Extension | `sheets/.testrun/evidence/<workbook>/<suite>/<cycle>/` |
+| Complete Report zips, deleted after the keep time | `sheets/.testrun/complete-reports/` |
+| HTML summaries you save | `sheets/exports/` |
+
+What leaves the computer: GitHub issue lookups and the gist (through your `gh` login), the tunnel while sharing, and what you publish.
+
 ## Running a cycle well
 
 1. **Setup:** start the cycle (e.g. `v2.20.1`). If you tag cases by release, set the release in scope. Sharing? Start sharing and send the invite links.
@@ -273,6 +320,40 @@ Loading this branch's Bug Reporter: in `chrome://extensions`, remove the Bug Rep
    1. **Findings:** write each one up, or mark it as already covered.
    2. **Known issues:** check titles and priorities.
    3. **Summary:** print it, or **Download** the workbook (with its Known issues sheet), or publish it.
+
+## Options
+
+| Flag | Environment variable | What it does |
+|---|---|---|
+| `--port <n>` | `PORT` | Listen on another port (default 5178). On the host's computer, the extensions then need that address (`http://127.0.0.1:<port>`) instead of the default. |
+| `--sheets <folder>` | `TEST_RUN_SHEETS` | Use another sheets folder. |
+| `--no-open` | | Don't open the browser on start (macOS). |
+| `--share` | | Start sharing straight away (`npm run share`). |
+| `--demo` | | Use a throwaway copy of the sample workbook (`npm run demo`). |
+| | `TEST_RUN_GH` | Use another `gh` (development: `dev/fake-gh.cjs`, so nothing is published for real). |
+
+## Updating
+
+```bash
+git pull
+cd test-run-console
+npm install
+```
+
+Then stop Test Run (Ctrl+C) and start it again. Testers reload Test Run Extension in `chrome://extensions` (unpacked extensions never update by themselves). Your workbooks and data in `sheets/` are untouched.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| `Port 5178 is already in use` | Test Run is probably already running in another terminal. Otherwise start it with `--port <another>`, and give the extensions that address. |
+| The browser doesn't open | Only macOS opens it by itself; open http://127.0.0.1:5178. |
+| "This workbook is open in Excel." | Close it in Excel; results can't be saved while Excel has it. |
+| Known issues have no titles or states | Sign in to `gh` (`gh auth login`) on the host's computer, then **Refresh from GitHub**. |
+| Invite links stopped working after a restart | With a quick tunnel the address changes. Set up the hosted page and gist, or a fixed address: see [Sharing with your team](#sharing-with-your-team). |
+| An invite link was shared by mistake | In Setup › Sharing › Team, **New link** for that person (the old one stops working at once), or **Remove** them. |
+| Publishing fails | Publishing commits to the repository in this clone's `origin`, through `gh`. You need push rights there, or publish from your own fork. |
+| Test Run Extension can't reach Test Run | Is Test Run running? On the host's computer the extension uses `http://127.0.0.1:5178`; through an invite link, the host must be sharing. |
 
 ## Development
 
@@ -293,18 +374,20 @@ lib/
   prompts.js     prompts from the Claude drafting there was (off for now; kept for later)
   runtime.mjs    loads the logic for the server and the tests
 ui/            the console and summary pages (also what GitHub Pages serves)
+extension/     Test Run Extension (Chrome, Manifest V3, no build step): see extension/README.md
 published/     what the host published (workbooks, sidecar files, reports); written by publishing, not by hand
 dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh (fake-gh.cjs: a small fake GitHub)
 test/          unit tests, HTTP and team tests, and browser tests (console; Test Run Extension; Bug Reporter + Test Run)
+skill/, prompts/  parked with Claude drafting, which is switched off: kept for when it comes back
 ```
 
 ```bash
-npm test          # everything; the browser tests skip without Playwright
+npm test          # everything, Test Run Extension's tests included; the browser tests skip without Playwright
 npm run prompts   # regenerate prompts/*.md after editing lib/prompts.js
 ```
 
 - **The two back ends must agree.** The server tests run against both the in-memory sheet API and real `.xlsx` files.
-- **Browser tests** look for Playwright in `PLAYWRIGHT_DIR`, or in the CCRS `tests/integration-tests` checkout.
+- **Browser tests** need Playwright: point `PLAYWRIGHT_DIR` at an installed copy (a `node_modules/playwright` folder), for example `PLAYWRIGHT_DIR=~/some-project/node_modules/playwright npm test`. Without it they look in `~/Documents/Citizen-Complaint-Resolution-System/tests/integration-tests`, else they're skipped. They load both extensions from this repository.
 
 ### Safety notes
 

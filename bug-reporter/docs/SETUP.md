@@ -1,6 +1,8 @@
 # Bug Reporter: setup guide
 
-Allow about 10 minutes, once per computer. You need **macOS or Linux** and **Google Chrome**. Chrome Beta, Chromium, Brave and Edge also work.
+Allow about 10 minutes, once per computer. You need **macOS or Linux** and **Google Chrome 116 or later**. Chrome Beta, Chromium, Brave and Edge also work.
+
+Bug Reporter stands on its own: you don't need Test Run or anything else from this repository.
 
 When you're done you'll have:
 - the **extension** in Chrome
@@ -22,7 +24,9 @@ Already have them? Make sure the GitHub CLI is recent: version **2.104 or newer*
 brew upgrade gh
 ```
 
-Install **Claude Code** by following the instructions at <https://claude.com/claude-code>.
+On **Linux**, install Node.js 18 or later from [nodejs.org](https://nodejs.org) (or your distribution's `nodejs` package, if it's recent enough), and the GitHub CLI from [cli.github.com](https://github.com/cli/cli/blob/trunk/docs/install_linux.md), which lists the commands for Debian, Ubuntu, Fedora and others.
+
+Install **Claude Code** by following the instructions at <https://claude.com/claude-code>. You only need it for drafting with Claude; everything else works without it.
 
 ## Step 2: Sign in
 
@@ -52,7 +56,7 @@ git clone https://github.com/Gurjeet-eGov/Claude-Extensions.git
 
 Or download it: on GitHub, click **Code → Download ZIP** and unzip it.
 
-> **Tip:** keep the folder somewhere like your home folder (`~/Claude-Extensions`). If it's on your Desktop or in Documents, macOS asks once whether Chrome may read it; click **Allow**.
+> **Tip:** the installer copies the helper out of this folder (to `~/Library/Application Support/egov-bug-reporter/` on macOS), so it can live anywhere. Chrome still loads the extension from this folder: if it's on your Desktop or in Documents, macOS may ask once whether Chrome may read it; click **Allow**.
 
 ## Step 4: Install the helper
 
