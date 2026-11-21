@@ -34,14 +34,15 @@ Every colour comes from these tokens (the `:root` block at the top of `styles.cs
 | `--accent-weak` | `#e9eefc` | `#1f2b47` | Selected backgrounds (chips, a selected case) |
 | `--accent-text` | `#ffffff` | `#0d1220` | Text on `--accent` |
 | `--pass` / `--pass-bg` | `#1d7a43` / `#e2f3e8` | `#5cc98a` / `#173323` | Pass ✓ |
-| `--fail` / `--fail-bg` | `#c62f2a` / `#fbe6e5` | `#ff7b72` / `#3d1a19` | Fail ✗, errors, delete |
+| `--fail` / `--fail-bg` | `#c62f2a` / `#fbe6e5` | `#ff7b72` / `#3d1a19` | Fail ✗, error text, delete |
+| `--fail-fill` / `--on-fail-fill` | `#c62f2a` / `#ffffff` | `#da3633` / `#ffffff` | Red buttons (`danger-fill`): a fill deep enough for white text in both modes |
 | `--other` / `--other-bg` | `#946200` / `#fbf0d9` | `#e3b341` / `#36290e` | NA and other results –, warnings |
 | `--none` / `--none-bg` | `#98a0a8` / `#eceff2` | `#6e7681` / `#262a30` | Not run ○, retired ⊘ |
 
 Other tokens: `--radius: 8px`; `--shadow` (a soft two-layer card shadow, none in dark mode); `--font` (the system font stack: `system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`); `--mono` (`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`).
 
 Rules:
-- **Text on a coloured fill** uses the matching "on" colour, never a hard-coded `#fff`: `--accent-text` on `--accent`, `--surface` on a status fill. White text on a red fill must stay at 4.5:1 or more in both modes.
+- **Text on a coloured fill** uses the matching "on" colour, never a hard-coded `#fff`: `--accent-text` on `--accent`, `--on-fail-fill` on `--fail-fill`, `--surface` on a status fill. Text on any fill stays at 4.5:1 or more in both modes.
 - **Tints** for hover on coloured buttons are mixed from tokens (`color-mix(in srgb, var(--fail) 8%, var(--surface))`), not new values.
 - **Contrast:** body text at least 4.5:1; borders and focus rings at least 3:1. `--faint` is only for text people can do without.
 
@@ -90,7 +91,7 @@ Numbers that line up (tables, KPIs) use tabular figures, and table number column
 | Link (`.linkish`, `.link-btn`) | Accent text, no box | Inline actions inside text |
 | Danger (`.danger`) | Red text only | A destructive action in a list of tools |
 | Danger outline (`.danger-outline`) | Red border and text | A destructive action on a page, such as Delete workbook |
-| Danger fill (`.danger-fill`) | Red fill, white text, weight 600 | The confirm button of a destructive popup only |
+| Danger fill (`.danger-fill`) | `--fail-fill` with `--on-fail-fill` text, weight 600; hover darkens | The confirm button of a destructive popup only |
 | Top bar (`.tb-btn`) | Accent border and text | Import, Download |
 | Small (`.small-btn`) | 12px, 26px high | Secondary actions next to content |
 | Status (`.sbtn`) | Status-coloured border and text, 36px high; when chosen, filled with the status colour | Pass, Fail, NA on a case |
@@ -129,12 +130,12 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Disabled is 50% opac
 
 Full width, 13px cells padded `7px 10px`, a bottom border per row. Headers are 11.5px upper case `--muted` on `--surface-2`. Number columns are right-aligned with tabular figures. An empty table says "No data available".
 
-### Toasts
+### Messages (toasts)
 
 - Bottom centre, stacked, `aria-live="polite"`; `role="alert"` for errors.
-- Dark on light (the colours swap: `--text` background, `--bg` text); errors are red.
+- **Coloured text only:** `--pass` (green) when something worked, `--fail` (red) for an error, 13px, weight 600. No box, outline or shadow; a `--surface` background behind the words keeps them readable where they float over the page.
 - They close themselves: 3.2 seconds, or 7 seconds for errors and long messages.
-- For short news after an action: "Saved.", "Admin link removed." Anything the person must act on later doesn't go in a toast.
+- For short news after an action: "Saved.", "Admin link removed." Anything the person must act on later doesn't go in a message.
 
 ### The "ready" bubble
 
@@ -142,12 +143,14 @@ Bottom right, stays until closed: used when something finished in the background
 
 ### Popups
 
-- `openModal()` in `client.js`: a dimmed overlay (`rgba(10, 12, 16, .45)`), a box up to 760px wide (560px when it holds a list), 10px corners, 18px padding, `role="dialog"`, `aria-modal`, focus on the first button.
-- **Asking before something that can't be undone** always uses this pattern, never the browser's own `confirm()` or `alert()`:
+- `openModal()` in `client.js`: a dimmed overlay (`rgba(10, 12, 16, .45)`), a box up to 760px wide, 10px corners, 18px padding, `role="dialog"`, `aria-modal`, focus on the first button. Escape or a click outside closes it.
+- **Questions** (`askConfirm()` in `client.js`) are always 560px wide (`.modal-box.confirm`), with the buttons right-aligned on one row (`.modal-actions`). Never the browser's own `confirm()` or `alert()`.
+- **Asking before an action** follows one pattern:
   1. a question as the heading, naming the thing in curly quotes: Delete “CMS Sign Off”?
   2. a `.banner.bad` saying "This cannot be undone." (or a `.banner.warn` when it can be recovered);
   3. a short list (`.modal-list`) of what happens;
-  4. Cancel, then the action button on the right, named after the action ("Delete workbook", "Remove cycle"): `danger-fill` when it deletes or replaces something, `primary` otherwise.
+  4. Cancel, then the action button on the right, named after the action ("Delete workbook", "Remove cycle"): `danger-fill` when it deletes or replaces something, `primary` otherwise. An in-between choice goes between them ("Get their copy first").
+  5. Escape or a click outside counts as Cancel.
 
 ### Menus
 
@@ -179,7 +182,7 @@ Unicode symbols, not an icon font or images: ✓ ✗ – ○ ⊘ (status), ✎ e
 - Every control works with the keyboard and shows the focus ring.
 - Icon-only buttons have an `aria-label`; status symbols have text next to them or a label.
 - Popups set `role="dialog"` and `aria-modal`, and put focus inside.
-- Toasts are announced (`aria-live`); errors use `role="alert"`.
+- Messages are announced (`aria-live`); errors use `role="alert"`.
 - Text contrast is at least 4.5:1 in light and dark; status is never colour alone.
 
 ## Extensions
@@ -195,9 +198,6 @@ Places where the code doesn't follow this guide yet. Don't copy them; fix them w
 
 | Where | Gap |
 |---|---|
-| Console | 12 confirmations still use the browser's `confirm()` instead of the popup pattern (being replaced) |
-| Console | One emoji in Run's "Everything in this cycle has a result" message (being replaced) |
-| Console | In dark mode, white text on the red `--fail` fill (delete buttons, error toasts) is about 2.5:1 (being fixed) |
 | Console | Title Case labels: "Generate New", "Download Existing", "Summary Report", "Complete Report" |
 | Console | No `prefers-reduced-motion` rule for the pulsing dot |
 | Test Run Extension, Bug Reporter | See [docs/design-alignment.md](docs/design-alignment.md) |
