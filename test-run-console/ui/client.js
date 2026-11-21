@@ -714,7 +714,7 @@
     var vps = visiblePaths();
     if (!vps.length) {
       var all = TR.counts(liveCases().map(clsOf));
-      var msg = f.show === 'todo' && all.none === 0 ? '<h3>Everything in this cycle has a result 🎉</h3><p>Switch to <b>All</b> to review, or open the Summary.</p>'
+      var msg = f.show === 'todo' && all.none === 0 ? '<h3>Test cycle completed</h3><p>Switch to <b>All</b> to review, or open the Summary.</p>'
         : f.show === 'retired' && !nRetired ? '<h3>No retired cases</h3><p>Cases you deprecate or mark as a duplicate show up here, struck out.</p>'
         : '<h3>Nothing matches</h3><p>Clear the search, or pick another filter on the left.</p>';
       return withRail(rail, h + '<div class="empty card">' + msg + '</div>');
@@ -2015,11 +2015,23 @@
       if (r.repo != null) S.publish = r;
       render();
       if (r.code === 'CONFIRM_PUBLIC') {
-        if (window.confirm(r.error + '\n\nPublish now?')) publishNow(Object.assign({}, extra, { confirmPublic: true }));
+        askConfirm({
+          title: 'Publish to the public repository?',
+          banner: 'Anyone can read what you publish, and it stays in the repository’s history.', bannerKind: 'warn',
+          items: ['The ticked workbooks, their findings and their reports go to the public repository.', 'Screenshots and recordings are never published.'],
+          yes: 'Publish now'
+        }, function () { publishNow(Object.assign({}, extra, { confirmPublic: true })); });
         return;
       }
       if (r.code === 'NEWER_REMOTE') {
-        if (window.confirm(r.error + '\n\nPress OK to publish anyway (theirs is replaced), or Cancel and use Get it first.')) publishNow(Object.assign({}, extra, { force: true }));
+        var rem = r.remote || {};
+        askConfirm({
+          title: 'Replace the newer published copy?',
+          banner: rem.at ? esc((rem.by || 'Someone') + ' published at ' + rem.at + ', after this laptop last published or got the data.') : esc(r.error), bannerKind: 'bad',
+          items: ['Publishing now replaces their copy with this laptop’s.', 'To keep their changes, get their copy first, then publish.'],
+          extra: { label: 'Get their copy first', fn: function () { ACTIONS['publish-get'](null); } },
+          yes: 'Publish anyway', danger: true
+        }, function () { publishNow(Object.assign({}, extra, { force: true })); });
         return;
       }
       if (!r.ok) { toast(r.error || 'Could not publish.', 'bad'); return; }
@@ -2205,8 +2217,8 @@
       '<ul class="modal-list"><li>Its status and comment columns are deleted from <b>' + esc(tab) + '</b> in the workbook, with every result and comment in them.</li>' +
       '<li>It leaves the Test cycle list, Summary and the downloads; the published reports drop it at the next publish.</li>' +
       '<li>Today’s copy of the workbook in <span class="mono">sheets/.testrun/backups/</span> still has it.</li></ul>' +
-      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
-      '<button class="danger-fill" data-action="cycle-remove-confirm" data-tab="' + esc(tab) + '" data-header="' + esc(header) + '">Remove cycle</button></div>');
+      '<div class="modal-actions"><button data-action="modal-close">Cancel</button>' +
+      '<button class="danger-fill" data-action="cycle-remove-confirm" data-tab="' + esc(tab) + '" data-header="' + esc(header) + '">Remove cycle</button></div>', 'confirm');
   }
 
   /** "less than a minute", "2 minutes" */
@@ -2292,26 +2304,66 @@
       '<ul class="modal-list"><li>The workbook file is deleted from this laptop’s sheets folder, for everyone using this Test Run.</li>' +
       '<li>Its Test Run setup, findings and known issues are deleted with it, and its screenshots and recordings.</li>' +
       '<li>Copies published to GitHub stay until the next publish.</li></ul>' +
-      '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="modal-close">Cancel</button>' +
-      '<button class="danger-fill" data-action="book-delete-confirm" data-name="' + esc(name) + '">Delete workbook</button></div>');
+      '<div class="modal-actions"><button data-action="modal-close">Cancel</button>' +
+      '<button class="danger-fill" data-action="book-delete-confirm" data-name="' + esc(name) + '">Delete workbook</button></div>', 'confirm');
   }
 
   // ---------------------------------------------------------------------------
   // Modal and clipboard
   // ---------------------------------------------------------------------------
 
-  function openModal(html) {
+  /** Opens the popup. cls 'confirm' gives the narrow width every question popup shares. */
+  function openModal(html, cls) {
     var m = $('modal');
-    m.innerHTML = '<div class="modal-box" role="dialog" aria-modal="true">' + html + '</div>';
+    m.innerHTML = '<div class="modal-box' + (cls ? ' ' + cls : '') + '" role="dialog" aria-modal="true">' + html + '</div>';
     m.classList.remove('hidden');
     var first = m.querySelector('textarea, button.primary, button');
     if (first) first.focus();
   }
 
+  /** Closes the popup. A question still waiting (askConfirm) counts as Cancel: Escape, a click outside, ✕. */
   function closeModal() {
     var m = $('modal');
     m.classList.add('hidden');
     m.innerHTML = '';
+    var q = S.confirm;
+    S.confirm = null;
+    if (q && q.no) q.no();
+  }
+
+  /**
+   * Asks before an action, in Test Run's own popup (never the browser's confirm box).
+   * opts: { title, banner, bannerKind: 'bad' | 'warn', items: [html], yes: 'Delete finding', danger, extra: { label, fn } }.
+   * title, banner and items are HTML: escape names in them. onYes runs on the action button, onNo on Cancel or closing.
+   */
+  function askConfirm(opts, onYes, onNo) {
+    S.confirm = null;
+    openModal('<h2>' + opts.title + '</h2>' +
+      (opts.banner ? '<p class="banner ' + (opts.bannerKind || 'bad') + '" style="margin-top:10px"><b>' + opts.banner + '</b></p>' : '') +
+      (opts.items && opts.items.length ? '<ul class="modal-list">' + opts.items.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul>' : '') +
+      '<div class="modal-actions"><button data-action="confirm-no">Cancel</button>' +
+      (opts.extra ? '<button data-action="confirm-extra">' + esc(opts.extra.label) + '</button>' : '') +
+      '<button class="' + (opts.danger ? 'danger-fill' : 'primary') + '" data-action="confirm-yes">' + esc(opts.yes) + '</button></div>', 'confirm');
+    S.confirm = { yes: onYes, no: onNo || null, extra: opts.extra ? opts.extra.fn : null };
+  }
+
+  /** Answers the open question: 'yes', 'extra' or 'no'. The popup closes first, so the answer can open another. */
+  function answerConfirm(which) {
+    var q = S.confirm;
+    S.confirm = null;
+    closeModal();
+    var fn = q && q[which];
+    if (fn) fn();
+  }
+
+  /** Forgets the access link in this browser and shows the sign-in screen. */
+  function signOut() {
+    TR.forget();
+    if (document.activeElement) document.activeElement.blur();
+    S.app = null; S.boot = null; S.model = null; S.cfg = null; S.findings = []; sideSeen = { findings: null };
+    S.issues = null; S.autoSummary = null; S.autoMode = false; S.team = null; S.selected = null; S.view = 'run';
+    S.connect = { code: 'SIGNED_OUT' };
+    render();
   }
 
   function copyText(text) {
@@ -2391,6 +2443,9 @@
     'expand-all': function () { S.collapsed = {}; render(); },
     help: helpModal,
     'modal-close': closeModal,
+    'confirm-yes': function () { answerConfirm('yes'); },
+    'confirm-no': function () { answerConfirm('no'); },
+    'confirm-extra': function () { answerConfirm('extra'); },
     'start-cycle': function (el) {
       var tab = el.getAttribute('data-tab');
       var key = 'newCycle:' + el.getAttribute('data-index');
@@ -2444,8 +2499,15 @@
             return TR.http('POST', '/api/books/import?name=' + encodeURIComponent(f.name) + (overwrite ? '&overwrite=1' : ''), f, true);
           };
           return send(false).then(function (r) {
-            if (!r.ok && r.code === 'EXISTS' && window.confirm(r.error + ' Replace it with the file you picked?')) return send(true);
-            return r;
+            if (r.ok || r.code !== 'EXISTS') return r;
+            return new Promise(function (resolve) {
+              askConfirm({
+                title: 'Replace “' + esc(f.name.replace(/\.xlsx$/i, '')) + '”?',
+                banner: 'This cannot be undone.', bannerKind: 'bad',
+                items: ['“' + esc(f.name) + '” is already in the sheets folder.', 'The file you picked replaces it, with every result and comment in it.'],
+                yes: 'Replace workbook', danger: true
+              }, function () { resolve(send(true)); }, function () { resolve(r); });
+            });
           }).then(function (r) {
             if (r && r.ok) {
               done.push(r.name);
@@ -2492,11 +2554,17 @@
     },
     'del-finding': function (el) {
       var k = el.getAttribute('data-key');
-      if (!window.confirm('Delete finding ' + k + '?')) return;
-      queueWrite(function () { return api('api_deleteFinding', k); }).then(function (r) {
-        if (!r.ok) { writeError(r); return; }
-        S.findings = S.findings.filter(function (f) { return f.key !== k; });
-        render();
+      askConfirm({
+        title: 'Delete finding ' + esc(k) + '?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: ['It is removed from Findings for everyone using this Test Run.'],
+        yes: 'Delete finding', danger: true
+      }, function () {
+        queueWrite(function () { return api('api_deleteFinding', k); }).then(function (r) {
+          if (!r.ok) { writeError(r); return; }
+          S.findings = S.findings.filter(function (f) { return f.key !== k; });
+          render();
+        });
       });
     },
     writeup: function (el) {
@@ -2613,11 +2681,19 @@
       var k = el.getAttribute('data-key');
       var kind = el.getAttribute('data-kind');
       var ev = S.model.evidence && S.model.evidence[k] && S.model.evidence[k][kind];
-      if (!ev || !window.confirm('Delete ' + ev.name + ' for good? It cannot be brought back.')) return;
-      TR.http('POST', '/api/evidence/remove', { book: book(), tab: S.tab, cycle: cycleLabel(), key: k, kind: kind }).then(function (r) {
-        if (!r.ok) { toast(r.error, 'bad'); return; }
-        toast('Deleted ' + r.removed + '.');
-        loadTab(cycleLabel(), true);
+      if (!ev) return;
+      var tab = S.tab, cycle = cycleLabel();
+      askConfirm({
+        title: 'Delete “' + esc(ev.name) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: ['The file is deleted from this laptop and can’t be brought back.'],
+        yes: 'Delete file', danger: true
+      }, function () {
+        TR.http('POST', '/api/evidence/remove', { book: book(), tab: tab, cycle: cycle, key: k, kind: kind }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          toast('Deleted ' + r.removed + '.');
+          loadTab(cycleLabel(), true);
+        });
       });
     },
     'cycle-remove': function (el) { removeCycleModal(el.getAttribute('data-tab'), el.getAttribute('data-header')); },
@@ -2811,13 +2887,11 @@
     'retry-connect': function () { S.connect = null; S.loading = true; render(); TR.reconnect(); start(); },
     'forget-invite': function () { TR.forget(); S.connect = { code: 'NO_SERVER' }; render(); },
     'sign-out': function () {
-      if (!window.confirm('Sign out of Test Run in this browser?\n\nTo come back you need your access link again.')) return;
-      TR.forget();
-      if (document.activeElement) document.activeElement.blur();
-      S.app = null; S.boot = null; S.model = null; S.cfg = null; S.findings = []; sideSeen = { findings: null };
-      S.issues = null; S.autoSummary = null; S.autoMode = false; S.team = null; S.selected = null; S.view = 'run';
-      S.connect = { code: 'SIGNED_OUT' };
-      render();
+      askConfirm({
+        title: 'Sign out of Test Run in this browser?',
+        items: ['To come back you need your access link again.'],
+        yes: 'Sign out'
+      }, signOut);
     },
     'user-rename': function () {
       if (document.activeElement) document.activeElement.blur();
@@ -2828,7 +2902,15 @@
       if (n) n.focus();
     },
     'team-enable': function (el) {
-      if (!el.checked && !me().local && !window.confirm('Stop sharing? You are connected through it, so this browser loses Test Run until someone turns it back on at the laptop.')) { el.checked = true; return; }
+      if (!el.checked && !me().local) {
+        askConfirm({
+          title: 'Stop sharing?',
+          banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
+          items: ['Someone has to turn it back on at the laptop.'],
+          yes: 'Stop sharing', danger: true
+        }, function () { teamCall('/api/team', { enabled: false }); }, function () { el.checked = true; });
+        return;
+      }
       teamCall('/api/team', { enabled: el.checked });
     },
     'team-publish': function (el) { teamCall('/api/team', { publish: el.checked }); },
@@ -2842,8 +2924,16 @@
       });
     },
     'team-mode': function (el) {
-      if (!me().local && !window.confirm('Change the way in? You are connected through the current one, so this browser may lose Test Run.')) { render(); return; }
-      teamCall('/api/team', { mode: el.value });
+      var mode = el.value;
+      if (!me().local) {
+        askConfirm({
+          title: 'Change the way in?',
+          items: ['You are connected through the current one, so this browser may lose Test Run.'],
+          yes: 'Change way in'
+        }, function () { teamCall('/api/team', { mode: mode }); }, render);
+        return;
+      }
+      teamCall('/api/team', { mode: mode });
     },
     'team-use': function (el) {
       var body = {};
@@ -2854,10 +2944,21 @@
     'team-check': function (el) { el.disabled = true; teamCall('/api/team/check'); },
     'team-share': function (el) {
       var on = el.getAttribute('data-on') === '1';
-      if (!on && !me().local && !window.confirm('Stop sharing? You are connected through it, so this browser loses Test Run until it is started again at the laptop.')) return;
-      el.disabled = true;
-      if (on) toast(S.team.team.mode === 'fixed' ? 'Starting the tunnel…' : 'Opening a tunnel… this takes a few seconds.');
-      teamCall('/api/team/share', { on: on });
+      var go = function () {
+        el.disabled = true;
+        if (on) toast(S.team.team.mode === 'fixed' ? 'Starting the tunnel…' : 'Opening a tunnel… this takes a few seconds.');
+        teamCall('/api/team/share', { on: on });
+      };
+      if (!on && !me().local) {
+        askConfirm({
+          title: 'Stop sharing?',
+          banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
+          items: ['It has to be started again at the laptop.'],
+          yes: 'Stop sharing', danger: true
+        }, go);
+        return;
+      }
+      go();
     },
     // Hidden from view: a fresh or copied link goes to the clipboard, with a toast.
     'team-add': function () {
@@ -2876,14 +2977,20 @@
     'r-suite': function (el) { var w = currentReportSlug(); S.form['rSuite:' + w] = el.getAttribute('data-tab'); S.form.rAuto = false; render(); },
     'r-auto': function () { S.form.rAuto = true; render(); },
     'publish-get': function (el) {
-      if (!window.confirm('Get the published data? It replaces the workbooks here with the published ones (a copy of each is kept in sheets/.testrun/backups).')) return;
-      if (el) el.disabled = true;
-      TR.http('POST', '/api/publish/get-latest', {}).then(function (r) {
-        if (r.repo != null) S.publish = r;
-        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
-        toast('Got the data published by ' + (r.result.by || 'someone') + ' at ' + r.result.at + '.', 'long');
-        if (S.app) S.app.publishNotice = null;
-        refreshApp().then(function () { boot(S.tab, cycleLabel()); });
+      askConfirm({
+        title: 'Replace the workbooks here with the published ones?',
+        banner: 'A copy of each workbook here is kept first.', bannerKind: 'warn',
+        items: ['The published workbooks replace the ones on this laptop.', 'The copies are in <span class="mono">sheets/.testrun/backups/</span>.'],
+        yes: 'Get published data', danger: true
+      }, function () {
+        if (el) el.disabled = true;
+        TR.http('POST', '/api/publish/get-latest', {}).then(function (r) {
+          if (r.repo != null) S.publish = r;
+          if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+          toast('Got the data published by ' + (r.result.by || 'someone') + ' at ' + r.result.at + '.', 'long');
+          if (S.app) S.app.publishNotice = null;
+          refreshApp().then(function () { boot(S.tab, cycleLabel()); });
+        });
       });
     },
     'publish-book': function (el) { pubDraft().books[el.getAttribute('data-name')] = el.checked; render(); },
@@ -2921,16 +3028,26 @@
     },
     'admin-new': function () {
       var had = S.team && S.team.admin && S.team.admin.exists;
-      if (had && !window.confirm('Make a new admin link? The old one stops working' + (me().admin ? ', including in this browser.' : '.'))) return;
-      TR.http('POST', '/api/team/admin', { action: 'new' }).then(function (r) {
-        if (!r.ok) { toast(r.error, 'bad'); return; }
-        S.team = r;
-        copyAdminLink(r);
-      });
+      var go = function () {
+        TR.http('POST', '/api/team/admin', { action: 'new' }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          S.team = r;
+          copyAdminLink(r);
+        });
+      };
+      if (!had) { go(); return; }
+      askConfirm({
+        title: 'Make a new admin link?',
+        banner: 'The old one stops working' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
+        yes: 'Make new link', danger: true
+      }, go);
     },
     'admin-remove': function () {
-      if (!window.confirm('Remove your admin link? It stops working at once' + (me().admin ? ', including in this browser.' : '.'))) return;
-      teamCall('/api/team/admin', { action: 'remove' }, function () { toast('Admin link removed.'); });
+      askConfirm({
+        title: 'Remove your admin link?',
+        banner: 'It stops working at once' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
+        yes: 'Remove admin link', danger: true
+      }, function () { teamCall('/api/team/admin', { action: 'remove' }, function () { toast('Admin link removed.'); }); });
     },
     'team-copy': function (el) {
       var id = el.getAttribute('data-id');
@@ -2945,14 +3062,25 @@
     'team-rotate': function (el) {
       var id = el.getAttribute('data-id');
       var p = S.team.people.filter(function (x) { return x.id === id; })[0];
-      if (!p || !window.confirm('Make a new link for ' + p.name + '? Their current link stops working.')) return;
-      teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { deliverLink(p.name, r.link, r.linkWarning, 'New link made; the old one no longer works. '); });
+      if (!p) return;
+      askConfirm({
+        title: 'Make a new link for ' + esc(p.name) + '?',
+        banner: 'Their current link stops working.', bannerKind: 'bad',
+        items: ['The new link goes to your clipboard, to send to them.'],
+        yes: 'Make new link', danger: true
+      }, function () {
+        teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { deliverLink(p.name, r.link, r.linkWarning, 'New link made; the old one no longer works. '); });
+      });
     },
     'team-remove': function (el) {
       var id = el.getAttribute('data-id');
       var p = S.team.people.filter(function (x) { return x.id === id; })[0];
-      if (!p || !window.confirm('Remove ' + p.name + '? Their link stops working at once.')) return;
-      teamCall('/api/team/people/remove', { id: id });
+      if (!p) return;
+      askConfirm({
+        title: 'Remove ' + esc(p.name) + '?',
+        banner: 'Their link stops working at once.', bannerKind: 'bad',
+        yes: 'Remove', danger: true
+      }, function () { teamCall('/api/team/people/remove', { id: id }); });
     },
     'copy-link': function () {
       var t = $('teamLink');

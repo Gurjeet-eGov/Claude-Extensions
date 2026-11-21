@@ -14,6 +14,8 @@
   --pass-bg: #e2f3e8;
   --fail: #c62f2a;
   --fail-bg: #fbe6e5;
+  --fail-fill: #c62f2a;    /* red buttons: white text on it stays at 4.5:1 or more */
+  --on-fail-fill: #ffffff;
   --other: #946200;
   --other-bg: #fbf0d9;
   --none: #98a0a8;
@@ -41,6 +43,7 @@
     --pass-bg: #173323;
     --fail: #ff7b72;
     --fail-bg: #3d1a19;
+    --fail-fill: #da3633;  /* deeper than --fail, so white text on it is readable (4.6:1) */
     --other: #e3b341;
     --other-bg: #36290e;
     --none: #6e7681;
@@ -265,8 +268,8 @@ main { flex: 1; padding: 16px 18px 60px; max-width: 1180px; width: 100%; margin:
 button.linkish { border: none; background: none; padding: 0; min-height: 0; color: var(--accent); font: inherit; font-weight: 650; }
 button.linkish.mono { font-family: var(--mono); font-size: 12.5px; }
 button.linkish:hover { background: none; text-decoration: underline; }
-button.danger-fill { background: var(--fail); border-color: var(--fail); color: #fff; font-weight: 600; }
-button.danger-fill:hover { background: var(--fail); filter: brightness(1.08); }
+button.danger-fill { background: var(--fail-fill); border-color: var(--fail-fill); color: var(--on-fail-fill); font-weight: 600; }
+button.danger-fill:hover { background: var(--fail-fill); filter: brightness(.92); }
 .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
 .empty h3 { color: var(--text); margin-bottom: 6px; }
 
@@ -304,9 +307,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal { position: fixed; inset: 0; background: rgba(10, 12, 16, .45); display: grid; place-items: center; z-index: 50; padding: 16px; }
 .modal-box { background: var(--surface); border-radius: 10px; width: min(760px, 100%); max-height: 90vh; overflow: auto; padding: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
 .modal-box textarea { font-family: var(--mono); font-size: 12px; }
+/* Question popups (askConfirm, Remove cycle, Delete workbook): one width, buttons on the right even when they wrap */
+.modal-box.confirm { width: min(560px, 100%); }
+.modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 #toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
-.toast { background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: 90vw; pointer-events: auto; }
-.toast.bad { background: var(--fail); color: #fff; }
+/* Messages are coloured text only: green when it worked, red for an error. The surface colour behind keeps them readable over the page. */
+.toast { background: var(--surface); color: var(--pass); padding: 4px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; max-width: 90vw; pointer-events: auto; }
+.toast.bad { color: var(--fail); }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
 /* Narrow (sidebar, split view, phones) */
