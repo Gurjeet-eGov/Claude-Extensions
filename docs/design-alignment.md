@@ -16,7 +16,7 @@
 | Default button | white, hover fills | white, hover fills | grey fill, hover darkens the border |
 | Text on primary | `--accent-text` (dark: near-black) | `#fff` (about 2.5:1 in dark mode) | `--accent-fg` |
 | Status | ✓ ✗ – ○ with colour | colour only on the status buttons and pill | ✓ ✗ ! on setup checks; emoji in the verification options |
-| Messages | coloured text: green, or red for errors (3.2 s, errors 7 s) | inline flash on a tinted box (3 s / 6 s) | notices that stay; `alert()` |
+| Messages | at the bottom: green or red fill, ⓘ, white text, ✕ (3.2 s, errors 7 s); under a control: coloured text | inline flash on a tinted box (3 s / 6 s) | notices that stay; `alert()` |
 | Confirming | popup (see DESIGN.md) | inline Delete / Keep | `confirm()` |
 | Casing | sentence case | "Choose Workbook/Suite" | "Update Issue", "Report Issue" (title), "Env Prefix", "Initial Status" |
 | Focus | `:focus-visible` on every control | `:focus` on inputs only, not `select` | `:focus` on inputs and selects |
@@ -24,7 +24,7 @@
 
 ## Step 1: fix the console first
 
-The console is the reference, so its own gaps go first (listed in [DESIGN.md › Known gaps](../DESIGN.md#known-gaps)). Done: the browser `confirm()` boxes, the emoji, the dark-mode red and text-only messages. Left:
+The console is the reference, so its own gaps go first (listed in [DESIGN.md › Known gaps](../DESIGN.md#known-gaps)). Done: the browser `confirm()` boxes, the emoji, the dark-mode red and the new messages. Left:
 - sentence case for "Generate New", "Download Existing", "Summary Report", "Complete Report";
 - a `prefers-reduced-motion` rule for the pulsing dot.
 
@@ -48,7 +48,7 @@ Files: `test-run-console/extension/popup/popup.css`, `popup/popup.js`, `recorder
 5. Replace the inline red style on the Delete confirm with a `danger-fill` class.
 6. Controls: 6px corners, 30px minimum height, `:focus-visible` on buttons, inputs, selects and text areas.
 7. Body 14px where the popup has room; labels 12px `--muted`. `.muted` and `.faint` set colour only, not size.
-8. Messages: keep them inline in the popup (a floating message would cover the buttons in a 360px window), as coloured text like the console's (green, or red for errors, no tinted box), with the console's timings: 3.2 s, errors 7 s.
+8. Messages: a message about the button just pressed stays inline, right under it, as coloured text (DESIGN.md's "under a button or a field" kind: green, or red for problems, no tinted box). A popup this small has no room for the bottom kind. Use the console's timings: 3.2 s, errors 7 s.
 9. Casing: "Choose workbook/suite".
 10. Recorder badge colours from the tokens (`--fail` for REC, `--other` for paused) instead of hex values.
 
@@ -76,7 +76,7 @@ Files: `bug-reporter/extension/styles/common.css`, `popup/popup.css`, `report/re
 5. Fields: labels 12px `--muted` above the field, like the console.
 6. Settings tables: upper-case 11.5px headers on `--surface-2`, like the console's tables.
 7. Replace `alert()` and `confirm()` (in `report/report.js` and `options/options.js`) with a popup following DESIGN.md's pattern (560px, buttons right-aligned, Escape cancels), like the console's `askConfirm()`. A small shared helper in `bug-reporter/extension/lib/` keeps it in one place.
-8. Result messages (the `.notice` blocks) that report a finished action become coloured text like the console's; notices that must stay on screen (a setup problem, say) stay as banners.
+8. Result messages (the `.notice` blocks) that report a finished action become the console's bottom messages (green or red fill, ⓘ, ✕), or coloured text when they belong to one field; notices that must stay on screen (a setup problem, say) stay as banners.
 9. Replace emoji with the guide's symbols: 📸 on Snapshot, ✅ ❌ ⚠️ in the verification options.
 10. Sentence case: "Report issue" (page title and button), "Update issue", "Env prefix", "Initial status".
 11. Settings tabs: set `aria-selected` on the open tab.

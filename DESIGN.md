@@ -33,16 +33,17 @@ Every colour comes from these tokens (the `:root` block at the top of `styles.cs
 | `--accent` | `#2456d3` | `#7aa2ff` | Primary buttons, links, selected things, focus ring |
 | `--accent-weak` | `#e9eefc` | `#1f2b47` | Selected backgrounds (chips, a selected case) |
 | `--accent-text` | `#ffffff` | `#0d1220` | Text on `--accent` |
-| `--pass` / `--pass-bg` | `#1d7a43` / `#e2f3e8` | `#5cc98a` / `#173323` | Pass ✓ |
+| `--pass` / `--pass-bg` | `#1d7a43` / `#e2f3e8` | `#5cc98a` / `#173323` | Pass ✓, success text |
+| `--pass-fill` / `--on-pass-fill` | `#1d7a43` / `#ffffff` | `#238636` / `#ffffff` | Green messages at the bottom: a fill deep enough for white text in both modes |
 | `--fail` / `--fail-bg` | `#c62f2a` / `#fbe6e5` | `#ff7b72` / `#3d1a19` | Fail ✗, error text, delete |
-| `--fail-fill` / `--on-fail-fill` | `#c62f2a` / `#ffffff` | `#da3633` / `#ffffff` | Red buttons (`danger-fill`): a fill deep enough for white text in both modes |
+| `--fail-fill` / `--on-fail-fill` | `#c62f2a` / `#ffffff` | `#da3633` / `#ffffff` | Red buttons (`danger-fill`) and red messages at the bottom: a fill deep enough for white text in both modes |
 | `--other` / `--other-bg` | `#946200` / `#fbf0d9` | `#e3b341` / `#36290e` | NA and other results –, warnings |
 | `--none` / `--none-bg` | `#98a0a8` / `#eceff2` | `#6e7681` / `#262a30` | Not run ○, retired ⊘ |
 
 Other tokens: `--radius: 8px`; `--shadow` (a soft two-layer card shadow, none in dark mode); `--font` (the system font stack: `system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`); `--mono` (`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`).
 
 Rules:
-- **Text on a coloured fill** uses the matching "on" colour, never a hard-coded `#fff`: `--accent-text` on `--accent`, `--on-fail-fill` on `--fail-fill`, `--surface` on a status fill. Text on any fill stays at 4.5:1 or more in both modes.
+- **Text on a coloured fill** uses the matching "on" colour, never a hard-coded `#fff`: `--accent-text` on `--accent`, `--on-pass-fill` on `--pass-fill`, `--on-fail-fill` on `--fail-fill`, `--surface` on a status button. Text on any fill stays at 4.5:1 or more in both modes.
 - **Tints** for hover on coloured buttons are mixed from tokens (`color-mix(in srgb, var(--fail) 8%, var(--surface))`), not new values.
 - **Contrast:** body text at least 4.5:1; borders and focus rings at least 3:1. `--faint` is only for text people can do without.
 
@@ -130,12 +131,19 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Disabled is 50% opac
 
 Full width, 13px cells padded `7px 10px`, a bottom border per row. Headers are 11.5px upper case `--muted` on `--surface-2`. Number columns are right-aligned with tabular figures. An empty table says "No data available".
 
-### Messages (toasts)
+### Messages
 
+Two kinds, by where they appear:
+
+**At the bottom of the page** (toasts, `TR.toast()` in `shared.js`), for news after an action:
 - Bottom centre, stacked, `aria-live="polite"`; `role="alert"` for errors.
-- **Coloured text only:** `--pass` (green) when something worked, `--fail` (red) for an error, 13px, weight 600. No box, outline or shadow; a `--surface` background behind the words keeps them readable where they float over the page.
-- They close themselves: 3.2 seconds, or 7 seconds for errors and long messages.
-- For short news after an action: "Saved.", "Admin link removed." Anything the person must act on later doesn't go in a message.
+- **Filled:** `--pass-fill` (green) when something worked, `--fail-fill` (red) for an error, with white text (`--on-pass-fill`, `--on-fail-fill`), 13px, weight 500; 8px corners, a soft shadow; up to 640px wide.
+- **ⓘ first:** an info icon (a circle with an i, inline SVG, 18px) at the start, for green and red alike.
+- **✕ last:** after a gap, a white ✕ in a 28px square that closes the message straight away (`aria-label="Close this message"`). Hovering darkens the square slightly (`rgba(0, 0, 0, .18)` over the fill).
+- They close themselves too: 3.2 seconds, or 7 seconds for errors and long messages.
+- Examples: "Saved.", "Admin link removed.", "Couldn't save: the workbook is open in Excel." Anything the person must act on later doesn't go in a message.
+
+**Right under a button or a field**, for a short warning or success about that control: **coloured text only**, no box: `--fail` for a problem (`.bad-text`), `--pass` for success, as in setup checks (`.check-line`). Example: "Invalid username or password." under the password field.
 
 ### The "ready" bubble
 
@@ -182,7 +190,7 @@ Unicode symbols, not an icon font or images: ✓ ✗ – ○ ⊘ (status), ✎ e
 - Every control works with the keyboard and shows the focus ring.
 - Icon-only buttons have an `aria-label`; status symbols have text next to them or a label.
 - Popups set `role="dialog"` and `aria-modal`, and put focus inside.
-- Messages are announced (`aria-live`); errors use `role="alert"`.
+- Messages are announced (`aria-live`); errors use `role="alert"`; the ✕ on a message has an `aria-label`.
 - Text contrast is at least 4.5:1 in light and dark; status is never colour alone.
 
 ## Extensions
