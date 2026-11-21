@@ -246,10 +246,10 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await mate.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
         await api('/api/team', { enabled: true, mode: 'fixed', fixedUrl: base.replace(/\/$/, ''), hostedUrl: hosted });
         await api('/api/call/api_addColumns', { book: BOOK, args: [TAB, ['testedBy']] });
-        const inv = await api('/api/team/people', { name: 'Priya (QA)', role: 'tester' });
+        const inv = await api('/api/team/people', { name: 'John Doe (QA)', role: 'tester' });
         assert.match(inv.link, new RegExp(`^${hosted}#join=[\\w-]+&server=`));
         await mate.goto(inv.link);
-        await mate.locator('.user-btn[title="Priya (QA) · Updates status"]').waitFor();
+        await mate.locator('.user-btn[title="John Doe (QA) · Updates status"]').waitFor();
         assert.equal(new URL(mate.url()).hash, '', 'the key leaves the address bar');
         assert.equal(await mate.locator('.nav [data-view=setup]').count(), 0, 'Setup is the owner\'s');
         await mate.locator('[data-action=show][data-show=all]').click();
@@ -258,10 +258,10 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await eventually(async () => {
           const rows = await disk();
           const r = row(rows, 'CMS/14');
-          return r[rows[0].indexOf('Test Status / v2.20.1')] === 'Pass' && r[rows[0].indexOf('Tested by')] === 'Priya (QA)';
+          return r[rows[0].indexOf('Test Status / v2.20.1')] === 'Pass' && r[rows[0].indexOf('Tested by')] === 'John Doe (QA)';
         });
         await mate.reload();
-        await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).waitFor(); // the invite is kept in this browser
+        await mate.locator('.user-btn', { hasText: 'John Doe (QA)' }).waitFor(); // the invite is kept in this browser
         // Hovering the name shows the role and Sign out; signing out forgets the link in this browser
         await mate.locator('.user-btn').hover();
         await mate.locator('.user-pop', { hasText: 'Updates status' }).waitFor();
@@ -270,7 +270,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await mate.locator('#modal .modal-box.confirm h2', { hasText: 'Sign out of Test Run in this browser?' }).waitFor();
         await mate.keyboard.press('Escape');
         await mate.locator('#modal').waitFor({ state: 'hidden' });
-        assert.equal(await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).count(), 1, 'Escape keeps you signed in');
+        assert.equal(await mate.locator('.user-btn', { hasText: 'John Doe (QA)' }).count(), 1, 'Escape keeps you signed in');
         await mate.locator('.user-btn').hover();
         await mate.locator('.user-pop [data-action=sign-out]').click();
         await mate.locator('#modal [data-action=confirm-yes]', { hasText: 'Sign out' }).click();
@@ -279,32 +279,32 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await mate.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
         assert.equal(await mate.locator('.user-btn').count(), 0, 'still signed out after a reload');
         await mate.goto(inv.link);
-        await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).waitFor();
-        // The owner copies Priya's link again from Setup → Team: the same, working link, straight to the clipboard.
+        await mate.locator('.user-btn', { hasText: 'John Doe (QA)' }).waitFor();
+        // The owner copies John Doe's link again from Setup → Team: the same, working link, straight to the clipboard.
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.replace(/\/$/, '') });
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
         await page.reload();
         await page.locator('.nav [data-view=setup]').click();
         await page.locator('[data-action=setup-part][data-part=sharing]').click();
-        const priyaRow = page.locator('#team tr', { hasText: 'Priya (QA)' });
-        assert.equal(await priyaRow.locator('[data-change=team-role] option:checked').textContent(), 'Update status');
+        const johnDoeRow = page.locator('#team tr', { hasText: 'John Doe (QA)' });
+        assert.equal(await johnDoeRow.locator('[data-change=team-role] option:checked').textContent(), 'Update status');
         assert.equal(await page.locator('#team th', { hasText: 'Access' }).count(), 1, 'the column is Access');
         // Adding someone: their access starts blank ("Select access") and must be chosen; workbooks start at All
         assert.equal(await page.locator('#teamRole option:checked').textContent(), 'Select access');
         assert.equal(await page.locator('#teamBooks option:checked').textContent(), 'All workbooks');
         assert.equal(await page.locator('#team th', { hasText: 'Workbooks' }).count(), 1);
-        assert.equal(await priyaRow.locator('[data-change=team-books] option:checked').textContent(), 'All workbooks');
+        assert.equal(await johnDoeRow.locator('[data-change=team-books] option:checked').textContent(), 'All workbooks');
         await page.locator('#teamName').fill('Nobody yet');
         await page.getByRole('button', { name: 'Add and make a link' }).click();
         await page.locator('.toast', { hasText: 'Choose their access first.' }).waitFor();
         await page.locator('#teamName').fill('');
-        await priyaRow.getByRole('button', { name: 'Copy link' }).click();
-        await page.locator('.toast', { hasText: "Priya (QA)'s invite link is copied" }).waitFor();
+        await johnDoeRow.getByRole('button', { name: 'Copy link' }).click();
+        await page.locator('.toast', { hasText: "John Doe (QA)'s invite link is copied" }).waitFor();
         assert.equal(await clipboard(), inv.link);
         assert.equal(await page.locator('#teamLink').count(), 0, 'no link box: it is on the clipboard');
         // New link: made, copied, toast; the old link stops working
-        await priyaRow.getByRole('button', { name: 'New link' }).click();
-        await page.locator('#modal h2', { hasText: 'Make a new link for Priya (QA)?' }).waitFor();
+        await johnDoeRow.getByRole('button', { name: 'New link' }).click();
+        await page.locator('#modal h2', { hasText: 'Make a new link for John Doe (QA)?' }).waitFor();
         await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make new link' }).click();
         const made = page.locator('.toast', { hasText: 'New link made' });
         await made.waitFor();
@@ -463,6 +463,14 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
     await t.test('Findings: Add finding, similar test cases suggested, covered in one click', async () => {
       await page.locator('.nav [data-view=findings]').click();
       assert.equal(await page.locator('.context').count(), 0, 'Findings lists every suite: no suite strip');
+      // The Test suite filter: nothing chosen means every suite (it reads "Select"); ↻ clears a choice
+      assert.equal(await ddValue(page, 'findingsSuite'), 'Select');
+      assert.equal(await page.locator('[data-action=findings-suite-reset]').isDisabled(), true);
+      assert.deepEqual(await ddOptions(page, 'findingsSuite'), [TAB, 'CMS 2.20.1 Features', 'Dashboard KPI'], 'no "All test suites" option');
+      await ddPick(page, 'findingsSuite', 'Dashboard KPI');
+      await page.locator('#findingsSuite > .grow', { hasText: 'Dashboard KPI' }).waitFor();
+      await page.locator('[data-action=findings-suite-reset]').click();
+      await page.locator('#findingsSuite > .grow', { hasText: 'Select' }).waitFor();
       await page.getByRole('button', { name: '+ Add finding' }).click();
       assert.equal(await ddValue(page, 'fTab'), TAB, 'the form asks which test suite');
       await page.locator('#fText').fill('The employee can clear a search from the inbox only once');

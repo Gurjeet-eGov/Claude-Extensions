@@ -125,7 +125,7 @@ test('only the host publishes: testers and viewers are refused', async () => {
   const h = await host({ gh });
   try {
     await h.local('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: h.base.replace(/\/$/, '') });
-    const p = await h.local('POST', '/api/team/people', { name: 'Priya', role: 'tester' });
+    const p = await h.local('POST', '/api/team/people', { name: 'John Doe', role: 'tester' });
     const key = new URLSearchParams(p.link.split('#')[1]).get('join');
     const remote = (method, path, body) => new Promise((resolve, reject) => {
       const data = body ? Buffer.from(JSON.stringify(body)) : null;

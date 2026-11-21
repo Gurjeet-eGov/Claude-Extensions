@@ -131,6 +131,7 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
 - **Long lists** (more than 8 options) get a search box at the top, which stays put: only the options below it scroll, at most 240px high.
 - **Where a new value is allowed** (Feature, Sub feature, Test type, Area) the search box is always there, however short the list: typing a value that isn't in it offers **Use “…”**.
 - **The list is as wide as its field**, never wider; long options wrap. Give the field the width its options need (the Workbook picker is 340px, "Already covered by case" 520px).
+- **As a filter** (Findings › Test suite, Run › Test Type): no "All" option. Nothing chosen means everything, and the field reads **Select**. A single-choice filter has a round ↻ button (`.help-btn`) at the right end of its title's row, in line with the field's right edge; it clears the choice, and is disabled while nothing is chosen.
 - **With its name inside** (the top bar's **Workbook** and **Test cycle**, a form's **Test suite**): the name in 12px bold `--accent` before the value.
 - The list opens over what's below it, tags included. It is never cut off by the card or the scrolling column around it. A click outside or Escape closes it; Enter in the search box takes the first match.
 - Not for text that is typed freely; that is an input.
@@ -219,7 +220,7 @@ Unicode symbols, not an icon font or images: ✓ ✗ – ○ ⊘ (status), ✎ e
 - **"…"** ends a label that asks for more before acting: "Duplicate of…", "Already covered…". It also marks work in progress: "Saving…".
 - **Tool labels** carry their symbol: "✎ Edit", "⧉ Mark Duplicate", "↺ Clear Status", "⊘ Deprecated".
 - **Messages** say what happened and what to do, with no "Error:" prefix: "Test Run is not answering. Is it still running in the terminal?", "View only: you need edit access to mark results."
-- **Separators:** "·" between items on a line ("Priya · 20 Nov"); "–" for an empty value; curly quotes around names.
+- **Separators:** "·" between items on a line ("John Doe · 20 Nov"); "–" for an empty value; curly quotes around names.
 - **Toasts** are full sentences with a full stop.
 
 ## Accessibility checklist

@@ -42,7 +42,7 @@ test('status: shown only when Test Run answers as itself', async () => {
 
 test('a shared Test Run: the invite key is sent, view-only and missing keys are told apart', async () => {
   let auth;
-  const st = await testRunStatus(SHARED, { fetchImpl: async (url, opts) => { auth = opts.headers.Authorization; return json(200, { ok: true, app: 'test-run', me: { name: 'Priya', role: 'tester', local: false }, consoleUrl: 'https://o.github.io/r/test-run/' }); } });
+  const st = await testRunStatus(SHARED, { fetchImpl: async (url, opts) => { auth = opts.headers.Authorization; return json(200, { ok: true, app: 'test-run', me: { name: 'John Doe', role: 'tester', local: false }, consoleUrl: 'https://o.github.io/r/test-run/' }); } });
   assert.equal(auth, `Bearer ${'k'.repeat(32)}`);
   assert.equal(canNote(st), true);
   assert.equal(consoleLink(st, st.base), 'https://o.github.io/r/test-run/?view=findings');

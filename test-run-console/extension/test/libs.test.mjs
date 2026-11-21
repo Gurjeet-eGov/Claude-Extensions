@@ -47,13 +47,13 @@ test('requests carry the key; a moved address is found through the gist once', a
     calls.push([url, opts.headers.Authorization || '']);
     if (url.startsWith('https://old.example')) throw new TypeError('fetch failed');
     if (url.startsWith('https://api.github.com/gists/')) return new Response(JSON.stringify({ files: { 'test-run.json': { content: JSON.stringify({ app: 'test-run', url: 'https://new.example' }) } } }));
-    return new Response(JSON.stringify({ ok: true, app: 'test-run', me: { name: 'Priya', role: 'tester' } }));
+    return new Response(JSON.stringify({ ok: true, app: 'test-run', me: { name: 'John Doe', role: 'tester' } }));
   };
   try {
     const conn = parseLink('https://org.github.io/r/test-run/#join=key1&server=https%3A%2F%2Fold.example&gist=abc');
     let moved = '';
     const r = await request(conn, 'GET', '/api/status', { onMove: (s) => { moved = s; } });
-    assert.equal(r.me.name, 'Priya');
+    assert.equal(r.me.name, 'John Doe');
     assert.equal(moved, 'https://new.example');
     assert.equal(conn.server, 'https://new.example');
     assert.deepEqual(calls.map((c) => c[1]), ['Bearer key1', '', 'Bearer key1'], 'the key goes to Test Run only, not to GitHub');

@@ -708,3 +708,5 @@ table.people td { vertical-align: middle; }
 /* a form with a couple of fields: the fields keep a readable width instead of the card's full width */
 .form-grid.narrow { max-width: 680px; }
 .cover-row .cover-dd { width: 520px; max-width: 100%; } /* room for the scenario next to each ID; the list is as wide as the field */
+/* a filter's title with a round button at the right end of its row (↻ resets the filter) */
+.rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
