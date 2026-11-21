@@ -12,6 +12,8 @@
   --accent-text: #ffffff;
   --pass: #1d7a43;
   --pass-bg: #e2f3e8;
+  --pass-fill: #1d7a43;    /* green messages: white text on it stays at 4.5:1 or more */
+  --on-pass-fill: #ffffff;
   --fail: #c62f2a;
   --fail-bg: #fbe6e5;
   --fail-fill: #c62f2a;    /* red buttons: white text on it stays at 4.5:1 or more */
@@ -41,6 +43,7 @@
     --accent-text: #0d1220;
     --pass: #5cc98a;
     --pass-bg: #173323;
+    --pass-fill: #238636;  /* deeper than --pass, so white text on it is readable (4.6:1) */
     --fail: #ff7b72;
     --fail-bg: #3d1a19;
     --fail-fill: #da3633;  /* deeper than --fail, so white text on it is readable (4.6:1) */
@@ -311,9 +314,22 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-box.confirm { width: min(560px, 100%); }
 .modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 #toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
-/* Messages are coloured text only: green when it worked, red for an error. The surface colour behind keeps them readable over the page. */
-.toast { background: var(--surface); color: var(--pass); padding: 4px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; max-width: 90vw; pointer-events: auto; }
-.toast.bad { color: var(--fail); }
+/* Messages at the bottom: ⓘ, the text, then ✕ to close. Green when it worked, red for an error, white text.
+   (Green or red text alone is for a short note right under a button or field: .bad-text, .check-line.) */
+.toast {
+  display: flex; align-items: center; gap: 10px; max-width: min(640px, 90vw); pointer-events: auto;
+  background: var(--pass-fill); color: var(--on-pass-fill); padding: 6px 6px 6px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+}
+.toast.bad { background: var(--fail-fill); color: var(--on-fail-fill); }
+.toast-ico { flex: none; width: 18px; height: 18px; }
+.toast-text { flex: 1 1 auto; min-width: 0; }
+.toast .toast-x {
+  flex: none; margin-left: 14px; width: 28px; height: 28px; min-height: 0; padding: 0; justify-content: center;
+  border: none; border-radius: 6px; background: transparent; color: inherit; font-size: 14px; line-height: 1;
+}
+.toast .toast-x:hover { background: rgba(0, 0, 0, .18); }
+.toast .toast-x:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
 /* Narrow (sidebar, split view, phones) */

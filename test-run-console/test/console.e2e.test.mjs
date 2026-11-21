@@ -289,7 +289,10 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await priyaRow.getByRole('button', { name: 'New link' }).click();
         await page.locator('#modal h2', { hasText: 'Make a new link for Priya (QA)?' }).waitFor();
         await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make new link' }).click();
-        await page.locator('.toast', { hasText: 'New link made' }).waitFor();
+        const made = page.locator('.toast', { hasText: 'New link made' });
+        await made.waitFor();
+        await made.locator('.toast-x').click(); // ✕ closes a message straight away
+        await made.waitFor({ state: 'detached' });
         const fresh = await clipboard();
         assert.ok(fresh.startsWith(hosted) && fresh !== inv.link, fresh);
         assert.equal(await page.locator('#teamLink').count(), 0);
