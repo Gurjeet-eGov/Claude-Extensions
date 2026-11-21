@@ -16,7 +16,7 @@ import { tmpdir, homedir } from 'node:os';
 import { createServer } from '../server.mjs';
 import { ROOT } from '../lib/runtime.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
-import { extensionIdFromKey } from '../../bug-reporter/host/lib/extension-id.mjs';
+import { extensionIdFromKey } from '../lib/extension-id.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium = null;
@@ -159,7 +159,7 @@ test('Bug Reporter offers "Also add this to Test Run" on the form: the suite, an
 // (and the rule for changing a result that has it), a recording, the host's Media
 // settings and Complete Report, and a View only link. Skipped when Playwright is not
 // installed (looked up in PLAYWRIGHT_DIR, else in the CCRS checkout).
-const TRX = join(ROOT, '..', 'test-run-extension');
+const TRX = join(ROOT, 'extension');
 const TRX_ID = extensionIdFromKey(JSON.parse(readFileSync(join(TRX, 'manifest.json'), 'utf8')).key);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(600, 9)]);
 

@@ -158,8 +158,8 @@ var TR = (function () {
 
   function offline(e) {
     return { ok: false, code: 'OFFLINE', error: conn.server
-      ? 'The shared Test Run is not answering. The laptop running it may be asleep or offline. (' + ((e && e.message) || e) + ')'
-      : 'Test Run is not answering. Is it still running in the terminal? (' + ((e && e.message) || e) + ')' };
+      ? 'Server error: the shared Test Run is not responding.'
+      : 'Server error: Test Run is not responding.' };
   }
 
   /** Talk to the server; always resolves with { ok, ... }. raw: send body as-is (file upload). */
@@ -424,15 +424,34 @@ var TR = (function () {
       '</div>';
   }
 
+  var INFO_ICON = '<svg class="toast-ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+    '<path d="M10 9v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.1" fill="currentColor"/></svg>';
+
+  var MAX_TOASTS = 3;
+
+  /**
+   * A message at the bottom: green, or red for kind 'bad'. It goes by itself after 5 s, or with ✕.
+   * The same message twice (a request failing again, say) shows once, with its time started again;
+   * at most three show at once, the oldest going first, so they never cover the page.
+   */
   function toast(msg, kind) {
     var box = document.getElementById('toasts');
     if (!box) return;
+    var cls = 'toast' + (kind === 'bad' ? ' bad' : '');
+    var ms = 5000; // green and red alike
+    var same = Array.prototype.filter.call(box.children, function (t) { return t.className === cls && t.querySelector('.toast-text').textContent === String(msg); })[0];
+    if (same && same.restart) { same.restart(ms); return; }
     var el = document.createElement('div');
-    el.className = 'toast' + (kind === 'bad' ? ' bad' : '');
+    el.className = cls;
     el.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
-    el.textContent = msg;
+    el.innerHTML = INFO_ICON + '<span class="toast-text"></span><button type="button" class="toast-x" aria-label="Close this message">✕</button>';
+    el.querySelector('.toast-text').textContent = msg;
+    var timer = null;
+    el.restart = function (t) { clearTimeout(timer); timer = setTimeout(function () { el.remove(); }, t); };
+    el.restart(ms);
+    el.querySelector('.toast-x').addEventListener('click', function () { clearTimeout(timer); el.remove(); });
     box.appendChild(el);
-    setTimeout(function () { el.remove(); }, kind === 'bad' || kind === 'long' ? 7000 : 3200); // 'long': a normal message with more to read
+    while (box.children.length > MAX_TOASTS) box.removeChild(box.firstElementChild);
   }
 
   var store = {

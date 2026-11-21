@@ -27,7 +27,7 @@ import { githubIssue, isGithubIssue } from './lib/issues.mjs';
 import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slugFor, newPublishId } from './lib/publish.mjs';
 import { isWorkbookName } from './lib/books.mjs';
 import { randomBytes } from 'node:crypto';
-import { extensionIdFromKey } from '../bug-reporter/host/lib/extension-id.mjs';
+import { extensionIdFromKey } from './lib/extension-id.mjs';
 import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
 
 const UI = join(ROOT, 'ui');
@@ -45,12 +45,12 @@ function defaultUser() {
   try { return userInfo().username; } catch { return ''; }
 }
 
-/** The IDs of this repository's extensions (Bug Reporter, Test Run Extension): on the laptop they act as the host. */
+/** The IDs of this repository's extensions (Test Run Extension, and Bug Reporter if its folder is there): on the laptop they act as the host. */
 function ourExtensionIds() {
   const ids = [];
-  for (const dir of [join('bug-reporter', 'extension'), 'test-run-extension']) {
+  for (const dir of [join(ROOT, 'extension'), join(ROOT, '..', 'bug-reporter', 'extension')]) {
     try {
-      const manifest = JSON.parse(readFileSync(join(ROOT, '..', dir, 'manifest.json'), 'utf8'));
+      const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
       if (manifest.key) ids.push(extensionIdFromKey(manifest.key));
     } catch { /* not there */ }
   }

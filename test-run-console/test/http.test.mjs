@@ -9,7 +9,7 @@ import http from 'node:http';
 import { createServer } from '../server.mjs';
 import { XBook } from '../lib/xlsx-book.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
-import { extensionIdFromKey } from '../../bug-reporter/host/lib/extension-id.mjs';
+import { extensionIdFromKey } from '../lib/extension-id.mjs';
 import { makeFakeGh } from '../dev/fake-tools.mjs';
 
 const BOOK = 'CMS Sign Off (sample).xlsx';

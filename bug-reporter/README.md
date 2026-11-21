@@ -14,6 +14,18 @@ A Chrome extension and a small local helper for logging defects while you test a
 
 The helper uses **your own** `gh` and Claude Code logins on your machine. No API keys are involved. Drafts count against your Claude plan's normal usage, with no separate bill. The Settings page shows exactly what each draft used.
 
+**It stands on its own.** You don't need anything else from this repository to use it. If your team uses the [Test Run console](../test-run-console/), Bug Reporter can also add each filed bug there ([Adding the bug to Test Run](#adding-the-bug-to-test-run)), but that's optional.
+
+| You need | For |
+|---|---|
+| Google Chrome 116 or later (or Chrome Beta, Dev, Canary, Chromium, Brave, Edge) | the extension |
+| macOS or Linux | the helper (a small Node program Chrome talks to) |
+| Node.js 18 or later | the helper |
+| GitHub CLI 2.104 or later, signed in with the `project` scope | filing issues, the board dropdowns, Update Issue |
+| Claude Code, signed in with your Claude subscription | **Draft with Claude** and **Polish with Claude** only |
+
+**Without the helper**, Track localizations still works (it needs neither the helper nor Claude). Everything that talks to GitHub or Claude needs it.
+
 ---
 
 ## Setup
@@ -21,7 +33,7 @@ The helper uses **your own** `gh` and Claude Code logins on your machine. No API
 **Follow the step-by-step [setup guide](docs/SETUP.md).** It takes about 10 minutes, once per computer, and ends with a troubleshooting table. In short:
 
 1. Install Node.js, GitHub CLI 2.104+ and Claude Code, then sign in: `gh auth login`, `gh auth refresh -s project,read:project`, `claude auth login`.
-2. `git clone https://github.com/Gurjeet-eGov/Claude-Extensions.git`, then run `Claude-Extensions/bug-reporter/host/install.sh`.
+2. `git clone https://github.com/Gurjeet-eGov/Claude-Extensions.git`, then run `Claude-Extensions/bug-reporter/host/install.sh`. Add `--install-skill` to also link the drafting rules into `~/.claude/skills/log-issue-extension`, so you can use them in Claude Code too.
 3. In `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick `bug-reporter/extension`.
 4. In the Settings page that opens, check the **Setup** tab is green, then add your boards under **Projects**.
 5. On macOS, allow Chrome under **System Settings → Privacy & Security → Screen Recording**.
@@ -154,8 +166,20 @@ Nothing in the form uses Claude except **Draft with Claude**.
 - **Nothing is redacted.** Requests and responses go into the issue as captured, like a DevTools copy-paste. DIGIT requests carry a live `authToken` in `RequestInfo`, so be careful when filing to a **public** repo.
 - **Temporary files:** attachments are staged in `~/Library/Caches/egov-bug-reporter/` (or `~/.cache/…` on Linux) and deleted after filing. Leftovers are purged after 3 days, which you can change in **Settings → Capture & storage**.
 - **Dry run:** add `&dry=1` to the report tab's URL. **File issue** then prints the `gh` commands instead of running them.
-- **Updating:** `git pull`, re-run `host/install.sh`, then reload the extension in `chrome://extensions`.
+- **Updating:** `git pull`, re-run `host/install.sh`, then reload the extension in `chrome://extensions`. The installer copies the helper out of the repository (see below), so a pull alone doesn't update it.
 - **Uninstall:** run `host/uninstall.sh`, then remove the extension from `chrome://extensions`.
+
+## Where things are kept
+
+| What | macOS | Linux |
+|---|---|---|
+| The helper's settings (paths to node, gh and claude, the repository) | `~/.config/egov-bug-reporter/config.json` | same |
+| The helper itself, copied there by `install.sh` (so macOS doesn't ask for access to Documents or Desktop) | `~/Library/Application Support/egov-bug-reporter/` | `~/.local/share/egov-bug-reporter/` |
+| The helper's log | `~/Library/Logs/egov-bug-reporter/host.log` | `~/.cache/egov-bug-reporter/host.log` |
+| Attachments staged for filing, purged after 3 days | `~/Library/Caches/egov-bug-reporter/` | `~/.cache/egov-bug-reporter/` |
+| Captured calls, settings, the localization list | Chrome's storage for the extension | same |
+
+Chrome finds the helper through a native messaging host named `com.egov.bug_reporter`, registered by `install.sh` for each Chromium browser it finds, and allowed only for this extension's fixed ID (from the `key` in `manifest.json`). `host/uninstall.sh` removes all of it.
 
 ## Project layout
 

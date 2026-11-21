@@ -1,0 +1,38 @@
+# An example suite entry. Copy it to suites/<id>.yaml and fill it in.
+# Files starting with "_" are examples and are never listed in Test Run.
+# Every field is described in ../CATALOGUE.md.
+
+id: pgr-playwright                       # unique, the same as the file name
+name: Complaints (PGR), Playwright       # what people see in Test Run
+team: QA                                 # who owns and maintains the suite
+module: Complaints (PGR)                 # the product area it tests
+framework: playwright                    # for readers: playwright, cypress, selenium-java, pytest, karate, robot…
+
+repo: https://github.com/<org>/pgr-playwright-tests.git             # the suite's own repository
+upstream: https://github.com/<product-org>/<product-repo>.git       # optional: where it was forked from
+
+# How to get it ready and run it, in the cloned folder.
+# BASE_URL, TENANT, IMPLEMENTATION, OVERLAY, PRODUCT_VERSION, TAGS and the environment's secrets are set for these.
+setup: npm ci && npx playwright install chromium
+run: npx playwright test
+
+# The suite's own report, opened as it is.
+report:
+  folder: allure-report
+  build: npx allure generate allure-results -o allure-report --clean
+  # url: https://reports.example.org/pgr/     # instead of folder/build, if the team already publishes it
+
+# Which ref (tag or branch) of the suite to run, per product version and implementation.
+versions:
+  - product: "2.9"
+    default: v2.9.3                       # a tag: the same tag always runs the same tests
+    implementations:
+      county-a: { overlay: implementations/county-a }    # same code as default, its own settings and data
+      county-b: { ref: impl/county-b-2.9.1 }             # code differs, so its own branch
+  - product: "2.10"
+    default: v2.10.0
+    run: npx playwright test --project=chromium          # only when the command changed for this version
+
+# Reserved for later: how tests name the manual case they cover. Ignored for now.
+# caseIds:
+#   tag: "@{caseId}"                      # e.g. a test tagged @CMS/09 covers case CMS/09

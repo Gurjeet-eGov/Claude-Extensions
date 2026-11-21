@@ -28,7 +28,11 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
   const sheets = mkdtempSync(join(tmpdir(), 'testrun-e2e-'));
   const file = join(sheets, BOOK);
   writeFileSync(file, await buildSampleXlsx());
-  const gh = makeFakeGh(mkdtempSync(join(tmpdir(), 'testrun-gh-'))); // a fake GitHub: nothing is published for real
+  // a fake GitHub: nothing is published for real; it knows the issues the steps below link
+  const gh = makeFakeGh(mkdtempSync(join(tmpdir(), 'testrun-gh-')), { issues: {
+    'https://github.com/org/repo/issues/812': { title: 'Pincode labels missing', priority: 'P1' },
+    'https://github.com/org/repo/issues/930': { title: 'Reject reasons list is empty', labels: ['P2'] },
+  } });
   const server = createServer({ sheetsDir: sheets, ghPath: gh.bin, repo: { owner: 'org', repo: 'tools' }, publishPrefix: 'test-run-console/', publishedDir: join(sheets, 'no-published-data') });
   const base = await server.listenOn(0);
   const browser = await chromium.launch();
@@ -37,6 +41,18 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
   page.on('pageerror', (e) => errors.push(e.message));
   const disk = async (path = file, tab = TAB) => (await XBook.fromFile(path, 'x')).getSheetByName(tab).getDataRange().getDisplayValues();
   const row = (rows, id) => rows.find((r) => r[0] === id);
+  // The console's dropdowns (dropdown() in ui/client.js): a button that reads the choice, and a list under it.
+  const ddValue = (p, id) => p.locator(`#${id} > .grow`).textContent();
+  const ddPick = async (p, id, label) => {
+    await p.locator(`#${id}`).click();
+    await p.locator('.multi-pop .dd-item', { has: p.locator('.dd-label').getByText(label, { exact: true }) }).click();
+  };
+  const ddOptions = async (p, id) => {
+    await p.locator(`#${id}`).click();
+    const all = await p.locator('.multi-pop .dd-item .dd-label').allTextContents();
+    await p.keyboard.press('Escape');
+    return all;
+  };
 
   try {
     await t.test('first run opens Setup; Save stays on Setup with a message; Run shows paths', async () => {
@@ -91,7 +107,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await openCase(page, 'CMS/09');
       await page.locator('.sbtn.on', { hasText: 'NA (Skipped)' }).click();
       await eventually(async () => row(await disk(), 'CMS/09')[7] === '');
-      await page.locator('.toast', { hasText: 'back to not run' }).first().waitFor();
+      await page.locator('.toast', { hasText: 'Test status cleared for CMS/09.' }).first().waitFor();
       await page.keyboard.press('p');
       await eventually(async () => row(await disk(), 'CMS/09')[7] === 'Pass');
       await page.locator('[data-action=show][data-show=all]').click();
@@ -112,7 +128,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.keyboard.press('e');
       await page.locator('#ce_scenario').fill('Verify if the LME is able to resolve an assigned complaint, with or without a photo');
       await page.locator('#ce_note').fill('Photo is optional from 2.20');
-      await page.getByRole('button', { name: 'Save changes' }).click();
+      await page.locator('[data-action=save-case]', { hasText: 'Save' }).click();
       await eventually(async () => {
         const r = row(await disk(), 'CMS/10');
         return r[1] === 'Verify if the LME is able to resolve an assigned complaint, with or without a photo' && r[8] === 'Updated: Photo is optional from 2.20';
@@ -120,7 +136,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.case.sel', { hasText: 'with or without a photo' }).waitFor();
 
       await page.locator('.case', { hasText: 'CMS/12' }).click();
-      await page.getByRole('button', { name: '⧉ Duplicate of…' }).click();
+      await page.getByRole('button', { name: '⧉ Mark Duplicate' }).click();
       await page.locator('#dupOf').fill('CMS/10');
       await page.locator('#dupPreview', { hasText: 'Keeps CMS/10' }).waitFor();
       await page.getByRole('button', { name: 'Mark as duplicate' }).click();
@@ -130,7 +146,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(await struck('CMS/10'), false, 'the kept case is not struck');
 
       await page.locator('.case', { hasText: 'CMS/13' }).click();
-      await page.getByRole('button', { name: '⊘ Deprecate' }).click();
+      await page.getByRole('button', { name: '⊘ Deprecated' }).click();
       await page.locator('#retireReason').fill('Rating moved to the feedback survey');
       await page.locator('button[data-action=retire]').click();
       await eventually(async () => row(await disk(), 'CMS/13')[8] === 'Deprecated: Rating moved to the feedback survey' && struck('CMS/13'));
@@ -175,11 +191,12 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
     });
 
     await t.test('a finding is written up as a test case, straight into the workbook', async () => {
-      await page.locator('.finding', { hasText: 'F-001' }).getByRole('button', { name: 'Write up as test case' }).click();
+      await page.locator('.finding', { hasText: 'F-001' }).getByRole('button', { name: 'Create test case' }).click();
       const scen = page.locator('.writeup textarea').first();
       assert.equal(await scen.inputValue(), 'Citizen cannot reopen a complaint resolved 4 days ago', 'starts from the finding');
       await scen.fill('Verify that citizen can reopen a complaint resolved 4 days ago');
-      await page.getByRole('button', { name: 'Add to workbook' }).click();
+      await page.locator('.writeup .issue-chip', { hasText: '#77' }).waitFor(); // the finding's bug, as a tag
+      await page.locator('[data-action=writeup-add]', { hasText: 'Save' }).click();
       await page.locator('.toast', { hasText: `F-001 added to ${TAB} as CMS/19` }).waitFor();
       const r = row(await disk(), 'CMS/19');
       assert.equal(r[1], 'Verify that citizen can reopen a complaint resolved 4 days ago');
@@ -196,7 +213,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=start-cycle][data-index="0"]').click();
       await page.locator('.toast', { hasText: 'v2.20.1' }).first().waitFor();
       await page.locator('.nav [data-view=run]').click();
-      await page.locator('.cycle-switch #cyclePick option:checked', { hasText: 'v2.20.1' }).waitFor({ state: 'attached' });
+      await page.locator('#cyclePick > .grow', { hasText: 'Cycle v2.20.1' }).waitFor();
       assert.deepEqual((await disk())[0].slice(7, 11), ['Test Status / v2.12', 'Comment / v2.12', 'Test Status / v2.20.1', 'Comment / v2.20.1']);
       // ✎ renames a cycle (both its columns); then back, as the later steps use v2.12
       await page.locator('.nav [data-view=setup]').click();
@@ -289,7 +306,10 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await priyaRow.getByRole('button', { name: 'New link' }).click();
         await page.locator('#modal h2', { hasText: 'Make a new link for Priya (QA)?' }).waitFor();
         await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make new link' }).click();
-        await page.locator('.toast', { hasText: 'New link made' }).waitFor();
+        const made = page.locator('.toast', { hasText: 'New link made' });
+        await made.waitFor();
+        await made.locator('.toast-x').click(); // ✕ closes a message straight away
+        await made.waitFor({ state: 'detached' });
         const fresh = await clipboard();
         assert.ok(fresh.startsWith(hosted) && fresh !== inv.link, fresh);
         assert.equal(await page.locator('#teamLink').count(), 0);
@@ -340,19 +360,39 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       });
     });
 
-    await t.test('Known issues lists each issue with its test cases; title and priority can be typed', async () => {
+    await t.test('Known issues: opening it gets the latest from GitHub (title, state, priority); each issue lists its test cases', async () => {
       await page.locator('.nav [data-view=issues]').click();
       const tr = page.locator('table.issues tr', { hasText: '#812' });
       await tr.locator('[data-action=open-case]', { hasText: 'CMS/02' }).waitFor();
       assert.equal(await tr.locator('a', { hasText: '#812' }).getAttribute('href'), 'https://github.com/org/repo/issues/812');
-      await tr.locator('[data-action=issue-edit]').click();
-      await page.locator('#ieTitle').fill('Pincode labels missing');
-      await page.locator('#iePriority').selectOption('P1');
-      await page.locator('[data-action=issue-save]').click();
       await page.locator('table.issues tr', { hasText: 'Pincode labels missing' }).locator('.pill', { hasText: 'P1' }).waitFor();
-      await page.locator('table.issues [data-action=open-case]', { hasText: 'CMS/02' }).first().click();
+      await page.locator('.spin-wrap.busy').waitFor({ state: 'detached' }); // the table is greyed out under a spinner meanwhile
+      assert.ok(readFileSync(gh.log, 'utf8').includes('"graphql":"https://github.com/org/repo/issues/812"'), 'GitHub was asked');
+      assert.equal(await page.locator('[data-action=issue-edit]').count(), 0, 'nothing to type here: it comes from GitHub');
+      await tr.locator('[data-action=open-case]', { hasText: 'CMS/02' }).click();
       await page.locator('.case.sel', { hasText: 'CMS/02' }).waitFor();
-      await page.locator('.issue-chip', { hasText: 'Pincode labels missing' }).waitFor();
+      // on the case, an issue tag shows the issue number only; the title shows on hover
+      const chip = page.locator('.detail .issue-chip', { hasText: '#812' });
+      await chip.waitFor();
+      assert.equal(await chip.locator('a').getAttribute('title'), '#812: Pincode labels missing');
+      assert.equal(await page.locator('.detail .issue-chip', { hasText: 'Pincode labels missing' }).count(), 0);
+      await page.locator('[data-action=show][data-show=todo]').click();
+    });
+
+    await t.test('a case can have several issues: Enter adds the link as a tag, ✕ removes it', async () => {
+      await page.locator('[data-action=show][data-show=all]').click();
+      await page.locator('.case', { hasText: 'CMS/03' }).click();
+      const linked = async () => { const rows = await disk(); return row(rows, 'CMS/03')[rows[0].indexOf('Linked issue')]; };
+      for (const n of [812, 900]) {
+        await page.locator('#issue').fill(`https://github.com/org/repo/issues/${n}`);
+        await page.locator('#issue').press('Enter');
+        await page.locator('.detail .issue-chip', { hasText: `#${n}` }).waitFor();
+      }
+      assert.equal(await page.locator('#issue').inputValue(), '', 'the field empties for the next one');
+      await eventually(async () => (await linked()) === '#812, #900');
+      await page.locator('.detail [data-action=issue-unlink][data-ref="https://github.com/org/repo/issues/812"]').click();
+      await page.locator('.toast', { hasText: 'Removed #812 from CMS/03.' }).waitFor();
+      await eventually(async () => (await linked()) === '#900');
       await page.locator('[data-action=show][data-show=todo]').click();
     });
 
@@ -361,31 +401,41 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=issues]').click();
       await page.locator('.section-head', { hasText: 'Known issues' }).getByRole('button', { name: '+ Add issue' }).click();
       await page.locator('.card h3', { hasText: 'New issue' }).waitFor();
-      await page.locator('#aiUrl').fill('https://github.com/org/repo/issues/930');
-      await page.locator('#aiTitle').fill('Reject reasons list is empty');
-      await page.locator('#aiPriority').selectOption('P2');
-      await page.locator('#aiCase').fill('CMS/09');
-      const markIt = page.locator('#aiCaseNote input[type=checkbox]');
-      await markIt.waitFor();
-      assert.equal(await markIt.isChecked(), true, 'marking it failed is the default');
       await page.locator('[data-action=add-issue-save]').click();
-      await page.locator('.toast', { hasText: 'Linked to CMS/09 and marked failed' }).waitFor();
+      await page.locator('.toast', { hasText: 'Please enter issue’s link before saving' }).waitFor();
+      assert.equal(await page.locator('#aiTitle, #aiPriority').count(), 0, 'no title or priority to type: they come from GitHub');
+      await page.locator('#aiUrl').fill('https://github.com/org/repo/issues/930');
+      // one issue on several test cases: the Test cases dropdown takes more than one
+      await page.locator('#aiCasesBtn').click();
+      for (const id of ['CMS/09', 'CMS/10']) {
+        await page.locator('#ddQ').fill(id);
+        await page.locator('.multi-pop label.check', { hasText: id }).click();
+      }
+      await page.keyboard.press('Escape');
+      assert.equal(await ddValue(page, 'aiCasesBtn'), '2 Selected');
+      assert.deepEqual(await page.locator('.filter-tag').allTextContents(), ['CMS/09✕', 'CMS/10✕']);
+      const markIt = page.locator('input[data-bind=aiFail]');
+      assert.equal(await markIt.isChecked(), true, 'marking them failed is the default');
+      await page.locator('[data-action=add-issue-save]').click();
+      await page.locator('.toast', { hasText: 'Linked to CMS/09, CMS/10 and marked failed' }).waitFor();
       await eventually(async () => {
         const rows = await disk();
-        const r = row(rows, 'CMS/09');
-        return r[rows[0].indexOf('Test Status / v2.20.1')] === 'Fail' && /#930/.test(r[rows[0].indexOf('Linked issue')]);
+        return ['CMS/09', 'CMS/10'].every((id) => row(rows, id)[rows[0].indexOf('Test Status / v2.20.1')] === 'Fail' && /#930/.test(row(rows, id)[rows[0].indexOf('Linked issue')]));
       });
-      // Without a test case it is kept as a finding; a link that is not a GitHub issue needs a title
+      // Without a test case it is kept as a finding (any tracker's link)
       await page.locator('.section-head [data-action=add-issue]').click();
       await page.locator('#aiUrl').fill('https://tracker.example.org/browse/CMS-55');
       await page.locator('[data-action=add-issue-save]').click();
-      await page.locator('.toast', { hasText: 'Give it a title' }).waitFor();
-      await page.locator('#aiTitle').fill('Receipt shows the wrong ward');
-      await page.locator('[data-action=add-issue-save]').click();
       await page.locator('.toast', { hasText: /Kept as finding F-\d+/ }).waitFor();
       assert.equal(await page.locator('#aiUrl').count(), 0, 'the form closes');
+      // a form left open closes when you go to another page, and what was typed goes
+      await page.locator('.section-head [data-action=add-issue]').click();
+      await page.locator('#aiUrl').fill('https://github.com/org/repo/issues/999');
+      await page.locator('.nav [data-view=run]').click();
+      await page.locator('.nav [data-view=issues]').click();
+      assert.equal(await page.locator('#aiUrl').count(), 0, 'closed after leaving the page');
       await page.locator('table.issues tr', { hasText: 'Reject reasons list is empty' }).locator('[data-action=open-case]', { hasText: 'CMS/09' }).waitFor();
-      await page.locator('table.issues tr', { hasText: 'Receipt shows the wrong ward' }).waitFor();
+      await page.locator('table.issues tr', { hasText: 'CMS-55' }).waitFor();
       await page.locator('.nav [data-view=run]').click();
     });
 
@@ -394,13 +444,18 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=show][data-show=all]').click();
       assert.equal(await page.locator('.case[data-key="CMS/01"] .pill.type').textContent(), 'UI');
       const section = page.locator('section.path', { hasText: 'CMS/01' });
-      await section.getByRole('button', { name: '+ Add a test case here' }).click();
+      await section.getByRole('button', { name: '+ Add', exact: true }).click();
       const editor = section.locator('.add-here.open');
-      assert.equal(await editor.locator('input[data-bind$=":subFeature"]').inputValue(), 'CSR Employee', 'starts in this section');
+      await editor.locator('.tool-title', { hasText: 'New test case' }).waitFor();
+      assert.equal(await editor.locator('.multi[data-dd$=":subFeature"] .multi-btn > .grow').textContent(), 'CSR Employee', 'starts in this section');
+      assert.equal(await editor.getByText('Result in current test cycle').count(), 1);
       await editor.locator('textarea[data-bind$=":scenario"]').fill('Verify if the CSR sees a hint under the mobile number field');
-      await editor.getByRole('button', { name: 'Add to workbook' }).click();
+      await editor.locator('[data-tags$=":issue"]').fill('https://github.com/org/repo/issues/931');
+      await editor.locator('[data-tags$=":issue"]').press('Enter');
+      await editor.locator('.issue-chip', { hasText: '#931' }).waitFor();
+      await editor.locator('[data-action=add-here-save]', { hasText: 'Save' }).click();
       await page.locator('.toast', { hasText: 'Added to the workbook as CMS/' }).waitFor();
-      await eventually(async () => (await disk()).some((r) => r[1] === 'Verify if the CSR sees a hint under the mobile number field' && r[2] === 'CSR Employee'));
+      await eventually(async () => (await disk()).some((r, i, all) => r[1] === 'Verify if the CSR sees a hint under the mobile number field' && r[2] === 'CSR Employee' && r[all[0].indexOf('Linked issue')] === '#931'));
       await page.locator('.case', { hasText: 'hint under the mobile number' }).waitFor();
       await page.locator('[data-action=show][data-show=todo]').click();
     });
@@ -409,9 +464,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.nav [data-view=findings]').click();
       assert.equal(await page.locator('.context').count(), 0, 'Findings lists every suite: no suite strip');
       await page.getByRole('button', { name: '+ Add finding' }).click();
-      assert.equal(await page.locator('#fTab').inputValue(), TAB, 'the form asks which test suite');
+      assert.equal(await ddValue(page, 'fTab'), TAB, 'the form asks which test suite');
       await page.locator('#fText').fill('The employee can clear a search from the inbox only once');
-      await page.getByRole('button', { name: 'Save finding' }).click();
+      await page.locator('[data-action=add-finding]', { hasText: 'Save' }).click();
       const card = page.locator('.finding', { hasText: 'clear a search from the inbox only once' });
       await card.locator('.similar-row', { hasText: 'CMS/07' }).waitFor();
       await card.locator('.similar-row', { hasText: 'CMS/07' }).getByRole('button', { name: 'Covered by this' }).click();
@@ -419,6 +474,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=findings-show][data-show=done]').click();
       await page.locator('.finding.done', { hasText: 'Covered by CMS/07' }).waitFor();
       await page.locator('[data-action=findings-show][data-show=open]').click();
+      // One form at a time: opening another closes the first and drops what was typed in it
+      await page.getByRole('button', { name: '+ Add finding' }).click();
+      await page.locator('#fText').fill('Half typed');
+      await page.getByRole('button', { name: '+ New test case' }).click();
+      assert.equal(await page.locator('#fText').count(), 0, 'Add finding closed');
+      await page.getByRole('button', { name: '+ New test case' }).click();
+      await page.getByRole('button', { name: '+ Add finding' }).click();
+      assert.equal(await page.locator('#fText').inputValue(), '', 'what was typed is gone');
+      await page.getByRole('button', { name: '+ Add finding' }).click();
       // + New test case opens one form; pressed again, it closes
       const newCase = page.getByRole('button', { name: '+ New test case' });
       await newCase.click();
@@ -427,9 +491,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await newCase.click();
       assert.equal(await page.locator('h3', { hasText: 'New test case' }).count(), 1);
       // ... for any test suite: the form follows the suite picked
-      await page.locator('#manTab').selectOption('Dashboard KPI');
+      await ddPick(page, 'manTab', 'Dashboard KPI');
       await page.locator('.loading').first().waitFor({ state: 'detached' }).catch(() => {});
-      await page.locator('#manTab option:checked', { hasText: 'Dashboard KPI' }).waitFor({ state: 'attached' });
+      await page.locator('#manTab > .grow', { hasText: 'Dashboard KPI' }).waitFor();
       await page.locator('[data-bind="man:0:scenario"]').waitFor();
       await newCase.click();
     });
@@ -441,7 +505,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('main .report-tools .updated', { hasText: /^Updated on: / }).waitFor();
       await page.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
       await page.locator('table', { hasText: 'Assign button missing' }).waitFor();
-      await page.locator('.context .cycle-switch #autoCycle option', { hasText: 'Latest results' }).waitFor({ state: 'attached' });
+      await page.locator('.context #autoCycle > .grow', { hasText: 'Latest results' }).waitFor();
       assert.equal(await page.getByText('Pick a test suite above').count(), 0, 'no intro line');
       await page.locator('.context .progress-wrap', { hasText: 'automated tests' }).waitFor();
       await page.locator(`.ctx-tab[data-tab="${TAB}"]`).click();
@@ -504,11 +568,11 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       try {
         await visitor.goto(hosted);
         await visitor.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
-        await visitor.locator('.topbar .book-switch #rBook option', { hasText: 'CMS Sign Off (sample)' }).waitFor({ state: 'attached' });
+        await visitor.locator('.topbar #rBook > .grow', { hasText: 'CMS Sign Off (sample)' }).waitFor();
         assert.equal(await visitor.locator('.topbar .nav').count(), 0, 'no screen tabs without an access link');
         assert.equal(await visitor.locator('.rail-content h1, main h1').count(), 0, 'no second title: the suite is picked above');
         await visitor.locator('.report-tools .updated', { hasText: /^Updated on: / }).waitFor();
-        await visitor.locator('.topbar .cycle-switch #rCycle').waitFor();
+        await visitor.locator('.topbar #rCycle').waitFor();
         const dl = visitor.locator('.report-tools a[download]', { hasText: 'Download' });
         assert.match(await dl.getAttribute('href'), /^reports\/.+\.xlsx$/);
         const [download] = await Promise.all([visitor.waitForEvent('download'), dl.click()]);
@@ -520,7 +584,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await visitor.locator('.kpi', { hasText: 'executed (3 of 7)' }).waitFor();
         await visitor.locator('.ctx-tab.auto').click();
         await visitor.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
-        await visitor.locator('.topbar .cycle-switch #autoCycle option', { hasText: 'Latest results' }).waitFor({ state: 'attached' });
+        await visitor.locator('.topbar #autoCycle > .grow', { hasText: 'Latest results' }).waitFor();
         // A link whose Test Run is offline: the published reports, and a note
         const api = (path, body) => fetch(base + path.slice(1), { method: 'POST', headers: { 'X-Test-Run': '1', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((x) => x.json());
         await visitor.goto(`${hosted}#join=${'k'.repeat(32)}&server=${encodeURIComponent('http://127.0.0.1:9')}`);
@@ -616,7 +680,8 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.case').first().waitFor();
       await page.locator('.ctx-tab', { hasText: TAB }).first().click();
       await page.locator(`.ctx-tab.on[data-tab="${TAB}"]`).waitFor();
-      await page.locator('.topbar .context .cycle-switch #cyclePick').waitFor(); // the cycle sits with the tabs, in the sticky header
+      await page.locator('.topbar .context #cyclePick').waitFor(); // the cycle sits with the tabs, in the sticky header
+      assert.equal(await page.locator('.topbar [data-action=import], .topbar [data-action=dl-menu], .topbar [data-action=download]').count(), 0, 'no Import or Download at the top');
       await page.locator('.nav [data-view=issues]').click();
       assert.equal(await page.locator('.context').count(), 0, 'Known issues spans the whole workbook: no tab strip');
       await page.locator('.nav [data-view=run]').click();
@@ -626,19 +691,20 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       const dir = mkdtempSync(join(tmpdir(), 'testrun-imp-'));
       const files = ['Bomet Test Cases.xlsx', 'Mozambique Test Cases.xlsx'].map((n) => join(dir, n));
       for (const f of files) writeFileSync(f, await buildSampleXlsx());
-      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import' }).first().click()]);
+      await page.locator('.nav [data-view=setup]').click(); // Import is in Setup › Workbook
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('main').getByRole('button', { name: 'Import' }).click()]);
       assert.equal(chooser.isMultiple(), true);
       await chooser.setFiles(files);
-      await page.locator('#bookPick option:checked', { hasText: 'Bomet Test Cases' }).waitFor({ state: 'attached' });
+      await page.locator('#bookPick > .grow', { hasText: 'Bomet Test Cases' }).waitFor();
       await page.getByText('Welcome.').waitFor();
       assert.ok(existsSync(join(sheets, 'Bomet Test Cases.xlsx')) && existsSync(join(sheets, 'Mozambique Test Cases.xlsx')));
-      assert.equal(await page.locator('#bookPick option').count(), 3);
-      assert.match(await page.locator('.book-switch label').textContent(), /Workbook\s*3/);
+      assert.equal((await ddOptions(page, 'bookPick')).length, 3);
+      assert.match(await page.locator('#bookPick .dd-prefix').textContent(), /Workbook\s*3/);
     });
 
     await t.test('the host deletes a workbook from Setup, after a pop-up saying it cannot be undone', async () => {
-      await page.locator('#bookPick').selectOption('Mozambique Test Cases.xlsx');
-      await page.locator('#bookPick option:checked', { hasText: 'Mozambique Test Cases' }).waitFor({ state: 'attached' });
+      await ddPick(page, 'bookPick', 'Mozambique Test Cases');
+      await page.locator('#bookPick > .grow', { hasText: 'Mozambique Test Cases' }).waitFor();
       await page.locator('.nav [data-view=setup]').click();
       const del = page.getByRole('button', { name: 'Delete', exact: true });
       assert.equal(await del.locator('xpath=..').getByRole('button', { name: 'Save', exact: true }).count(), 1, 'beside Save');
@@ -650,12 +716,12 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.modal-box').getByRole('button', { name: 'Delete workbook' }).click();
       await page.locator('.toast', { hasText: 'Deleted Mozambique Test Cases' }).waitFor();
       assert.equal(existsSync(join(sheets, 'Mozambique Test Cases.xlsx')), false);
-      await eventually(async () => (await page.locator('#bookPick option').count()) === 2);
-      assert.equal(await page.locator('#bookPick option', { hasText: 'Mozambique' }).count(), 0);
+      await eventually(async () => (await page.locator('#bookPick .dd-prefix').textContent()).includes('2'));
+      assert.deepEqual((await ddOptions(page, 'bookPick')).filter((x) => /Mozambique/.test(x)), []);
     });
 
     await t.test('a read-only workbook file says so', async () => {
-      await page.locator('#bookPick').selectOption(BOOK);
+      await ddPick(page, 'bookPick', BOOK.replace(/\.xlsx$/, ''));
       await page.locator('.path-title').first().waitFor();
       chmodSync(file, 0o444);
       server.library.open.delete(BOOK);
@@ -680,7 +746,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(await card.locator('.cycle-chip').count(), 1);
       assert.equal(await card.locator('[data-action=cycle-remove]').count(), 0, 'the last cycle stays');
       await page.locator('.nav [data-view=run]').click();
-      assert.deepEqual(await page.locator('#cyclePick option').allTextContents(), ['Cycle v2.20.1']);
+      assert.deepEqual(await ddOptions(page, 'cyclePick'), ['Cycle v2.20.1']);
     });
 
     await t.test('a tab name Excel cut at 31 characters shows with …', async () => {
@@ -701,10 +767,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         return page.locator('#bookPick').evaluate((e) => Math.round(e.getBoundingClientRect().width));
       };
       const w1 = await width();
-      await page.locator('#bookPick').selectOption('Bomet Test Cases.xlsx');
-      await page.locator('#bookPick option:checked', { hasText: 'Bomet Test Cases' }).waitFor({ state: 'attached' });
+      await ddPick(page, 'bookPick', 'Bomet Test Cases');
+      await page.locator('#bookPick > .grow', { hasText: 'Bomet Test Cases' }).waitFor();
       await page.getByText('Welcome.').waitFor(); // its Setup has opened
-      assert.deepEqual([w1, await width()], [240, 240]);
+      assert.deepEqual([w1, await width()], [340, 340]);
+      // its list is as wide as the field
+      await page.locator('#bookPick').click();
+      const pop = await page.locator('.multi-pop').evaluate((e) => Math.round(e.getBoundingClientRect().width));
+      await page.keyboard.press('Escape');
+      assert.equal(pop, 340);
     });
 
     assert.deepEqual(errors, [], 'no script errors on the page');

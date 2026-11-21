@@ -6,6 +6,7 @@
 import '../content/loc-rules.js'; // defines globalThis.EgovLocRules
 import { addNew, clearStore, getAll, newId } from '../lib/idb.js';
 import { grantedPatterns } from './site-access.js';
+import { serial, replaceScripts } from './script-registry.js';
 import { updateBadge } from './recorder-control.js';
 
 const R = globalThis.EgovLocRules;
@@ -29,17 +30,17 @@ async function refreshBadge() {
   await updateBadge(recState || 'idle');
 }
 
-/** The tracker runs on the sites you enabled, only while tracking is on. */
-export async function syncLocScripts() {
-  const st = await locState();
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [SCRIPT_ID] }).catch(() => []);
-  if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] });
-  if (!st.active) return;
-  const patterns = await grantedPatterns();
-  if (!patterns.length) return;
-  await chrome.scripting.registerContentScripts([
-    { id: SCRIPT_ID, js: FILES, matches: patterns, runAt: 'document_idle', allFrames: true, persistAcrossSessions: true },
-  ]);
+const syncQueue = serial();
+
+/** The tracker runs on the sites you enabled, only while tracking is on. One sync at a time. */
+export function syncLocScripts() {
+  return syncQueue(async () => {
+    const st = await locState();
+    const patterns = st.active ? await grantedPatterns() : [];
+    await replaceScripts([SCRIPT_ID], patterns.length ? [
+      { id: SCRIPT_ID, js: FILES, matches: patterns, runAt: 'document_idle', allFrames: true, persistAcrossSessions: true },
+    ] : []);
+  });
 }
 
 export async function startLoc({ tabUrl } = {}) {

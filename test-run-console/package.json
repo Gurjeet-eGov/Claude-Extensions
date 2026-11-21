@@ -2,13 +2,13 @@
   "name": "test-run-console",
   "version": "0.1.0",
   "private": true,
-  "description": "Local console for manual test runs on your .xlsx test case workbooks: colour-coded, one-click marking, management summary, Claude drafting through your Claude Code login.",
+  "description": "Test Run: a console for manual test runs on your .xlsx test case workbooks, with one-click marking, team sharing, a management summary and published reports. Test Run Extension is in extension/.",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "share": "node server.mjs --share",
     "demo": "node server.mjs --demo",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test test/*.test.mjs extension/test/*.test.mjs",
     "prompts": "node scripts/export-prompts.mjs"
   },
   "engines": {

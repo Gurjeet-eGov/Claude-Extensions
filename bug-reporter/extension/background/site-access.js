@@ -2,6 +2,7 @@
 // each granted through Chrome's permission prompt.
 
 import { getEnabledSites, saveEnabledSites } from '../lib/settings.js';
+import { serial, replaceScripts } from './script-registry.js';
 
 const HOOK_ID = 'egov-br-hook';
 const RELAY_ID = 'egov-br-relay';
@@ -17,16 +18,17 @@ export async function grantedPatterns() {
   return out;
 }
 
-export async function syncContentScripts() {
-  const patterns = await grantedPatterns();
-  const existing = await chrome.scripting.getRegisteredContentScripts();
-  const ids = existing.map((s) => s.id).filter((id) => id === HOOK_ID || id === RELAY_ID);
-  if (ids.length) await chrome.scripting.unregisterContentScripts({ ids });
-  if (!patterns.length) return;
-  await chrome.scripting.registerContentScripts([
-    { id: RELAY_ID, js: ['content/relay.js'], matches: patterns, runAt: 'document_start', allFrames: true, persistAcrossSessions: true },
-    { id: HOOK_ID, js: ['content/net-hook.main.js'], matches: patterns, runAt: 'document_start', allFrames: true, world: 'MAIN', persistAcrossSessions: true },
-  ]);
+const syncQueue = serial();
+
+/** Capture runs on the enabled, granted sites. One sync at a time, so two can't both register the scripts. */
+export function syncContentScripts() {
+  return syncQueue(async () => {
+    const patterns = await grantedPatterns();
+    await replaceScripts([RELAY_ID, HOOK_ID], patterns.length ? [
+      { id: RELAY_ID, js: ['content/relay.js'], matches: patterns, runAt: 'document_start', allFrames: true, persistAcrossSessions: true },
+      { id: HOOK_ID, js: ['content/net-hook.main.js'], matches: patterns, runAt: 'document_start', allFrames: true, world: 'MAIN', persistAcrossSessions: true },
+    ] : []);
+  });
 }
 
 export async function enableSite(pattern, tabId) {
