@@ -7,7 +7,7 @@ This folder is the **catalogue of automated test suites** that Test Run knows ab
 ## The idea in one picture
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph here["This repo"]
     CAT["automation/suites/*.yaml<br/>(one pointer per suite)"]
     ENV["automation/environments/*.yaml<br/>(addresses, no secrets)"]
