@@ -248,8 +248,15 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         // Hovering the name shows the role and Sign out; signing out forgets the link in this browser
         await mate.locator('.user-btn').hover();
         await mate.locator('.user-pop', { hasText: 'Updates status' }).waitFor();
-        mate.once('dialog', (d) => d.accept());
+        // Test Run asks in its own popup (not the browser's box); Escape cancels, Sign out goes ahead
         await mate.locator('.user-pop [data-action=sign-out]').click();
+        await mate.locator('#modal .modal-box.confirm h2', { hasText: 'Sign out of Test Run in this browser?' }).waitFor();
+        await mate.keyboard.press('Escape');
+        await mate.locator('#modal').waitFor({ state: 'hidden' });
+        assert.equal(await mate.locator('.user-btn', { hasText: 'Priya (QA)' }).count(), 1, 'Escape keeps you signed in');
+        await mate.locator('.user-btn').hover();
+        await mate.locator('.user-pop [data-action=sign-out]').click();
+        await mate.locator('#modal [data-action=confirm-yes]', { hasText: 'Sign out' }).click();
         await mate.locator('.access-card', { hasText: 'You are signed out' }).waitFor();
         await mate.reload();
         await mate.locator('.access-card', { hasText: 'Sign in to Test Run' }).waitFor();
@@ -279,8 +286,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         assert.equal(await clipboard(), inv.link);
         assert.equal(await page.locator('#teamLink').count(), 0, 'no link box: it is on the clipboard');
         // New link: made, copied, toast; the old link stops working
-        page.once('dialog', (d) => d.accept());
         await priyaRow.getByRole('button', { name: 'New link' }).click();
+        await page.locator('#modal h2', { hasText: 'Make a new link for Priya (QA)?' }).waitFor();
+        await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make new link' }).click();
         await page.locator('.toast', { hasText: 'New link made' }).waitFor();
         const fresh = await clipboard();
         assert.ok(fresh.startsWith(hosted) && fresh !== inv.link, fresh);
