@@ -190,9 +190,15 @@
           "addedBy": "Gurjeet Singh",
           "title": "Nai Pepea: Employee: Employee redirected to citizen login, signed out, after first password update",
           "priority": "P1",
-          "source": "bug-reporter"
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-22 00:29",
+          "fetchError": ""
         },
-        "updated": "2026-11-20 12:22",
+        "updated": "2026-11-22 00:29",
         "by": "Gurjeet Singh"
       },
       "https://github.com/egovernments/complaint-management-system/issues/67": {
@@ -203,9 +209,15 @@
           "addedBy": "Gurjeet Singh",
           "title": "Nai Pepea: Employee: Back to Application after repeat password reset lands on login page",
           "priority": "P2",
-          "source": "bug-reporter"
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-22 00:29",
+          "fetchError": ""
         },
-        "updated": "2026-11-20 12:34",
+        "updated": "2026-11-22 00:29",
         "by": "Gurjeet Singh"
       },
       "https://github.com/egovernments/Citizen-Complaint-Resolution-System/issues/2835": {
@@ -216,9 +228,15 @@
           "addedBy": "Gurjeet Singh",
           "title": "Configurator: Newly onboarded admin cannot add notification provider (NB_ADMIN_ROLE_REQUIRED)",
           "priority": "P0",
-          "source": "bug-reporter"
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-22 00:29",
+          "fetchError": ""
         },
-        "updated": "2026-11-20 13:24",
+        "updated": "2026-11-22 00:29",
         "by": "Gurjeet Singh"
       },
       "https://github.com/egovernments/complaint-management-system/issues/68": {
@@ -228,10 +246,41 @@
           "added": "2026-11-20 15:22",
           "addedBy": "Gurjeet Singh",
           "title": "Nai Pepea: Employee: Test+emp380@email.com",
-          "priority": "P0",
-          "source": "bug-reporter"
+          "priority": "P1",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-22 00:29",
+          "fetchError": ""
         },
-        "updated": "2026-11-20 15:22",
+        "updated": "2026-11-22 00:29",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/65": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/65",
+          "ref": "#65",
+          "added": "2026-11-21 23:43",
+          "addedBy": "Gurjeet Singh"
+        },
+        "updated": "2026-11-21 23:43",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/69": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/69",
+          "ref": "#69",
+          "added": "2026-11-21 23:43",
+          "addedBy": "Gurjeet Singh",
+          "title": "CMS on DIGIT 3.0: cms-service on the DIGIT 3.0 /cms/v3 header API, Spring Boot 4 / Java 25",
+          "state": "open",
+          "labels": [],
+          "fetchedAt": "2026-11-22 00:05",
+          "fetchError": ""
+        },
+        "updated": "2026-11-22 00:05",
         "by": "Gurjeet Singh"
       }
     }
