@@ -84,26 +84,31 @@ p { margin: 0; }
 /* Controls */
 .btn, button {
   display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--border-strong); background: var(--surface);
+  border: 1px solid var(--accent); color: var(--accent); background: var(--surface); font-weight: 600; /* every bordered button: blue outline, like Import */
   border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 13px;
   min-height: 30px; white-space: nowrap;
 }
-button:hover { background: var(--surface-2); }
+button:hover { background: var(--accent-weak); }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .case:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 button.primary:hover { filter: brightness(1.06); }
-button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
-button.ghost:hover { background: var(--surface-2); color: var(--text); }
-button.danger { color: var(--fail); }
+button.ghost { border-color: var(--accent); background: var(--surface); color: var(--accent); } /* every clickable button: blue outline */
+button.ghost:hover { background: var(--accent-weak); }
+button.danger { color: var(--fail); border-color: var(--fail); } /* destructive ones keep red */
+button.danger:hover { background: color-mix(in srgb, var(--fail) 8%, var(--surface)); }
 button[disabled] { opacity: .5; cursor: not-allowed; }
 input[type=text], input[type=search], input[type=url], input:not([type]), select, textarea {
   border: 1px solid var(--border-strong); background: var(--surface); border-radius: 6px;
   padding: 5px 9px; min-height: 30px; font-size: 13px; max-width: 100%;
 }
 textarea { width: 100%; resize: vertical; line-height: 1.4; }
+select { border-color: var(--accent); } /* dropdowns: blue outline like the buttons; the text and arrow inside stay as they were */
 label { font-size: 12px; color: var(--muted); }
+/* a field's name in bold; what follows it in brackets, e.g. (optional), stays normal */
+label.note-label { font-size: 12.5px; font-weight: 700; color: var(--text); }
+label.note-label .faint { font-weight: 400; }
 label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
 kbd {
   font: 11px var(--mono); border: 1px solid var(--border-strong); border-bottom-width: 2px;
@@ -192,7 +197,7 @@ main { flex: 1; padding: 16px 18px 60px; max-width: 1180px; width: 100%; margin:
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .toolbar input[type=search] { flex: 1 1 220px; }
 .chip {
-  border: 1px solid var(--border-strong); background: var(--surface); border-radius: 15px;
+  border: 1px solid var(--accent); background: var(--surface); border-radius: 15px;
   padding: 3px 10px; font-size: 12.5px; min-height: 28px; color: var(--muted);
 }
 .chip[aria-pressed=true] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 600; }
@@ -202,6 +207,7 @@ main { flex: 1; padding: 16px 18px 60px; max-width: 1180px; width: 100%; margin:
   width: 100%; border: none; border-radius: 0; background: var(--surface); display: flex; align-items: center;
   gap: 10px; padding: 10px 14px; text-align: left; min-height: 48px; white-space: normal;
 }
+.path-head { color: var(--text); } /* an accordion header, not an outlined button */
 .path-head:hover { background: var(--surface-2); }
 .chev { color: var(--faint); transition: transform .15s; flex: none; width: 14px; }
 .path.collapsed .chev { transform: rotate(-90deg); }
@@ -250,8 +256,12 @@ main { flex: 1; padding: 16px 18px 60px; max-width: 1180px; width: 100%; margin:
 .meta-line { font-size: 12px; color: var(--muted); }
 
 /* Changing a case while running: edit, duplicate, deprecate, restore */
-.case-tools { display: flex; gap: 2px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
-.case-tools button { font-size: 12.5px; padding: 3px 8px; }
+/* Edit, Mark Duplicate, Clear Status, Deprecated: four of the same size (two by two when narrow) */
+.case-tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
+.case-tools button { font-size: 12.5px; padding: 3px 8px; justify-content: center; white-space: normal; }
+.detail .actions { container-type: inline-size; }
+@container (max-width: 470px) { .case-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 240px) { .case-tools { grid-template-columns: 1fr; } }
 .case.retired .title, .case.retired .cid { text-decoration: line-through; text-decoration-color: var(--faint); color: var(--muted); }
 .case.retired .dot { opacity: .5; }
 .detail.is-retired .field-value, .detail.is-retired .bullets span { text-decoration: line-through; text-decoration-color: var(--faint); color: var(--muted); }
@@ -359,9 +369,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .claude-opts { border: 1px dashed var(--border-strong); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .claude-opts label.row { color: var(--text); font-size: 12.5px; gap: 6px; }
 details > summary { cursor: pointer; }
-a.btn { color: var(--text); text-decoration: none; }
+a.btn { color: var(--accent); text-decoration: none; }
 a.btn:hover { text-decoration: none; background: var(--surface-2); }
-a.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+a.btn.ghost { border-color: var(--accent); background: var(--surface); color: var(--accent); }
 
 /* Findings, Setup → Team, the Connect screen */
 .section-head { align-items: flex-start; margin-bottom: 4px; }
@@ -377,9 +387,15 @@ button.small-btn { font-size: 12px; min-height: 26px; padding: 2px 8px; }
 
 /* Issue links on a case, and the Known issues list */
 .issue-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.issue-chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--accent); text-decoration: none; max-width: 100%; }
-.issue-chip .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
-a.issue-chip:hover { border-color: var(--accent); }
+/* An issue tag on a case: the link in blue (clickable text in a tag is blue), a ✕ to remove it */
+.issue-chip { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--accent); max-width: 100%; }
+.issue-chip.removable { padding-right: 2px; }
+.issue-chip:hover { border-color: var(--accent); }
+.issue-chip a { color: var(--accent); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; min-width: 0; }
+.issue-chip a:hover b { text-decoration: underline; }
+.issue-chip b { font-weight: 650; }
+.issue-chip .chip-x { border: none; background: transparent; color: inherit; min-height: 0; width: 20px; height: 20px; padding: 0; justify-content: center; border-radius: 50%; font-size: 11px; }
+.issue-chip .chip-x:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 table.issues td { vertical-align: top; }
 table.issues tr.closed td { opacity: .65; }
 table.issues tr.editing input, table.issues tr.editing select { width: 100%; }
@@ -404,11 +420,11 @@ details.how li { margin: 2px 0; }
 #issue { display: block; width: 100%; margin-top: 4px; }
 
 /* Top bar: which workbook (anyone can switch), Import, Download */
-.book-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); min-width: 0; }
-.book-switch label { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.book-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent-weak); min-width: 0; }
+.book-switch label { font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
 .book-switch .n { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; background: var(--surface-2); color: var(--text); font-weight: 700; }
 /* One width whatever the workbook names: a long name is cut short here, and shown in full on hover (title) and in the list */
-.book-switch select { border: none; background: transparent; font-weight: 600; width: 240px; padding-left: 2px; text-overflow: ellipsis; }
+.book-switch select { border: none; background: transparent; font-weight: 650; color: var(--text); width: 240px; padding-left: 2px; text-overflow: ellipsis; }
 .tb-btn { border: 1px solid var(--accent); color: var(--accent); background: var(--surface); font-weight: 600; white-space: nowrap; }
 .tb-btn:hover { background: var(--accent-weak); }
 .tb-btn span { font-size: 14px; line-height: 1; }
@@ -416,9 +432,9 @@ details.how li { margin: 2px 0; }
 /* Under the screen tabs while testing: test case tab (module), cycle, progress; stays in view */
 .context { margin: 0 -18px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--bg); display: flex; flex-direction: column; gap: 8px; }
 .context-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ctx-label { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; }
+.ctx-label { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .ctx-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; min-width: 0; padding: 1px 1px 3px; }
-.ctx-tab { white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; padding: 5px 14px; font-weight: 550; max-width: 280px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.ctx-tab { white-space: nowrap; border: 1px solid var(--accent); background: var(--surface); border-radius: 999px; padding: 5px 14px; font-weight: 550; max-width: 280px; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .ctx-tab:hover { border-color: var(--accent); color: var(--accent); background: var(--surface); }
 .ctx-tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 650; }
 .cycle-switch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent-weak); flex: none; }
@@ -429,11 +445,11 @@ details.how li { margin: 2px 0; }
   .ctx-tabs { order: 3; width: 100%; }
   .book-switch select { width: 150px; }
 }
-@media print { .context-row, .book-switch, .tb-btn { display: none !important; } }
+@media print { .context-row, .book-switch, .book-dd, .tb-btn { display: none !important; } }
 
 /* One focus ring on the boxed pickers (the box), not a second one on the select inside */
 .book-switch select:focus, .book-switch select:focus-visible, .cycle-switch select:focus, .cycle-switch select:focus-visible { outline: none; box-shadow: none; }
-.book-switch:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+.book-switch:focus-within { box-shadow: 0 0 0 3px var(--accent-weak); }
 .cycle-switch:focus-within { box-shadow: 0 0 0 3px var(--accent-weak); }
 /* Test type, as a tag on each case */
 .pill.type { background: var(--surface-2); color: var(--muted); border-color: transparent; font-weight: 550; }
@@ -450,9 +466,9 @@ details.how li { margin: 2px 0; }
 
 /* Setup: Workbook and Sharing, in the left rail */
 /* Setup's parts: buttons, with a border, a light shadow and a chevron */
-.subtab { justify-content: flex-start; gap: 6px; border: 1px solid var(--border); background: var(--surface); padding: 8px 12px; font-weight: 600; color: var(--text); border-radius: 8px; width: 100%; box-shadow: 0 1px 2px rgba(16, 24, 40, .06); }
+.subtab { justify-content: flex-start; gap: 6px; border: 1px solid var(--accent); background: var(--surface); padding: 8px 12px; font-weight: 600; color: var(--text); border-radius: 8px; width: 100%; box-shadow: 0 1px 2px rgba(16, 24, 40, .06); }
 .subtab::after { content: '›'; margin-left: auto; color: var(--faint); font-weight: 400; font-size: 16px; line-height: 1; }
-.subtab:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.subtab:hover { background: var(--accent-weak); }
 .subtab[aria-selected=true] { color: var(--accent); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 40%, transparent); box-shadow: none; }
 .subtab[aria-selected=true]::after { color: var(--accent); }
 .rail-note { line-height: 1.5; }
@@ -464,11 +480,73 @@ main.wide { max-width: 1720px; }
 .with-rail { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; align-items: start; }
 .rail { position: sticky; top: calc(var(--header-h, 140px) + 14px); max-height: calc(100vh - var(--header-h, 140px) - 28px); overflow: auto; display: flex; flex-direction: column; gap: 16px; padding: 2px 2px 8px; }
 .rail-group { display: flex; flex-direction: column; gap: 6px; }
-.rail-title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+.rail-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
 .rail .chip { justify-content: space-between; width: 100%; }
 .rail input[type=search], .rail select { width: 100%; }
 .content-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 10px; min-height: 30px; }
 .content-bar:empty { display: none; }
+/* The keyboard-shortcuts help: a blue circled ? */
+button.help-btn {
+  width: 26px; height: 26px; min-height: 0; padding: 0; justify-content: center; border-radius: 50%;
+  border: 1.5px solid var(--accent); background: var(--surface); color: var(--accent); font-weight: 700; font-size: 13px;
+}
+button.help-btn:hover { background: var(--accent-weak); }
+
+/* Dropdowns (Run › Test Type is the model): multiple choice = checkboxes, what's ticked shows below as tags with ✕;
+   single choice = the button reads the choice. A long list gets a search box and scrolls in a fixed height. */
+.multi { position: relative; min-width: 0; }
+button.multi-btn { width: 100%; justify-content: space-between; text-align: left; color: var(--text); font-weight: 400; gap: 8px; } /* reads like a dropdown */
+button.multi-btn:hover { background: var(--surface); }
+button.multi-btn > .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.multi-btn > svg { flex: none; }
+/* the rail scrolls on its own; while the type list is open it may spill out, over the tags below */
+.rail:has(.multi-pop) { overflow: visible; }
+.multi-pop {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.16);
+}
+/* only the options scroll, in a fixed height; the search box above them stays where it is */
+.dd-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.dd-list > * { flex: none; } /* options keep their height in a long list */
+.dd-list label.check { padding: 5px 6px; align-items: flex-start; border-radius: 6px; }
+.dd-list label.check:hover { background: var(--accent-weak); }
+.dd-list label.check input { margin-top: 2px; flex: none; }
+.dd-ph { color: var(--faint); }
+.form-grid .multi-btn, .edit-form .multi-btn { min-height: 34px; }
+input.dd-search { width: 100%; flex: none; }
+button.dd-item { width: 100%; border: none; background: none; color: var(--text); font-weight: 400; justify-content: flex-start; text-align: left; white-space: normal; padding: 6px 8px; min-height: 0; border-radius: 6px; font-size: 13px; line-height: 1.35; }
+button.dd-item:hover { background: var(--accent-weak); }
+button.dd-item.on { background: var(--accent-weak); color: var(--accent); font-weight: 650; }
+button.dd-free { color: var(--accent); font-weight: 600; }
+.dd-hint { color: var(--muted); font-size: 12px; }
+.dd-label { font-weight: inherit; }
+.dd-none { padding: 4px 6px; }
+/* a dropdown with its name inside, before the value (Workbook, Test cycle at the top) */
+.dd-prefix { flex: none; font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.dd-prefix .n { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; background: var(--accent-weak); color: var(--accent); font-weight: 700; }
+.top-dd button.multi-btn { font-weight: 650; }
+.book-dd { width: 340px; }
+.cycle-dd, .suite-dd { width: 220px; flex: none; }
+@media (max-width: 760px) { .book-dd { width: 200px; } }
+/* inside a card or form the list must not be cut off by the box around it */
+.add-here.open, .item:has(.multi-pop), .card:has(.multi-pop) { overflow: visible; }
+
+/* Waiting on GitHub: the table greyed out under a spinner (Known issues) */
+.spin-wrap { position: relative; }
+.spin-wrap.busy .table-wrap { opacity: .4; pointer-events: none; filter: grayscale(.4); transition: opacity .2s; }
+.spin-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.spin-page { display: flex; justify-content: center; padding: 72px 0; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--accent-weak); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.filter-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-tag {
+  display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 10px; border-radius: 999px;
+  background: var(--accent-weak); color: var(--accent); border: 1px solid var(--accent); font-size: 12.5px; font-weight: 600;
+}
+.filter-tag button { border: none; background: transparent; color: inherit; min-height: 0; width: 20px; height: 20px; padding: 0; justify-content: center; border-radius: 50%; font-size: 11px; }
+.filter-tag button:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 @media (max-width: 900px) {
   .with-rail { grid-template-columns: 1fr; gap: 12px; }
   .rail { position: static; max-height: none; flex-direction: row; flex-wrap: wrap; gap: 10px 16px; }
@@ -521,7 +599,7 @@ html { scrollbar-color: var(--border-strong) var(--surface); }
 
 /* Who is signed in (top right): a name pill; hover or focus shows the role and Sign out */
 .user-menu { position: relative; }
-.user-btn { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px 3px 3px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; max-width: 220px; }
+.user-btn { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px 3px 3px; border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--text); font-weight: 600; font-size: 13px; max-width: 220px; }
 .user-btn:hover, .user-menu:focus-within .user-btn { border-color: var(--accent); }
 .user-btn .avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; }
 .user-btn .user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -585,9 +663,9 @@ button.link-btn.danger { color: var(--fail); }
 /* Setup → Media */
 .kv-grid { display: grid; grid-template-columns: 180px 1fr; gap: 12px 14px; align-items: center; }
 .kv-k { font-size: 13px; color: var(--muted); font-weight: 600; }
-.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+.seg { display: inline-flex; border: 1px solid var(--accent); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; background: var(--surface); padding: 6px 14px; font-weight: 600; }
-.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button + button { border-left: 1px solid var(--accent); }
 .seg button[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); }
 .media-foot { border-top: 1px solid var(--border); padding-top: 10px; }
 @media (max-width: 760px) { .kv-grid { grid-template-columns: 1fr; gap: 4px 0; } .kv-k { margin-top: 8px; } }
@@ -623,3 +701,10 @@ table.people td { vertical-align: middle; }
 .cycle-edit { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
 .cycle-edit input { width: auto; min-width: 0; padding: 3px 8px; }
 .cycle-edit button { padding: 3px 10px; min-height: 0; }
+
+/* Cancel and Save (or any button next to the primary one) are the same size */
+.row > button:not(.primary):not(.danger-outline):not(.danger):has(+ button.primary),
+.row > button:not(.primary):not(.danger-outline):not(.danger) + button.primary { min-width: 84px; justify-content: center; }
+/* a form with a couple of fields: the fields keep a readable width instead of the card's full width */
+.form-grid.narrow { max-width: 680px; }
+.cover-row .cover-dd { width: 520px; max-width: 100%; } /* room for the scenario next to each ID; the list is as wide as the field */
