@@ -670,7 +670,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       assert.equal(await tools.locator('.dl-menu').count(), 0, 'the menu closes');
       assert.equal(download.suggestedFilename(), BOOK);
       const ids = (await XBook.fromFile(await download.path(), 'dl')).getSheetByName(TAB).getDataRange().getDisplayValues().map((r) => r[0]);
-      assert.equal(ids.includes('CMS/13'), false, 'the downloaded workbook leaves the retired case out');
+      assert.ok(ids.includes('CMS/13'), 'the downloaded workbook keeps the deprecated case, struck out');
       assert.ok(row(await disk(), 'CMS/13'), 'the workbook on disk keeps it');
       await tools.getByRole('button', { name: 'Print / PDF' }).waitFor();
     });

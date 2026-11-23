@@ -90,10 +90,9 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **⊘ Deprecate** asks why the case is no longer needed. The case is struck out and its comment starts with `Deprecated: …`.
   - Nothing is deleted: the text stays in the workbook, struck out, with the reason in the Comment of the current cycle. Status cells are left as they are.
   - Retired cases leave the to-do list and the progress bar. The **Retired** filter in Run lists them (with their count next to the progress bar), and **Restore to the run** removes the strikethrough and the note.
-  - They are left out of the reports: Summary (its figures, its print or PDF, the summary page and the published reports) and the workbook you **Download** (also from the published reports).
-    - The download has no retired rows. A blank Feature or Sub feature on the case below keeps the value it filled down from a removed row.
-    - Its **Known issues** sheet does not name them, and an old *Retired cases* section in a *Test Run Summary* tab is left out. In Test Run, **Known issues** still shows an issue's retired case, tagged *retired*.
-  - The workbook in `sheets/` keeps them, struck out, so they can be restored. The strikethrough on the Scenario cell is what marks a case as retired, and a row someone strikes out by hand is treated the same way.
+  - They are left out of Summary: its figures, its print or PDF, the summary page and the published report figures.
+  - They stay in the workbook, in `sheets/` and in the workbook you **Download** (also from the published reports): struck out, with `Deprecated: <reason>` (or `Duplicate of …`) in the comment. So the workbook still shows what was dropped and why, and the case can be restored. The strikethrough on the Scenario cell is what marks a case as retired, and a row someone strikes out by hand is treated the same way.
+  - The download's **Known issues** sheet names a retired case with *(Deprecated)* or *(Duplicate of …)* in place of its status; in Test Run, **Known issues** tags it the same way.
 - **Findings.** Bugs and scenarios found while testing that are not in the test cases yet, from every test suite of the workbook. They are what gets added to the final workbook.
   - They arrive from Bug Reporter (tick *Also add this to Test Run* and leave the test case empty), or you add one with **+ Add finding**, choosing its test suite.
   - Each finding lists up to three similar test cases already in its suite. **Covered by this** moves it to **Done** in one click.

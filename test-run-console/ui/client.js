@@ -1467,7 +1467,7 @@
     var parts = e.cases.map(function (c) {
       return '<div class="issue-case">' + TR.dot(c.retired ? 'none' : c.cls) + ' <button class="linkish mono" data-action="open-case" data-tab="' + esc(c.tab) + '" data-key="' + esc(c.key) + '" title="Open in Run">' +
         esc((many ? TR.tabLabel(c.tab) + ' › ' : '') + (c.id || 'Row')) + '</button> <span class="small muted">' + esc(c.scenario.length > 70 ? c.scenario.slice(0, 68) + '…' : c.scenario) + '</span>' +
-        (c.retired ? ' <span class="pill none">retired</span>' : '') + '</div>';
+        (c.retired ? ' <span class="pill none">⊘ ' + esc(c.retired) + '</span>' : '') + '</div>';
     });
     e.findings.forEach(function (f) {
       parts.push('<div class="issue-case"><span class="pill accent">Not in the test cases yet</span> <button class="linkish" data-action="view" data-view="findings">Finding ' + esc(f.key) + '</button></div>');

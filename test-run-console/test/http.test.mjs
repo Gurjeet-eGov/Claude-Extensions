@@ -336,42 +336,31 @@ test('Add issue: linking a case without marking it failed leaves its result alon
   } finally { s.close(); }
 });
 
-test('the downloaded workbook leaves out retired cases; the one in sheets/ keeps them', async () => {
+test('the downloaded workbook keeps deprecated cases: struck out, the comment saying why', async () => {
   const s = await start();
   try {
     const d = await s.call('api_loadTab', TAB, '');
     const base = (id) => { const c = d.cases.find((x) => x.id === id); return { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12' }; };
     const url = 'https://github.com/example/repo/issues/55';
     for (const id of ['CMS/08', 'CMS/09']) assert.equal((await s.call('api_linkBug', { tab: TAB, key: id, url, markFailed: false })).ok, true);
-    // CMS/08 holds the Sub feature "Workflow" that CMS/09 to CMS/11 fill down from; CMS/04 fills down itself
-    for (const id of ['CMS/08', 'CMS/04']) assert.equal((await s.call('api_retireCase', { ...base(id), kind: 'deprecated', reason: 'Gone' })).ok, true);
-    assert.equal((await s.call('api_writeSummaryTab', TAB, 'v2.12')).ok, true);
-    // A summary tab written by an earlier version, with a Retired cases section before the comparison
-    const old = await XBook.fromFile(join(s.sheets, BOOK), 'x');
-    const sum = old.getSheetByName('Test Run Summary');
-    const last = sum.getLastRow();
-    sum.getRange(last + 1, 1, 6, 4).setValues([['', '', '', ''], ['Retired cases, not counted above (1)', '', '', ''], ['ID', 'Scenario', 'Why', 'Retired in'], ['CMS/08', 'Assign', 'Deprecated: Gone', 'v2.12'], ['', '', '', ''], ['Compared with v2.11', '', '', '']]);
-    writeFileSync(join(s.sheets, BOOK), Buffer.from(await old.toBuffer()));
+    assert.equal((await s.call('api_retireCase', { ...base('CMS/08'), kind: 'deprecated', reason: 'Gone' })).ok, true);
 
     const dl = await fetch(`${s.base}api/books/download?name=${encodeURIComponent(BOOK)}`, { headers: { 'X-Test-Run': '1' } });
     assert.equal(dl.status, 200);
     const got = await XBook.fromBuffer(Buffer.from(await dl.arrayBuffer()), 'dl');
-    const rows = got.getSheetByName(TAB).getDataRange().getDisplayValues();
-    const ids = rows.map((r) => r[0]);
-    assert.equal(ids.includes('CMS/08') || ids.includes('CMS/04'), false, 'no retired rows');
-    assert.ok(ids.includes('CMS/09') && ids.includes('CMS/05'));
-    assert.equal(rows.find((r) => r[0] === 'CMS/09')[2], 'Workflow', 'the Sub feature it filled down from the removed row is written in');
-    assert.equal(rows.find((r) => r[0] === 'CMS/10')[2], '', 'the rows below still fill down from it');
+    const sheet = got.getSheetByName(TAB);
+    const rows = sheet.getDataRange().getDisplayValues();
+    const i = rows.findIndex((r) => r[0] === 'CMS/08');
+    assert.ok(i > 0, 'the deprecated case stays in the downloaded workbook');
+    assert.ok(rows[i].includes('Deprecated: Gone'), 'its comment says why');
+    const lines = sheet.getDataRange().getFontLines();
+    assert.equal(lines[i][0], 'line-through', 'its ID is struck out');
+    assert.equal(lines[i][1], 'line-through', 'its scenario is struck out');
+    assert.equal(lines[rows.findIndex((r) => r[0] === 'CMS/09')][1], 'none', 'the other cases are not');
     const issues = got.getSheetByName('Known issues').getDataRange().getDisplayValues();
     const issueRow = issues.find((r) => r[0] === '#55');
     assert.match(issueRow[4], /CMS\/09/);
-    assert.doesNotMatch(issueRow[4], /CMS\/08|retired/i, 'the issue keeps its other cases; the retired one is not named');
-    const summary = got.getSheetByName('Test Run Summary').getDataRange().getDisplayValues().map((r) => r[0]);
-    assert.equal(summary.some((x) => /^Retired cases/.test(x) || x === 'CMS/08'), false, 'the old Retired cases section is gone');
-    assert.ok(summary.includes('Compared with v2.11'), 'what came after it stays');
-
-    const kept = (await s.disk()).map((r) => r[0]);
-    assert.ok(kept.includes('CMS/08') && kept.includes('CMS/04'), 'the workbook in sheets/ keeps them, so they can be restored');
+    assert.match(issueRow[4], /CMS\/08 – .*\(Deprecated\)/, 'the issue names the deprecated case and says it is deprecated');
   } finally { s.close(); }
 });
 
