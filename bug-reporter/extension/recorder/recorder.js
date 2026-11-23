@@ -6,6 +6,7 @@
 import { Muxer, ArrayBufferTarget } from '../lib/mp4-muxer.js';
 import { put, newId } from '../lib/idb.js';
 import { getSettings } from '../lib/settings.js';
+import { elapsedUs } from '../lib/rec-clock.js';
 
 const CODECS = ['avc1.640034', 'avc1.4d0034', 'avc1.42e034', 'avc1.640033', 'avc1.640028', 'avc1.42e028', 'avc1.42001f'];
 
@@ -28,6 +29,7 @@ const S = {
   startPerf: 0,
   pausedTotal: 0,
   pauseStart: 0,
+  stopPerf: 0, // when Stop was pressed: the clock stays there
   lastEncodedTs: -Infinity,
   lastKeyTs: -Infinity,
   forceKey: true,
@@ -60,9 +62,7 @@ function publicStatus() {
 }
 
 function currentTs() {
-  const now = performance.now();
-  const paused = S.state === 'paused' ? now - S.pauseStart : 0;
-  return (now - S.startPerf - S.pausedTotal - paused) * 1000;
+  return elapsedUs(S, performance.now());
 }
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -246,6 +246,7 @@ async function start({ source, settings }) {
     W: 0,
     H: 0,
     pausedTotal: 0,
+    stopPerf: 0,
     lastEncodedTs: -Infinity,
     lastKeyTs: -Infinity,
     forceKey: true,
@@ -316,7 +317,8 @@ async function teardown() {
 
 async function stop() {
   if (S.state === 'idle' || S.state === 'stopped') return publicStatus();
-  if (S.state === 'paused') S.pausedTotal += performance.now() - S.pauseStart;
+  S.stopPerf = performance.now();
+  if (S.state === 'paused') S.pausedTotal += S.stopPerf - S.pauseStart;
   S.state = 'stopped';
   await teardown();
   notify();
