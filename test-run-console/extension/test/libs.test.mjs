@@ -61,9 +61,29 @@ test('requests carry the key; a moved address is found through the gist once', a
   } finally { globalThis.fetch = real; }
 });
 
+test('a tunnel that is gone (Cloudflare\'s HTML page, no JSON) counts as no answer', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.startsWith('https://gone.trycloudflare.com')) return new Response('<html>Error 1033</html>', { status: 530, headers: { 'content-type': 'text/html' } });
+    if (url.startsWith('https://api.github.com/gists/')) return new Response(JSON.stringify({ files: { 'test-run.json': { content: JSON.stringify({ app: 'test-run', url: 'https://new.trycloudflare.com' }) } } }));
+    return new Response(JSON.stringify({ ok: true, app: 'test-run' }));
+  };
+  try {
+    let moved = '';
+    const conn = parseLink('https://org.github.io/r/test-run/#join=k&server=https%3A%2F%2Fgone.trycloudflare.com&gist=abc');
+    const r = await request(conn, 'GET', '/api/status', { onMove: (s) => { moved = s; } });
+    assert.equal(r.ok, true);
+    assert.equal(moved, 'https://new.trycloudflare.com', 'the gist names the new address');
+    await assert.rejects(request(parseLink('https://org.github.io/r/test-run/#join=k&server=https%3A%2F%2Fgone.trycloudflare.com'), 'GET', '/api/status'), Offline);
+  } finally { globalThis.fetch = real; }
+});
+
 test('the manifest: its fixed ID, and no more permissions than it needs', () => {
   const m = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.equal(m.name, 'Test Run Extension');
   assert.ok(m.key && m.key.length > 300);
   assert.deepEqual(m.permissions, ['storage', 'activeTab']);
+  // trycloudflare: the shared Test Run's address. With access, Chrome sends no CORS preflight,
+  // so a tunnel that is gone does not log "blocked by CORS policy" on the Errors page.
+  assert.deepEqual(m.host_permissions, ['http://127.0.0.1/*', 'http://localhost/*', 'https://*.trycloudflare.com/*']);
 });
