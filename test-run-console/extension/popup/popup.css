@@ -1,18 +1,6 @@
-:root {
-  --bg: #ffffff; --surface-2: #f0f2f5; --border: #e1e4e8; --border-strong: #c9ced6;
-  --text: #1b1f24; --muted: #5d636b; --faint: #8a9099;
-  --accent: #2456d3; --accent-weak: #e9eefc; --pass: #1d7a43; --pass-bg: #e2f3e8;
-  --fail: #c62f2a; --fail-bg: #fbe6e5; --other: #946200; --other-bg: #fbf0d9;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color-scheme: light dark;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #1a1d21; --surface-2: #23272d; --border: #30353c; --border-strong: #454b54; --text: #e6e8eb; --muted: #a3a9b1; --faint: #7d848d;
-    --accent: #7aa2ff; --accent-weak: #1f2a44; --pass: #5fcf8b; --pass-bg: #163322; --fail: #ff7b72; --fail-bg: #3b1715; --other: #e3b341; --other-bg: #3a2c0b; }
-}
+/* Colours come from ../styles/tokens.css (the console's palette, see DESIGN.md). */
 * { box-sizing: border-box; }
-body { margin: 0; width: 360px; background: var(--bg); color: var(--text); font: 13px/1.45 var(--font); }
+body { margin: 0; width: 360px; background: var(--surface); color: var(--text); font: 13px/1.45 var(--font); }
 #app { padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
 .hd { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .mk { width: 18px; height: 18px; border-radius: 5px; flex: none; background: linear-gradient(135deg, var(--pass) 0 50%, var(--accent) 50% 100%); }
@@ -28,15 +16,25 @@ body { margin: 0; width: 360px; background: var(--bg); color: var(--text); font:
 .row { display: flex; align-items: center; gap: 8px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button, input, textarea, select { font: inherit; color: inherit; }
-button { border: 1px solid var(--border-strong); background: var(--bg); border-radius: 8px; padding: 7px 10px; cursor: pointer; }
-button:hover { background: var(--surface-2); }
-button:disabled { opacity: .55; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+/* Buttons (DESIGN.md › Buttons): blue outline by default, one blue fill per view. */
+button { border: 1px solid var(--accent); background: var(--surface); color: var(--accent); font-weight: 600; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+button:hover { background: var(--accent-weak); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:disabled:hover { background: var(--surface); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 button.primary:hover { filter: brightness(1.06); background: var(--accent); }
-button.link { border: none; background: none; padding: 0; color: var(--accent); font-size: 12px; }
+button.danger-fill { background: var(--fail-fill); border-color: var(--fail-fill); color: var(--on-fail-fill); }
+button.danger-fill:hover { background: var(--fail-fill); filter: brightness(.92); }
+/* Record: red, as in Bug Reporter */
+button.rec { background: var(--fail-fill); border-color: var(--fail-fill); color: var(--on-fail-fill); }
+button.rec:hover { background: var(--fail-fill); filter: brightness(.92); }
+button.rec:disabled:hover { filter: none; }
+/* A small symbol before a button's label (the camera on Screenshot) */
+.btn-icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; flex: none; }
+button.link { border: none; background: none; padding: 0; color: var(--accent); font-size: 12px; font-weight: 400; }
 button.link:hover { text-decoration: underline; background: none; }
 button.icon { padding: 4px 8px; line-height: 1; }
-input, textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 9px; background: var(--bg); }
+input, textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; padding: 7px 9px; background: var(--surface); }
 input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 textarea { resize: vertical; min-height: 44px; }
 .sign-in { padding: 6px 0 2px; }
@@ -46,7 +44,7 @@ textarea { resize: vertical; min-height: 44px; }
 .scenario { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cap-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .st { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 6px; }
-.st button { font-weight: 600; padding: 7px 4px; }
+.st button { font-weight: 600; padding: 7px 4px; border-color: currentColor; }
 .st .pass { color: var(--pass); } .st .fail { color: var(--fail); } .st .other { color: var(--other); }
 .st .on.pass { background: var(--pass-bg); border-color: var(--pass); }
 .st .on.fail { background: var(--fail-bg); border-color: var(--fail); }
@@ -67,6 +65,7 @@ textarea { resize: vertical; min-height: 44px; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .split button { padding: 7px 4px; font-weight: 600; }
 .split .stop { color: var(--fail); border-color: var(--fail); }
+.split .stop:hover { background: color-mix(in srgb, var(--fail) 8%, var(--surface)); }
 .rec-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .rec-line .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); flex: none; }
 .rec-line .dot.paused { background: var(--other); }

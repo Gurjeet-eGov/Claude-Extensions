@@ -22,6 +22,10 @@
   --other-bg: #fbf0d9;
   --none: #98a0a8;
   --none-bg: #eceff2;
+  --loc: #7e22ce;          /* Track localizations (Bug Reporter): purple, apart from pass and fail */
+  --loc-bg: #f3e8ff;
+  --loc-fill: #7e22ce;
+  --on-loc-fill: #ffffff;
   --radius: 8px;
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .07);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -51,6 +55,8 @@
     --other-bg: #36290e;
     --none: #6e7681;
     --none-bg: #262a30;
+    --loc: #c4a1f0;
+    --loc-bg: #2e1f3d;
     --shadow: none;
     color-scheme: dark;
   }
@@ -491,6 +497,20 @@ button.help-btn {
   border: 1.5px solid var(--accent); background: var(--surface); color: var(--accent); font-weight: 700; font-size: 13px;
 }
 button.help-btn:hover { background: var(--accent-weak); }
+/* The ? tooltip (DESIGN.md › Tooltips): on hover and focus of the ?, or pinned by a click or the ? key; Escape hides it.
+   Bug Reporter's popup has the same rules in its styles/common.css. */
+.help-wrap { position: relative; display: inline-flex; }
+.help-wrap.open button.help-btn { background: var(--accent-weak); }
+.tip {
+  display: none; position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 340px; padding: 10px 14px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.16); font-size: 12px; font-weight: 400; text-align: left; white-space: normal;
+}
+.help-wrap:hover .tip, .help-wrap:focus-within .tip, .help-wrap.open .tip { display: block; }
+.help-wrap.shut .tip { display: none; }
+.tip-title { color: var(--muted); margin-bottom: 6px; }
+.tip-keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; }
+.tip-keys kbd { min-width: 44px; text-align: center; }
 
 /* Dropdowns (Run › Test Type is the model): multiple choice = checkboxes, what's ticked shows below as tags with ✕;
    single choice = the button reads the choice. A long list gets a search box and scrolls in a fixed height. */

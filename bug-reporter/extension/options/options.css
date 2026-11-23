@@ -1,6 +1,6 @@
 html,
 body {
-  background: var(--bg-soft);
+  background: var(--bg);
 }
 #costNote {
   margin-top: 12px;
@@ -26,7 +26,7 @@ header {
   border-bottom: 2px solid transparent;
   border-radius: 0;
   padding: 8px 12px;
-  color: var(--fg-muted);
+  color: var(--muted);
   font-weight: 600;
 }
 .tabs button.active {
@@ -34,7 +34,7 @@ header {
   border-bottom-color: var(--accent);
 }
 .tab {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
@@ -59,13 +59,13 @@ header {
   font-weight: 700;
 }
 .check-row.ok .icon {
-  color: var(--ok);
+  color: var(--pass);
 }
 .check-row.bad .icon {
-  color: var(--danger);
+  color: var(--fail);
 }
 .check-row.warn .icon {
-  color: var(--warn);
+  color: var(--other);
 }
 .grid2 {
   display: grid;
@@ -92,7 +92,7 @@ header {
   margin-top: 4px;
 }
 .card.sub {
-  background: var(--bg-soft);
+  background: var(--bg);
   margin: 4px 0 12px;
 }
 
@@ -105,13 +105,13 @@ header {
   margin: 8px 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--surface);
 }
-.tr-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted, #888); }
-.tr-status[data-state="ok"] { border-color: color-mix(in srgb, #188038 40%, var(--border)); }
-.tr-status[data-state="ok"] .tr-dot { background: #188038; }
-.tr-status[data-state="warn"] .tr-dot { background: #b06000; }
-.tr-status[data-state="bad"] .tr-dot { background: #b3261e; }
+.tr-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted); }
+.tr-status[data-state="ok"] { border-color: color-mix(in srgb, var(--pass) 40%, var(--border)); }
+.tr-status[data-state="ok"] .tr-dot { background: var(--pass); }
+.tr-status[data-state="warn"] .tr-dot { background: var(--other); }
+.tr-status[data-state="bad"] .tr-dot { background: var(--fail); }
 .tr-card { display: flex; flex-direction: column; gap: 6px; }
 .tr-card h3 { margin: 0 0 2px; }
 .tr-card p { margin: 0; }
@@ -133,7 +133,7 @@ header {
   margin-bottom: 8px;
 }
 .project .meta {
-  color: var(--fg-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 .project .actions {

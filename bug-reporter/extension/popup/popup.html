@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>Bug Reporter</title>
+    <link rel="stylesheet" href="../styles/tokens.css" />
     <link rel="stylesheet" href="../styles/common.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
@@ -10,7 +11,13 @@
     <header class="row">
       <img src="../icons/icon32.png" width="20" height="20" alt="" />
       <strong class="grow">Bug Reporter</strong>
-      <button id="settings" class="link" title="Settings">Settings</button>
+      <button id="settings" class="icon-btn" title="Settings" aria-label="Settings">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path class="gear-body" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/><circle class="gear-hole" cx="12" cy="12" r="3"/></svg>
+      </button>
+      <span class="help-wrap">
+        <button id="help" class="help-btn" aria-label="Keyboard shortcuts" aria-describedby="keysTip" aria-expanded="false">?</button>
+        <div id="keysTip" role="tooltip" class="tip"><div class="tip-title">Keyboard shortcuts</div><div id="keysList" class="tip-keys"></div></div>
+      </span>
     </header>
 
     <section id="site" class="block">
@@ -27,7 +34,7 @@
     </section>
 
     <section class="block">
-      <div class="row">
+      <div id="recRow" class="row">
         <span id="recDot" class="dot"></span>
         <span id="recLabel" class="grow">Not recording</span>
         <span id="recInfo" class="muted small mono"></span>
@@ -36,8 +43,9 @@
         <button id="recStart" class="rec">● Start recording</button>
         <button id="recPause" class="hidden">❚❚ Pause</button>
         <button id="recResume" class="hidden rec">● Resume</button>
-        <button id="recStop" class="hidden">■ Stop</button>
+        <button id="recStop" class="stop hidden">■ Stop</button>
       </div>
+      <div id="clip" class="clip-line muted small hidden"></div>
       <div id="recError" class="notice bad small hidden"></div>
     </section>
 
@@ -47,21 +55,14 @@
         <button id="report" class="primary grow">Report issue</button>
       </div>
       <div class="row btns pair">
-        <button id="snap" class="grow">📸 Snapshot <span id="tray" class="muted"></span></button>
+        <button id="snap" class="grow"><svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>Screenshot <span id="tray" class="muted"></span></button>
         <button id="loc" class="grow">Track localizations</button>
       </div>
       <div id="locInfo" class="small loc-info hidden"></div>
     </section>
 
     <footer class="muted small">
-      <div class="keys">
-        <span><kbd>⌥⇧R</kbd> record / pause</span>
-        <span><kbd>⌥⇧B</kbd> halt &amp; report</span>
-        <span><kbd>⌥⇧S</kbd> snapshot</span>
-        <span><kbd>⌥⇧X</kbd> stop</span>
-        <span class="muted">Update issue: no key yet (set one below)</span>
-      </div>
-      <div class="row"><span id="helper" class="grow"></span><button id="shortcuts" class="link small">Change shortcuts</button></div>
+      <span id="helper"></span>
     </footer>
     <script type="module" src="popup.js"></script>
   </body>

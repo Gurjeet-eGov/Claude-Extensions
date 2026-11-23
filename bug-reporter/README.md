@@ -4,7 +4,7 @@ A Chrome extension and a small local helper for logging defects while you test a
 
 - **Record** the Chrome window (docked DevTools included) or your entire screen, from a small Recorder window. Pause, resume and stop any time.
 - **Track localizations:** collect every raw localization key the app shows while you test, and save the list as a CSV.
-- **Halt** with a shortcut (⌥⇧B). This pauses the recording, takes a snapshot, and freezes the API and console log at that instant.
+- **Halt** with a shortcut (⌥⇧B). This pauses the recording, takes a screenshot, and freezes the API and console log at that instant.
 - **Captured automatically:** every fetch/XHR call on the sites you enable, with failures flagged. That includes DIGIT `Errors[]` responses that come back with HTTP 200. Console errors are captured too.
 - **Report form:**
   - Project, assignee, status, iteration and priority load straight from your GitHub board.
@@ -44,7 +44,7 @@ The helper uses **your own** `gh` and Claude Code logins on your machine. No API
 2. Press **⌥⇧R**, or click **● Start recording** in the popup. A small **Recorder** window opens.
    - Click **Record a window** and pick your Chrome window, or **Record entire screen** if DevTools is undocked or you test across apps.
    - The Recorder window then minimises itself. Keep it open while you test: closing it ends the recording.
-3. Test as usual. **⌥⇧S** takes extra snapshots. **⌥⇧R** pauses and resumes.
+3. Test as usual. **⌥⇧S** takes extra screenshots. **⌥⇧R** pauses and resumes.
 4. When you hit a defect, press **⌥⇧B**. The report form opens next to your tab.
    - **API calls** are listed newest first, with the time before the halt and the DIGIT error code. The latest failure is already ticked; tick any others that matter.
    - **Clip:** move the slider to choose how many seconds before the halt to attach. The size is shown against the cap.
@@ -59,7 +59,7 @@ The helper uses **your own** `gh` and Claude Code logins on your machine. No API
 |---|---|
 | ⌥⇧R | Start / pause / resume recording |
 | ⌥⇧B | Halt & report |
-| ⌥⇧S | Snapshot (recording continues) |
+| ⌥⇧S | Screenshot (recording continues) |
 | ⌥⇧X | Stop recording |
 
 You can change these at `chrome://extensions/shortcuts`.
@@ -79,7 +79,7 @@ You can change these at `chrome://extensions/shortcuts`.
 ## Updating an existing issue (re-testing a bug)
 
 1. Record while you re-test, exactly as for a new bug.
-2. In the popup, click **Update Issue**. You can also bind a key to "Halt & update" at `chrome://extensions/shortcuts`; Chrome allows only four default shortcuts and they're taken. Halting works the same as for a new bug: the recording pauses, a snapshot is taken, and the API log freezes.
+2. In the popup, click **Update Issue**. You can also bind a key to "Halt & update" at `chrome://extensions/shortcuts`; Chrome allows only four default shortcuts and they're taken. Halting works the same as for a new bug: the recording pauses, a screenshot is taken, and the API log freezes.
 3. In the form:
    - **Project:** pre-selected from the site you're on.
    - **Issue:** `215`, `#215` or the issue link, then press Enter. A card shows the issue's title, Open/Closed state, current board Status and assignee, so you can check it's the right bug.
@@ -148,7 +148,7 @@ When the [Test Run console](../test-run-console/) is reachable, the **Report Iss
 
 Chrome only runs extensions in Incognito windows if you allow it: go to `chrome://extensions` → eGov Bug Reporter → **Details** → switch on **Allow in Incognito**. The Setup tab shows whether it's on.
 
-- Capture, recording, snapshots and halt all work in Incognito tabs.
+- Capture, recording, screenshots and halt all work in Incognito tabs.
 - The report form opens in a regular Chrome window, because Chrome doesn't allow extension pages inside Incognito windows.
 - API calls and console errors captured in Incognito are deleted when the last Incognito window closes. Screenshots and clips you've already put in a report follow the normal 3-day clean-up.
 

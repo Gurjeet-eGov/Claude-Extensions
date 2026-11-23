@@ -39,6 +39,8 @@ Every colour comes from these tokens (the `:root` block at the top of `styles.cs
 | `--fail-fill` / `--on-fail-fill` | `#c62f2a` / `#ffffff` | `#da3633` / `#ffffff` | Red buttons (`danger-fill`) and red messages at the bottom: a fill deep enough for white text in both modes |
 | `--other` / `--other-bg` | `#946200` / `#fbf0d9` | `#e3b341` / `#36290e` | NA and other results –, warnings |
 | `--none` / `--none-bg` | `#98a0a8` / `#eceff2` | `#6e7681` / `#262a30` | Not run ○, retired ⊘ |
+| `--loc` / `--loc-bg` | `#7e22ce` / `#f3e8ff` | `#c4a1f0` / `#2e1f3d` | Bug Reporter's Track localizations (purple, so it stands apart from pass and fail), and a closed issue |
+| `--loc-fill` / `--on-loc-fill` | `#7e22ce` / `#ffffff` | same | The Track localizations button while it is on |
 
 Other tokens: `--radius: 8px`; `--shadow` (a soft two-layer card shadow, none in dark mode); `--font` (the system font stack: `system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`); `--mono` (`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`).
 
@@ -89,7 +91,8 @@ Numbers that line up (tables, KPIs) use tabular figures, and table number column
 | Default | `--surface`, `--accent` border and text, weight 600; hover fills `--accent-weak` | Most actions |
 | Primary (`.primary`) | `--accent` fill, `--accent-text`, weight 600 | The one main action of a view or popup |
 | Ghost (`.ghost`) | Same as default (blue outline and text) | Cancel, Back, secondary actions next to a primary |
-| Round icon (`.help-btn`) | A 26px circle, 1.5px `--accent` border, `--accent` symbol, weight 700; hover fills `--accent-weak` | **?** (keyboard shortcuts), and expand/collapse all: two chevrons stacked, pointing in while something is open (a click collapses all), pointing out once all are closed (a click expands all) |
+| Round icon (`.help-btn`) | A 26px circle, 1.5px `--accent` border, `--accent` symbol, weight 700; hover fills `--accent-weak` | **?** (keyboard shortcuts: it shows a tooltip, see Tooltips, never a popup), and expand/collapse all: two chevrons stacked, pointing in while something is open (a click collapses all), pointing out once all are closed (a click expands all) |
+| Icon (`.icon-btn`) | A standalone `--accent` symbol drawn the size of a round icon, no border or background. On hover and focus the inside of the symbol fills with `--accent-weak`; nothing is drawn behind it | ⚙ Settings in an extension's header |
 | Link (`.linkish`, `.link-btn`) | Accent text, no box | Inline actions inside text |
 | Danger (`.danger`) | Red text only | A destructive action in a list of tools |
 | Danger outline (`.danger-outline`) | Red border and text | A destructive action on a page, such as Delete workbook |
@@ -97,7 +100,7 @@ Numbers that line up (tables, KPIs) use tabular figures, and table number column
 | Small (`.small-btn`) | 12px, 26px high | Secondary actions next to content |
 | Status (`.sbtn`) | Status-coloured border and text, 36px high; when chosen, filled with the status colour | Pass, Fail, NA on a case |
 
-Sizes: 30px high by default, 13px text, padding `5px 11px`. Disabled is 50% opacity with a not-allowed cursor.
+Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon buttons are 26px in the console and **22px in extension popups**, where 26px is too big. Disabled is 50% opacity with a not-allowed cursor.
 
 **Every clickable button and every dropdown field has the blue outline** (`--accent`), with blue text on buttons. Inside a dropdown field the text and the arrow keep their own colours. Exceptions: destructive buttons stay red; status buttons keep their status colour; text fields (search, comment, link) keep the grey `--border-strong`.
 
@@ -196,6 +199,16 @@ Add issue, Add finding, New test case, Create test case, Already covered, + Add 
   4. Cancel, then the action button on the right, named after the action ("Delete workbook", "Remove cycle"): `danger-fill` when it deletes or replaces something, `primary` otherwise. An in-between choice goes between them ("Get their copy first").
   5. Escape or a click outside counts as Cancel.
 
+### Tooltips
+
+For reference you glance at, such as the keyboard shortcuts behind a **?**. Not for anything you act on: no buttons or links inside.
+- **Opens** on hover or keyboard focus of its button. A click on the button, or the `?` key in the console's Run view, pins it open.
+- **Closes** with Escape (it stays hidden until the pointer or focus leaves the button), or with a click anywhere else.
+- **Looks:** right-aligned under its button, 8px below; `--surface`, a `--border-strong` border, 10px corners, the menu shadow (`0 10px 30px rgba(0,0,0,.16)`); 12px text. A `--muted` title ("Keyboard shortcuts"), then two columns: the key as `<kbd>`, then what it does.
+- **Width:** 340px in the console; about 220px in an extension popup.
+- **A shortcut with no key** shows a greyed-out **NA** in the key's place (`kbd.na`: `--faint` text, a dashed border). No "not set" sentence.
+- **Markup:** the button has `aria-describedby` pointing at the tooltip, which has `role="tooltip"`; `aria-expanded` says whether it's pinned. Code: `helpButton()` in `client.js`, and the `.help-wrap` and `.tip` rules in `styles.css` (Bug Reporter has the same rules in `styles/common.css`).
+
 ### Menus
 
 - **Download menu** (`.dl-menu`): `role="menu"`, 300px; each item a bold title over a 12px `--muted` line saying what you get.
@@ -210,6 +223,10 @@ Add issue, Add finding, New test case, Create test case, Already covered, + Add 
 ### Icons
 
 Unicode symbols, not an icon font or images: ✓ ✗ – ○ ⊘ (status), ✎ edit, ⧉ duplicate, ⤒ import, ⤓ download, ▾ menu, ✕ close, ↗ opens elsewhere, › more. No emoji.
+
+Two exceptions, drawn as inline SVG outlines with `stroke="currentColor"` because their characters render as colour emoji on macOS:
+- the **⚙ settings gear** (a gear with a round hole). Its body has the class `gear-body` (filled with `--accent-weak` on hover) and its hole `gear-hole` (filled with `--surface`).
+- the **camera** on both extensions' **Screenshot** button: 16px before the label (`.btn-icon`), taking the button's `--accent`.
 
 ## Writing
 
@@ -237,6 +254,11 @@ The extensions use the same tokens, type and components, sized for their windows
 - **Popups** are 360px wide; the **recorder window** is 440px.
 - Unpacked extensions can only load files inside their own folder, so each extension keeps a copy of the tokens; the copies must match the console's.
 - An extension has its own icon, but the same palette, button styles, status symbols and writing rules.
+- **Colours:** each extension loads `styles/tokens.css`, a copy of the console's `:root` blocks, before its own CSS, and writes no colour values of its own. Change the console's tokens, then run `node test-run-console/scripts/sync-tokens.mjs`; tests fail when a copy differs. (Chrome's toolbar badge takes literal colours, so it uses the console's light values: `--fail` for REC, `--other` for paused, `--loc` for LOC.)
+- **Popup header:** the extension's icon and name on the left; on the right the ⚙ Settings icon button, then the round **?** whose tooltip lists the keyboard shortcuts with the keys Chrome actually has set. Shortcuts are listed there, not in the footer, and are changed from Settings.
+- **Recording buttons** look the same in both extensions: **● Record** (and New recording) is red (`--fail-fill` with `--on-fail-fill`); while recording, **Pause** is a default button and **■ Stop** a red outline (`--fail` text and border, a light red tint on hover).
+- **A finished recording** (Bug Reporter) shows as one muted 12px line under the record button: "MP4 · 0:29 · 48 KB" (sizes under 1 MB in KB). While recording or paused, a status line above the buttons shows Recording / Paused with length · size.
+- **Screenshot**, not "snapshot", in everything people read.
 
 ## Known gaps
 

@@ -93,7 +93,7 @@ async function load() {
     const m = await get('media', id);
     if (m?.blob) S.shots.push({ id, blob: m.blob, url: URL.createObjectURL(m.blob), mime: m.mime || 'image/png' });
   }
-  if (r.snapshotError) $('shotNote').textContent = `Snapshot not taken automatically (${r.snapshotError}). Use “Add image” or ⌥⇧S next time.`;
+  if (r.snapshotError) $('shotNote').textContent = `Screenshot not taken automatically (${r.snapshotError}). Use “Add image” or ⌥⇧S next time.`;
   renderShots();
 
   // network + console

@@ -27,14 +27,14 @@ header {
   flex: none;
 }
 .dot.ok {
-  background: var(--ok);
+  background: var(--pass);
 }
 .dot.rec {
-  background: var(--rec);
+  background: var(--fail);
   animation: blink 1.2s infinite;
 }
 .dot.paused {
-  background: var(--warn);
+  background: var(--other);
 }
 @keyframes blink {
   50% {
@@ -50,25 +50,15 @@ footer {
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
-.keys {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px 8px;
-  margin-bottom: 6px;
-}
-kbd {
-  font-family: var(--mono);
-  font-size: 11px;
-  background: var(--bg-sunk);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
+/* A finished recording, waiting for a report: one small line, "MP4 · length · size" */
+.clip-line {
+  margin-top: 6px;
 }
 
 #loc.on {
-  background: #7e22ce;
-  border-color: #7e22ce;
-  color: #fff;
+  background: var(--loc-fill);
+  border-color: var(--loc-fill);
+  color: var(--on-loc-fill);
   font-weight: 600;
 }
 .loc-info {
@@ -78,7 +68,7 @@ kbd {
   display: inline-block;
   vertical-align: middle;
   margin-right: 4px;
-  background: #7e22ce;
+  background: var(--loc);
 }
 .btns.pair {
   flex-wrap: nowrap;
@@ -87,4 +77,8 @@ kbd {
   white-space: normal;
   padding-left: 8px;
   padding-right: 8px;
+}
+#loc.on:hover {
+  background: var(--loc-fill);
+  filter: brightness(0.92);
 }

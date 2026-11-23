@@ -13,11 +13,11 @@ header {
   flex: none;
 }
 .dot.rec {
-  background: var(--rec);
+  background: var(--fail);
   animation: blink 1.2s infinite;
 }
 .dot.paused {
-  background: var(--warn);
+  background: var(--other);
 }
 @keyframes blink {
   50% {
@@ -55,7 +55,7 @@ header {
 kbd {
   font-family: var(--mono);
   font-size: 11px;
-  background: var(--bg-sunk);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 4px;

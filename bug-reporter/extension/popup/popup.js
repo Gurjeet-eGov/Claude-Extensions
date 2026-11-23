@@ -6,7 +6,8 @@ let state = null;
 let tabId = null;
 
 function fmtBytes(n) {
-  if (!n) return '0 MB';
+  if (!n) return '0 KB';
+  if (n < 1048576) return `${Math.max(1, Math.round(n / 1024))} KB`; // a short or still clip is small: KB, not "0.0 MB"
   return `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
 }
 function fmtDur(ms) {
@@ -34,9 +35,13 @@ async function refresh() {
   const st = rec.state;
   $('recDot').className = 'dot ' + (st === 'recording' ? 'rec' : st === 'paused' ? 'paused' : '');
   $('recLabel').textContent =
-    { recording: 'Recording', paused: 'Paused', stopped: 'Stopped (clip still available for a report)' }[st] ||
+    { recording: 'Recording', paused: 'Paused' }[st] ||
     (rec.windowOpen ? 'Recorder window is open: choose window or screen there' : 'Not recording');
-  $('recInfo').textContent = st === 'idle' ? '' : `${fmtDur(rec.elapsedMs || 0)} · ${fmtBytes(rec.bytes)} buffered`;
+  $('recInfo').textContent = st === 'recording' || st === 'paused' ? `${fmtDur(rec.elapsedMs || 0)} · ${fmtBytes(rec.bytes)}` : '';
+  // Stopped: no status line; the clip waiting for a report shows as a small box under the button.
+  $('recRow').classList.toggle('hidden', st === 'stopped');
+  $('clip').classList.toggle('hidden', st !== 'stopped');
+  $('clip').textContent = st === 'stopped' ? `MP4 · ${fmtDur(rec.elapsedMs || 0)} · ${fmtBytes(rec.bytes)}` : '';
   $('recStart').classList.toggle('hidden', st === 'recording' || st === 'paused');
   $('recStart').textContent = st === 'stopped' ? '● New recording' : rec.windowOpen ? '● Show Recorder window' : '● Start recording';
   $('recPause').classList.toggle('hidden', st !== 'recording');
@@ -80,7 +85,47 @@ $('update').addEventListener('click', async () => {
   window.close();
 });
 $('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
-$('shortcuts').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+
+// ---------- Keyboard shortcuts: the ? tooltip ----------
+const KEY_LABELS = {
+  'toggle-recording': 'Record / pause',
+  'halt-report': 'Halt and report',
+  snapshot: 'Screenshot',
+  'stop-recording': 'Stop',
+  'update-issue': 'Update issue',
+};
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/** Rows for the tooltip: the keys Chrome has set (they can be changed in Settings); NA where none is. */
+function keyRows(commands) {
+  return Object.keys(KEY_LABELS).map((name) => {
+    const c = (commands || []).find((x) => x.name === name);
+    return { name, key: (c && c.shortcut) || '', label: KEY_LABELS[name] };
+  });
+}
+
+chrome.commands.getAll().then((commands) => {
+  $('keysList').innerHTML = keyRows(commands)
+    .map((r) => (r.key ? `<kbd>${escHtml(r.key)}</kbd>` : '<kbd class="na" title="No key set">NA</kbd>') + `<span>${escHtml(r.label)}</span>`)
+    .join('');
+});
+const helpWrap = document.querySelector('.help-wrap');
+const pinHelp = (on) => {
+  helpWrap.classList.toggle('open', on);
+  $('help').setAttribute('aria-expanded', String(on));
+};
+$('help').addEventListener('click', () => pinHelp(!helpWrap.classList.contains('open')));
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !helpWrap.matches('.open, :hover, :focus-within')) return;
+  e.preventDefault(); // keep the popup open; just hide the list
+  pinHelp(false);
+  helpWrap.classList.add('shut'); // hidden until the pointer or focus leaves
+});
+helpWrap.addEventListener('mouseleave', () => helpWrap.classList.remove('shut'));
+helpWrap.addEventListener('focusout', () => helpWrap.classList.remove('shut'));
+document.addEventListener('click', (e) => {
+  if (!helpWrap.contains(e.target)) pinHelp(false);
+});
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'rec-state') refresh();

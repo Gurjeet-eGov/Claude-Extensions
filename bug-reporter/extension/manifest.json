@@ -54,14 +54,14 @@
         "default": "Alt+Shift+B",
         "mac": "Alt+Shift+B"
       },
-      "description": "Halt & report: pause, snapshot, open the report form"
+      "description": "Halt & report: pause, screenshot, open the report form"
     },
     "snapshot": {
       "suggested_key": {
         "default": "Alt+Shift+S",
         "mac": "Alt+Shift+S"
       },
-      "description": "Take a snapshot (recording continues)"
+      "description": "Take a screenshot (recording continues)"
     },
     "stop-recording": {
       "suggested_key": {
