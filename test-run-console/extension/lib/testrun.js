@@ -97,7 +97,10 @@ export async function request(conn, method, path, { body, raw = false, timeoutMs
     const r = await timedFetch(`${base}${path}`, opts, ms);
     let j = null;
     try { j = await r.json(); } catch { j = null; }
-    if (!j) return { ok: false, code: r.status === 413 ? 'TOO_BIG' : 'ERROR', status: r.status, error: r.status === 413 ? 'That file is too large for Test Run.' : `Test Run answered ${r.status}.` };
+    if (!j && r.status === 413) return { ok: false, code: 'TOO_BIG', status: 413, error: 'That file is too large for Test Run.' };
+    // Test Run always answers JSON. Anything else (Cloudflare's page for a tunnel that is gone,
+    // a 502 from a proxy) means Test Run is not at this address: treated like no answer.
+    if (!j) throw new Error(`Not Test Run (${r.status}).`);
     return { status: r.status, ...j };
   };
   if (conn.server) {

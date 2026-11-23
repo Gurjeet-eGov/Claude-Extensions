@@ -256,13 +256,36 @@
       pageUrl: location.href,
     });
   }
-  const origError = console.error;
-  console.error = function (...args) {
-    try {
-      emitConsole('error', args);
-    } catch {}
-    return origError.apply(this, args);
-  };
+  // Chrome files a console error under whichever script is the top stack frame when it is
+  // logged. A wrapper defined in this file would be that frame, so every error the page logs
+  // would show on Bug Reporter's Errors page in chrome://extensions. The wrapper is installed
+  // from an inline script instead, which belongs to the page. Where the page's CSP (or Trusted
+  // Types) refuses inline scripts, the wrapper from this file is used, so capture still works.
+  const SINK = '__egovBrConsoleSink';
+  const sink = (args) => emitConsole('error', args);
+  try {
+    Object.defineProperty(window, SINK, { value: sink, configurable: true });
+    const s = document.createElement('script');
+    s.textContent =
+      `(function(){var k=${JSON.stringify(SINK)},f=window[k];try{delete window[k]}catch(e){}` +
+      "if(typeof f!=='function'||f.installed)return;var o=console.error;" +
+      'console.error=function(){try{f(Array.prototype.slice.call(arguments))}catch(e){}return o.apply(this,arguments)};' +
+      'f.installed=true})();';
+    (document.documentElement || document.head || document.body).appendChild(s);
+    s.remove();
+  } catch {}
+  try {
+    delete window[SINK];
+  } catch {}
+  if (!sink.installed) {
+    const origError = console.error;
+    console.error = function (...args) {
+      try {
+        emitConsole('error', args);
+      } catch {}
+      return origError.apply(this, args);
+    };
+  }
   window.addEventListener('error', (e) => {
     try {
       if (typeof ErrorEvent !== 'undefined' && e instanceof ErrorEvent) {

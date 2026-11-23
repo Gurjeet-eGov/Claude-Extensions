@@ -168,3 +168,19 @@ test('static files are recognised (map tiles, fonts, sprites, build info), APIs 
   assert.equal(s('GET', 'https://x.org/egov-hrms/employees/_search?tenantId=nb'), false);
   assert.equal(isStatic({ method: 'GET', url: 'https://x.org/fonts/a.pbf', status: 404, failed: true }), false, 'failed calls always show');
 });
+
+test('recording clock: pauses left out, frozen once stopped', async () => {
+  const { elapsedUs } = await import('../extension/lib/rec-clock.js');
+  const s = { state: 'recording', startPerf: 1000, pausedTotal: 0, pauseStart: 0, stopPerf: 0 };
+  assert.equal(elapsedUs(s, 11000), 10e6, 'recording: 10 s');
+  Object.assign(s, { state: 'paused', pauseStart: 11000 });
+  assert.equal(elapsedUs(s, 16000), 10e6, 'paused: the pause does not count');
+  Object.assign(s, { state: 'recording', pausedTotal: 5000 });
+  assert.equal(elapsedUs(s, 18000), 12e6, 'resumed: 10 s + 2 s');
+  Object.assign(s, { state: 'stopped', stopPerf: 18000 });
+  assert.equal(elapsedUs(s, 18000), 12e6);
+  assert.equal(elapsedUs(s, 60000), 12e6, 'stopped: the time stays still');
+  const p = { state: 'stopped', startPerf: 1000, pauseStart: 5000, pausedTotal: 3000, stopPerf: 8000 }; // stopped while paused (stop() adds that pause)
+  assert.equal(elapsedUs(p, 99000), 4e6);
+  assert.equal(elapsedUs({ state: 'idle', startPerf: 0 }, 5000), 0, 'not started');
+});

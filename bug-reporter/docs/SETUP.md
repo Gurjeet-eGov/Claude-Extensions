@@ -130,7 +130,7 @@ The first time you record, macOS asks whether Chrome may record the screen. If i
 |---|---|
 | ⌥⇧R | Start / pause / resume recording |
 | ⌥⇧B | Halt and report a new bug |
-| ⌥⇧S | Take a snapshot (recording continues) |
+| ⌥⇧S | Take a screenshot (recording continues) |
 | ⌥⇧X | Stop recording |
 | *(set your own)* | Halt and update an existing issue: set a key at `chrome://extensions/shortcuts`, or use **Update Issue** in the popup |
 

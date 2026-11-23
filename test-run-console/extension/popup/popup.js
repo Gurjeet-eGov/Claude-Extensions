@@ -212,9 +212,9 @@ function testingHtml() {
   }
   const r = S.rec;
   const live = recLive();
-  h += `<div class="cap-btns"><button data-action="screenshot" ${S.busy ? 'disabled' : ''}>◱ Screenshot</button>${live
+  h += `<div class="cap-btns"><button data-action="screenshot" ${S.busy ? 'disabled' : ''}><svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>Screenshot</button>${live
     ? `<div class="split"><button data-action="${r.state === 'paused' ? 'rec-resume' : 'rec-pause'}" ${r.state === 'saving' ? 'disabled' : ''}>${r.state === 'paused' ? '▶ Resume' : '❚❚ Pause'}</button><button class="stop" data-action="rec-stop" ${r.state === 'saving' ? 'disabled' : ''}>■ Stop</button></div>`
-    : `<button data-action="record" ${S.busy ? 'disabled' : ''}>● Record</button>`}</div>`;
+    : `<button class="rec" data-action="record" ${S.busy ? 'disabled' : ''}>● Record</button>`}</div>`;
   if (live) {
     const other = r.key !== c.key || r.tab !== s.tab ? ` · for ${esc(r.id || r.key)}` : '';
     h += r.state === 'saving'
@@ -223,7 +223,7 @@ function testingHtml() {
   }
   for (const f of filesOf(c)) {
     h += S.confirmRemove === f.kind
-      ? `<div class="box file"><span class="grow">Delete <b>${esc(f.name)}</b> for good?</span><button data-action="remove-yes" data-kind="${f.kind}" class="primary" style="background:var(--fail);border-color:var(--fail)">Delete</button><button data-action="remove-no">Keep</button></div>`
+      ? `<div class="box file"><span class="grow">Delete <b>${esc(f.name)}</b> for good?</span><button data-action="remove-yes" data-kind="${f.kind}" class="danger-fill">Delete</button><button data-action="remove-no">Keep</button></div>`
       : `<div class="box file"><span aria-hidden="true" title="${f.kind === 'video' ? 'Recording' : 'Screenshot'}">${f.kind === 'video' ? '▶' : '▣'}</span><span class="name" title="${esc(f.name)}">${esc(f.name)}</span><span class="faint">${fmtBytes(f.size)}</span><button class="link" data-action="remove" data-kind="${f.kind}" aria-label="Remove ${esc(f.name)}" title="Remove (deletes it from Test Run for good)">✕</button></div>`;
   }
   const shown = S.draft != null ? S.draft : withoutEvidenceLine(c.comment);

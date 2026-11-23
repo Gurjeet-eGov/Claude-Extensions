@@ -993,22 +993,31 @@ function tr_saveFinding(input) {
   });
 }
 
-function tr_setFindingState_(key, state, caseId) {
+function tr_setFindingState_(key, state, caseId, reason) {
   var v = tr_metaGet_('finding', key);
   if (!v) return;
   v.state = state;
   if (caseId) v.caseId = caseId;
+  if (state === 'deprecated') { v.reason = reason; v.deprecatedBy = tr_user_(); v.deprecatedAt = tr_now_(); }
+  if (state === 'open') { delete v.reason; delete v.deprecatedBy; delete v.deprecatedAt; }
   tr_metaPut_('finding', key, v);
 }
 
-function tr_setFindingState(key, state, caseId) {
-  if (['open', 'written', 'covered'].indexOf(state) < 0) throw tr_err_('BAD_INPUT', 'Unknown state.');
+/**
+ * Move a finding on: written (up as a test case), covered (by one), deprecated (no longer
+ * needed: reason, the comment saying why, is required), or open again.
+ */
+function tr_setFindingState(key, state, caseId, reason) {
+  if (['open', 'written', 'covered', 'deprecated'].indexOf(state) < 0) throw tr_err_('BAD_INPUT', 'Unknown state.');
   caseId = TRCore.cleanText(caseId, 80);
+  reason = TRCore.cleanText(reason, 1000);
+  if (state === 'deprecated' && !reason) throw tr_err_('BAD_INPUT', 'Please enter a comment: why is this finding deprecated?');
   return tr_withLock_(function () {
     var f = tr_metaGet_('finding', key);
+    if (!f) throw tr_err_('GONE', 'Finding ' + key + ' is not there any more. Refresh.');
     // Covered by a case: the finding's bug goes onto that case (failed, issue linked)
-    var linked = state === 'covered' && f && caseId && f.state !== 'covered' ? tr_findingBugToCase_(f, f.tab, caseId, 0, false) : null;
-    tr_setFindingState_(key, state, caseId);
+    var linked = state === 'covered' && caseId && f.state !== 'covered' ? tr_findingBugToCase_(f, f.tab, caseId, 0, false) : null;
+    tr_setFindingState_(key, state, caseId, reason);
     return { ok: true, linked: linked };
   });
 }
@@ -1128,9 +1137,11 @@ function tr_listIssues() {
   });
   tr_metaList_('finding').forEach(function (r) {
     var f = r.value || {};
-    if (f.state && f.state !== 'open') return;
+    // A deprecated finding leaves its issue in the list, without the finding; written up or covered, its issue is on that case.
+    if (f.state && f.state !== 'open' && f.state !== 'deprecated') return;
     TRCore.parseIssues(f.url || '', '', null).concat(f.url ? [] : TRCore.parseIssues(f.issue || '', '', tr_issueRefs_())).forEach(function (it) {
-      entry(it).findings.push({ key: r.key, text: f.text, tab: f.tab || '' });
+      var e = entry(it);
+      if (f.state !== 'deprecated') e.findings.push({ key: r.key, text: f.text, tab: f.tab || '' });
     });
   });
   var meta = {};

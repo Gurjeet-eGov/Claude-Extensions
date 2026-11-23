@@ -91,16 +91,20 @@ export async function toggleRecording() {
   return startRecording();
 }
 
+// Chrome's badge needs literal colours: the console's light tokens (DESIGN.md), --fail, --other,
+// --none, --loc and --accent.
+const BADGE = { rec: '#c62f2a', paused: '#946200', none: '#98a0a8', loc: '#7e22ce', flash: '#2456d3' };
+
 export async function updateBadge(state) {
   const map = {
-    recording: { text: 'REC', color: '#d93025' },
-    paused: { text: '❚❚', color: '#e37400' },
+    recording: { text: 'REC', color: BADGE.rec },
+    paused: { text: '❚❚', color: BADGE.paused },
   };
-  let b = map[state] || { text: '', color: '#5f6368' };
+  let b = map[state] || { text: '', color: BADGE.none };
   if (!b.text) {
     // Not recording: show that Track Localizations is on.
     const { locTracking } = await chrome.storage.local.get('locTracking');
-    if (locTracking?.active) b = { text: 'LOC', color: '#7e22ce' };
+    if (locTracking?.active) b = { text: 'LOC', color: BADGE.loc };
   }
   await chrome.action.setBadgeText({ text: b.text });
   await chrome.action.setBadgeBackgroundColor({ color: b.color });
@@ -110,7 +114,7 @@ export async function updateBadge(state) {
 export async function flashBadge(text, ms = 900) {
   const { recState } = await chrome.storage.session.get('recState');
   await chrome.action.setBadgeText({ text });
-  await chrome.action.setBadgeBackgroundColor({ color: '#1a73e8' });
+  await chrome.action.setBadgeBackgroundColor({ color: BADGE.flash });
   setTimeout(() => updateBadge(recState || 'idle'), ms);
 }
 

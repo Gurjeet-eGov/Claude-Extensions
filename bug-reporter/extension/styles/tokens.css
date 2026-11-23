@@ -1,0 +1,66 @@
+/* Colour tokens: a copy of the :root blocks at the top of test-run-console/ui/styles.css
+   (see DESIGN.md). Do not edit here: change the console, then run
+   node test-run-console/scripts/sync-tokens.mjs */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e1e4e8;
+  --border-strong: #c9ced6;
+  --text: #1b1f24;
+  --muted: #5d636b;
+  --faint: #8a9099;
+  --accent: #2456d3;
+  --accent-weak: #e9eefc;
+  --accent-text: #ffffff;
+  --pass: #1d7a43;
+  --pass-bg: #e2f3e8;
+  --pass-fill: #1d7a43;    /* green messages: white text on it stays at 4.5:1 or more */
+  --on-pass-fill: #ffffff;
+  --fail: #c62f2a;
+  --fail-bg: #fbe6e5;
+  --fail-fill: #c62f2a;    /* red buttons: white text on it stays at 4.5:1 or more */
+  --on-fail-fill: #ffffff;
+  --other: #946200;
+  --other-bg: #fbf0d9;
+  --none: #98a0a8;
+  --none-bg: #eceff2;
+  --loc: #7e22ce;          /* Track localizations (Bug Reporter): purple, apart from pass and fail */
+  --loc-bg: #f3e8ff;
+  --loc-fill: #7e22ce;
+  --on-loc-fill: #ffffff;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .07);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121417;
+    --surface: #1a1d21;
+    --surface-2: #22262b;
+    --border: #2e3339;
+    --border-strong: #3d434a;
+    --text: #e6e8eb;
+    --muted: #a2a8b0;
+    --faint: #7b828b;
+    --accent: #7aa2ff;
+    --accent-weak: #1f2b47;
+    --accent-text: #0d1220;
+    --pass: #5cc98a;
+    --pass-bg: #173323;
+    --pass-fill: #238636;  /* deeper than --pass, so white text on it is readable (4.6:1) */
+    --fail: #ff7b72;
+    --fail-bg: #3d1a19;
+    --fail-fill: #da3633;  /* deeper than --fail, so white text on it is readable (4.6:1) */
+    --other: #e3b341;
+    --other-bg: #36290e;
+    --none: #6e7681;
+    --none-bg: #262a30;
+    --loc: #c4a1f0;
+    --loc-bg: #2e1f3d;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}

@@ -46,7 +46,7 @@ The limits (720p or 1080p at 30 fps, 20 MB a file, photos up to 1920×1080) are 
 
 - **Stored in Chrome** (this browser only): the access link and where you were. **Sign out** at the bottom of the popup, or removing the extension, forgets them. A link the host has replaced or removed signs you out by itself.
 - **Sent:** only to the Test Run you signed in to (results, comments, screenshots and recordings), and to `api.github.com` to look up a shared Test Run's current address in its gist when it moved.
-- **Permissions:** `storage` and `activeTab` (for the screenshot of the page you're on), plus the host's own address (`127.0.0.1`, `localhost`).
+- **Permissions:** `storage` and `activeTab` (for the screenshot of the page you're on), plus the host's own address (`127.0.0.1`, `localhost`) and `*.trycloudflare.com`, where a shared Test Run is reached (with access there, a stopped tunnel does not log a CORS error).
 
 ## Updating and removing
 

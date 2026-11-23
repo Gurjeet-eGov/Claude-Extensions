@@ -1,6 +1,6 @@
 # Plan: bring the extensions in line with the design guide
 
-[DESIGN.md](../DESIGN.md) describes the design, taken from the Test Run console. Test Run Extension started as a copy of the console's styles and has drifted. Bug Reporter has its own palette and token names. This is the plan to make all three consistent. **It's a plan only: nothing here has been changed yet.**
+[DESIGN.md](../DESIGN.md) describes the design, taken from the Test Run console. Test Run Extension started as a copy of the console's styles and has drifted. Bug Reporter has its own palette and token names. This is the plan to make all three consistent. **Done so far:** the colour steps (Step 2, Step 3 items 1, 4, 5 and 10, Step 4 items 1–4): both extensions now load the console's tokens from `styles/tokens.css`. The rest is still to do.
 
 ## Where things stand
 
@@ -28,7 +28,10 @@ The console is the reference, so its own gaps go first (listed in [DESIGN.md ›
 - sentence case for "Generate New", "Download Existing", "Summary Report", "Complete Report";
 - a `prefers-reduced-motion` rule for the pulsing dot.
 
-## Step 2: one tokens file, copied into each extension
+## Step 2: one tokens file, copied into each extension (done)
+
+Done differently from the steps below: the console keeps its tokens at the top of `ui/styles.css`, and `node scripts/sync-tokens.mjs` copies those two `:root` blocks into each extension's `styles/tokens.css`. `test/tokens.test.mjs` (console) and `bug-reporter/test/tokens.test.mjs` fail when a copy differs.
+
 
 1. Move the console's `:root` blocks (light and dark) from `test-run-console/ui/styles.css` into `test-run-console/ui/tokens.css`. Load it before `styles.css` in `index.html` and `summary.html`, and add it to:
    - the `STATIC` list in `server.mjs` (the server only serves listed files);
@@ -77,7 +80,7 @@ Files: `bug-reporter/extension/styles/common.css`, `popup/popup.css`, `report/re
 6. Settings tables: upper-case 11.5px headers on `--surface-2`, like the console's tables.
 7. Replace `alert()` and `confirm()` (in `report/report.js` and `options/options.js`) with a popup following DESIGN.md's pattern (560px, buttons right-aligned, Escape cancels), like the console's `askConfirm()`. A small shared helper in `bug-reporter/extension/lib/` keeps it in one place.
 8. Result messages (the `.notice` blocks) that report a finished action become the console's bottom messages (green or red fill, ⓘ, ✕), or coloured text when they belong to one field; notices that must stay on screen (a setup problem, say) stay as banners.
-9. Replace emoji with the guide's symbols: 📸 on Snapshot, ✅ ❌ ⚠️ in the verification options.
+9. Replace emoji with the guide's symbols: ✅ ❌ ⚠️ in the verification options. (Done: 📸 is now a camera icon on Screenshot.)
 10. Sentence case: "Report issue" (page title and button), "Update issue", "Env prefix", "Initial status".
 11. Settings tabs: set `aria-selected` on the open tab.
 12. Keep Bug Reporter's own icon and name: it's a separate product. It shares the palette, components and writing rules, not the brand.

@@ -816,7 +816,7 @@
     var h = '<div class="content-bar"><button class="help-btn" data-action="toggle-all" title="' + foldTip + '" aria-label="' + foldTip + '">' +
       '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="' + (anyOpen ? 'M3.5 1.5 7 5 10.5 1.5M3.5 12.5 7 9 10.5 12.5' : 'M3.5 5 7 1.5 10.5 5M3.5 9 7 12.5 10.5 9') +
       '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
-      '<button class="help-btn" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">?</button></div>';
+      helpButton() + '</div>';
     if (m.plan.source === 'plan') {
       h += '<div class="banner"><span>Paths follow a saved path plan' + (m.plan.savedAt ? ' from ' + esc(m.plan.savedAt) : '') + '.</span><span class="grow"></span>' +
         (isOwner() ? '<button data-action="clear-plan">Use automatic paths</button>' : '') + '</div>';
@@ -2599,9 +2599,24 @@
     return Promise.resolve(fallback());
   }
 
-  function helpModal() {
-    var keys = [['J / ↓', 'Next case'], ['K / ↑', 'Previous case'], ['Enter', 'Open or close the case'], ['P', 'Pass'], ['F', 'Fail (then type a comment, Enter saves)'], ['N', 'NA / other'], ['1–9', 'Any status by position'], ['0', 'Clear the result (back to not run)'], ['C', 'Comment'], ['E', 'Edit the open case (Duplicate and Deprecate are next to it)'], ['U', 'Undo the last mark'], ['/', 'Search'], ['Esc', 'Close / leave a field']];
-    openModal('<h2>Keyboard shortcuts</h2><table style="margin-top:10px"><tbody>' + keys.map(function (k) { return '<tr><td><kbd>' + esc(k[0]) + '</kbd></td><td>' + esc(k[1]) + '</td></tr>'; }).join('') + '</tbody></table><div class="row" style="margin-top:12px"><span class="grow"></span><button class="primary" data-action="modal-close">Close</button></div>');
+  var HELP_KEYS = [['J / ↓', 'Next case'], ['K / ↑', 'Previous case'], ['Enter', 'Open or close the case'], ['P', 'Pass'], ['F', 'Fail (then type a comment, Enter saves)'], ['N', 'NA / other'], ['1–9', 'Any status by position'], ['0', 'Clear the result (back to not run)'], ['C', 'Comment'], ['E', 'Edit the open case (Duplicate and Deprecate are next to it)'], ['U', 'Undo the last mark'], ['/', 'Search'], ['Esc', 'Close / leave a field']];
+
+  /** The ? and its tooltip (DESIGN.md › Tooltips): shown on hover and focus, pinned by a click or the ? key. */
+  function helpButton() {
+    return '<span class="help-wrap' + (S.helpOpen ? ' open' : '') + '">' +
+      '<button class="help-btn" data-action="help" aria-label="Keyboard shortcuts" aria-describedby="keysTip" aria-expanded="' + !!S.helpOpen + '">?</button>' +
+      '<div id="keysTip" role="tooltip" class="tip"><div class="tip-title">Keyboard shortcuts</div><div class="tip-keys">' +
+      HELP_KEYS.map(function (k) { return '<kbd>' + esc(k[0]) + '</kbd><span>' + esc(k[1]) + '</span>'; }).join('') + '</div></div></span>';
+  }
+  /** Pins the shortcuts open (or closes them) without redrawing the page. */
+  function setHelp(open) {
+    S.helpOpen = open;
+    var w = document.querySelector('.help-wrap');
+    if (!w) return;
+    w.classList.toggle('open', open);
+    if (!open) w.classList.add('shut'); // a hovered or focused ? stays hidden until left
+    var b = w.querySelector('.help-btn');
+    if (b) b.setAttribute('aria-expanded', String(open));
   }
 
   // ---------------------------------------------------------------------------
@@ -2710,7 +2725,7 @@
     'toggle-all': function () {
       if (S.model.paths.some(function (p) { return !S.collapsed[p.id]; })) ACTIONS['collapse-all'](); else ACTIONS['expand-all']();
     },
-    help: helpModal,
+    help: function () { setHelp(!S.helpOpen); if (S.helpOpen) { var w = document.querySelector('.help-wrap'); if (w) w.classList.remove('shut'); } },
     'modal-close': closeModal,
     'confirm-yes': function () { answerConfirm('yes'); },
     'confirm-no': function () { answerConfirm('no'); },
@@ -3461,11 +3476,20 @@
     if (modal && e.target === modal) { closeModal(); return; }
     if (S.dlMenu && !e.target.closest('.dl-wrap')) { S.dlMenu = null; render(); }
     if (S.ddOpen && !e.target.closest('.multi')) { S.ddOpen = null; S.ddQ = ''; render(); }
+    if (S.helpOpen && !e.target.closest('.help-wrap')) setHelp(false);
     var el = e.target.closest('[data-action]');
     if (!el || el.disabled) return;
     if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) { ACTIONS[el.getAttribute('data-action')](el, e); return; }
     var fn = ACTIONS[el.getAttribute('data-action')];
     if (fn) { e.preventDefault(); fn(el, e); }
+  });
+
+  // A ? hidden with Escape shows again once the pointer or focus has left it.
+  ['mouseout', 'focusout'].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      var w = e.target.closest && e.target.closest('.help-wrap');
+      if (w && !w.contains(e.relatedTarget)) w.classList.remove('shut');
+    });
   });
 
   // Keep a folded Columns section folded (or open) across redraws.
@@ -3516,6 +3540,8 @@
   document.addEventListener('keydown', function (e) {
     var modalOpen = !$('modal').classList.contains('hidden');
     if (e.key === 'Escape' && modalOpen) { closeModal(); return; }
+    var hw = document.querySelector('.help-wrap');
+    if (e.key === 'Escape' && hw && (S.helpOpen || hw.matches(':hover, :focus-within'))) { setHelp(false); return; }
     if (e.key === 'Escape' && S.dlMenu) { S.dlMenu = null; render(); return; }
     if (e.key === 'Escape' && S.ddOpen) { var ddb = document.querySelector('.multi-btn[data-dd="' + S.ddOpen + '"]'); S.ddOpen = null; S.ddQ = ''; render(); if (ddb && ddb.id) { var nb = $(ddb.id); if (nb) nb.focus(); } return; }
     if (e.key === 'Enter' && e.target && e.target.hasAttribute && e.target.hasAttribute('data-dd-q')) {
@@ -3544,7 +3570,7 @@
     if (k === 'j' || k === 'ArrowDown') { e.preventDefault(); move(1); return; }
     if (k === 'k' || k === 'ArrowUp') { e.preventDefault(); move(-1); return; }
     if (k === '/') { e.preventDefault(); var s = $('search'); if (s) s.focus(); return; }
-    if (k === '?') { helpModal(); return; }
+    if (k === '?') { ACTIONS.help(); return; }
     if (k === 'u') { undo(); return; }
     if (k === 'Escape') { if (S.caseTool) S.caseTool = null; else S.selected = null; render(); return; }
     if (!S.selected) return;
