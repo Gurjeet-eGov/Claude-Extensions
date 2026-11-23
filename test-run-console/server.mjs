@@ -581,7 +581,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
 
   /**
    * The workbook as people download it: a copy as saved, with a Known issues sheet added and rows
-   * grown to fit wrapped text (a Google Sheets download keeps every row one line high). The file
+   * grown to fit wrapped text (a Google Sheets download keeps every row one line high). Deprecated and
+   * duplicate cases stay in it, struck out, with "Deprecated: <reason>" in their comment. The file
    * itself is not changed.
    */
   function downloadCopy(name, user) {
@@ -591,9 +592,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       current = { book: copy, store: entry.store };
       rt.state.user = user || app.user;
       try {
-        rt.call('api_writeIssuesSheet');
-        const dropped = rt.call('api_dropRetired'); // retired cases are in no report, nor in the downloaded workbook
-        if (!dropped.ok) throw Object.assign(new Error(`The download could not leave out the retired cases: ${dropped.error}`), { code: dropped.code });
+        rt.call('api_writeIssuesSheet'); // retired cases stay, as in the workbook: struck out, the comment saying why
       } finally { current = null; }
       copy.fitRowHeights();
       return Buffer.from(await copy.toBuffer());
