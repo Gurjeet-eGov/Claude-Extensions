@@ -153,6 +153,28 @@ test('a bug noted as a finding (no test case) is an open failure in its suite\'s
   } finally { s.close(); }
 });
 
+test('a finding deprecated with a comment leaves Findings and Summary; its issue stays in Known issues, without it', async () => {
+  const s = await start();
+  try {
+    const url = 'https://github.com/example/repo/issues/67';
+    const r = await s.req('POST', '/api/note-bug', { title: 'Back to Application lands on the login page', number: 67, url, book: BOOK, tab: TAB }, { Origin: EXT_ORIGIN });
+    assert.equal(r.kind, 'finding', r.error);
+    assert.equal((await s.call('api_setFindingState', r.key, 'deprecated', '', '  ')).code, 'BAD_INPUT', 'a comment is required');
+    const d = await s.call('api_setFindingState', r.key, 'deprecated', '', 'Same root cause as #66');
+    assert.equal(d.ok, true, d.error);
+    const f = (await s.call('api_listFindings')).findings.find((x) => x.key === r.key);
+    assert.deepEqual([f.state, f.reason], ['deprecated', 'Same root cause as #66']);
+    const issue = (await s.call('api_listIssues')).issues.find((i) => i.url === url);
+    assert.ok(issue, 'the issue stays in Known issues');
+    assert.deepEqual([issue.findings, issue.cases], [[], []], 'without the finding');
+    assert.equal((await s.call('api_summary', TAB, '')).summary.failures.some((x) => x.id === r.key), false, 'not an open failure');
+    await s.call('api_setFindingState', r.key, 'open');
+    const back = (await s.call('api_listFindings')).findings.find((x) => x.key === r.key);
+    assert.deepEqual([back.state, back.reason], ['open', undefined], 'reopened, without the comment');
+    assert.deepEqual((await s.call('api_listIssues')).issues.find((i) => i.url === url).findings.map((x) => x.key), [r.key]);
+  } finally { s.close(); }
+});
+
 test('a bug finding mapped to a test case (covered by it, or written up as it) fails that case with the issue linked', async () => {
   const s = await start();
   try {

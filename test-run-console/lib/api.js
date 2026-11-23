@@ -40,7 +40,7 @@ function api_retireCase(req) { return tr_call_(function () { return tr_retireCas
 function api_restoreCase(req) { return tr_call_(function () { return tr_restoreCase(req); }); }
 function api_listFindings() { return tr_call_(function () { return tr_listFindings(); }); }
 function api_saveFinding(f) { return tr_call_(function () { return tr_saveFinding(f); }); }
-function api_setFindingState(key, state, caseId) { return tr_call_(function () { return tr_setFindingState(key, state, caseId); }); }
+function api_setFindingState(key, state, caseId, reason) { return tr_call_(function () { return tr_setFindingState(key, state, caseId, reason); }); }
 function api_deleteFinding(key) { return tr_call_(function () { return tr_deleteFinding(key); }); }
 function api_buildPrompt(kind, tab, opts) { return tr_call_(function () { return tr_buildPrompt(kind, tab, opts); }); }
 function api_parseReply(tab, text) { return tr_call_(function () { return tr_parseReply(tab, text); }); }
