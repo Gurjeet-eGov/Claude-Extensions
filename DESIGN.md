@@ -39,6 +39,7 @@ Every colour comes from these tokens (the `:root` block at the top of `styles.cs
 | `--fail-fill` / `--on-fail-fill` | `#c62f2a` / `#ffffff` | `#da3633` / `#ffffff` | Red buttons (`danger-fill`) and red messages at the bottom: a fill deep enough for white text in both modes |
 | `--other` / `--other-bg` | `#946200` / `#fbf0d9` | `#e3b341` / `#36290e` | NA and other results –, warnings |
 | `--none` / `--none-bg` | `#98a0a8` / `#eceff2` | `#6e7681` / `#262a30` | Not run ○, retired ⊘ |
+| `--going` | `#e8b100` | `#f2c94c` | An automated run (or its step) going in GitHub Actions: the yellow fading circle |
 | `--loc` / `--loc-bg` | `#7e22ce` / `#f3e8ff` | `#c4a1f0` / `#2e1f3d` | Bug Reporter's Track localizations (purple, so it stands apart from pass and fail), and a closed issue |
 | `--loc-fill` / `--on-loc-fill` | `#7e22ce` / `#ffffff` | same | The Track localizations button while it is on |
 
@@ -120,7 +121,9 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 - **Status buttons** show the symbol and the value: "✓ Pass". The keys are listed under **?**, not on the buttons.
 - **Change since the previous run** (`.delta`, Automation): the earlier figure after the current one, "↑ from 84%" (12px, weight 650), `--pass` when it got better and `--fail` when worse, the earlier value in its title.
 - **Automation badges** on Run's cases (`.pill` in the status colours): "Auto ✓", "Auto ✗", "Auto –", titled "Latest automated result attached to this cycle". They come from the automated runs kept for the open test suite and cycle: a case gets one when a test's title or tags name its case ID (the suite's case-ID pattern), with its result in the newest of those runs that has it.
-- **Manual | Automated** (`.seg.same`, Summary and the published site): the two buttons the same width, first in the row; Automated is disabled, with a title and a one-line note under the row, while no run is attached to that test suite and cycle.
+- **Going** (`.dot.going`, Automation): a run going in GitHub Actions, in the In GitHub Actions list and its Running view, and the step under way: a `--going` (yellow) circle with an `--other` edge, fading to 25% and back every 1.6s (slower with reduced motion). Steps not started yet stay a hollow ring.
+- **Manual | Automated** (`.seg.same`, Summary and the published site): the two buttons the same width, first in the row; Automated is disabled, with a title and a one-line note under the row, while no run is attached to that test suite and cycle. A workbook with no automated suite (the published site: no automated results) shows no switch at all, only Manual.
+- **Automation follows the workbook:** each suite belongs to the workbooks chosen when it is linked. The **Automation** tab, its suites, runs, runs going and the count on the tab show only for the workbook open; a workbook with no suite has no Automation tab.
 
 ### Fields
 

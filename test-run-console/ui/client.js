@@ -438,10 +438,10 @@
     }
     h += userMenu() + '</div>';
     if (S.app && S.auto.jobs === null && !S.auto.jobsBusy) auJobsLoad(); // runs going in GitHub Actions: the count on Automation
-    h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
+    h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return (!v.owner || isOwner()) && (v.id !== 'automation' || auHere()); }).map(function (v) {
       var n = v.id === 'findings' ? S.findings.filter(function (f) { return f.state === 'open'; }).length
         : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length
-          : v.id === 'automation' ? auActiveJobs().length : 0;
+          : v.id === 'automation' ? auActiveJobs().filter(auJobHere).length : 0;
       var tip = v.id === 'automation' && n ? ' title="' + (n === 1 ? 'A run is going' : n + ' runs are going') + ' in GitHub Actions"' : '';
       return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count"' + tip + '>' + n + '</span>' : '') + '</button>';
     }).join('') + '</nav>';
@@ -452,12 +452,12 @@
   function userMenu() {
     var who = me();
     if (!S.app || !who.name) return '';
-    var role = who.local ? 'Host, on this laptop' : who.admin ? 'Admin (your admin link)' : who.role === 'viewer' ? 'View only' : 'Updates status';
+    var role = who.local ? 'Host, on the host-server' : who.admin ? 'Admin (your admin link)' : who.role === 'viewer' ? 'View only' : 'Updates status';
     var initial = (String(who.name).trim()[0] || '?').toUpperCase();
     return '<div class="user-menu"><button class="user-btn" aria-haspopup="menu" title="' + esc(who.name + ' · ' + role) + '"><span class="avatar" aria-hidden="true">' + esc(initial) + '</span><span class="user-name">' + esc(who.name) + '</span><span class="caret" aria-hidden="true">▾</span></button>' +
       '<div class="user-pop" role="menu"><div class="user-head"><b>' + esc(who.name) + '</b><span class="small muted">' + esc(role) + '</span></div>' +
       (who.local
-        ? '<button role="menuitem" data-action="user-rename">Change your name</button><div class="user-note small faint">On this laptop you are always signed in as the host.</div>'
+        ? '<button role="menuitem" data-action="user-rename">Change your name</button><div class="user-note small faint">On this host-server you are always signed in as the host.</div>'
         : '<button role="menuitem" class="danger" data-action="sign-out">Sign out</button>') +
       '</div></div>';
   }
@@ -592,7 +592,7 @@
   function viewReports(c) {
     var conn = TR.conn();
     var why = !c ? '' : {
-      UNREACHABLE: 'Your Test Run is offline right now (its laptop may be asleep or restarting). These are the last published reports.',
+      UNREACHABLE: 'Your Test Run is offline right now (its host-server may be asleep or restarting). These are the last published reports.',
       BAD_KEY: 'Your access link no longer works: ask your test lead for a new one. Meanwhile, these are the published reports.',
       BAD_LINK: 'That is not an access link. An access link ends in #join=… : copy the whole link.',
       SIGNED_OUT: 'You are signed out. Paste your access link to sign in again.'
@@ -611,12 +611,12 @@
     // Manual | Automated: Manual is public; Automated opens with the visitor's invite link
     var aIdx = pubAutoIndex();
     var hasAuto = !!(pk.suite && aIdx && pubRunsFor(pk.w.slug).length);
-    var sw = sumSwitch(hasAuto, aIdx === undefined ? 'Looking for automated results…' : 'No automated results are published for ' + pk.w.title + ' yet');
+    var sw = hasAuto ? sumSwitch(true) : ''; // a workbook without automated results: Manual only, no switch
     if (hasAuto && S.sumView === 'automated') return h + '<div class="section">' + pubAutoView(pk, sw) + '</div>';
     // The suite and cycle are picked above, so no title here; on paper, one line says what it is.
     var published = 'published ' + pk.idx.publishedAt + (pk.idx.by ? ' by ' + pk.idx.by : '');
     var tools = '<div class="report-tools no-print">' + sw + '<span class="updated grow">Updated on: ' + esc(pk.idx.publishedAt) + '</span>' + (pk.w.xlsx ? '<a class="btn" href="reports/' + encodeURIComponent(pk.w.slug) + '.xlsx" download="' + esc(pk.w.title) + '.xlsx" title="The workbook as published, with a Known issues sheet"><span aria-hidden="true">⤓</span> Download</a>' : '') +
-      '<button data-action="print">Print / PDF</button></div>' + (aIdx && pk.suite && !hasAuto ? SUM_NOTE : '');
+      '<button data-action="print">Print / PDF</button></div>';
     if (!pk.suite) return h + '<div class="empty card section"><p>This workbook has no test suites.</p></div>';
     if (!pk.sum) return h + '<div class="empty card section"><p>No summary for this cycle.</p></div>';
     var sum = pk.sum;
@@ -784,7 +784,8 @@
       : '<div class="banner warn"><b>View only.</b><span class="muted">This workbook file is read-only on this computer, so results cannot be saved.</span></div>';
     if (S.excelOpen) banners += '<div class="banner warn"><b>This workbook is open in Excel.</b><span class="muted">Close it there while you test: saving from Excel would overwrite results marked here.</span></div>';
     if (S.view === 'setup' && isOwner()) return banners + viewSetup();
-    if (S.view === 'automation') return banners + viewAutomation(); // across workbooks: no test suite needed
+    if (S.view === 'automation' && !auHere()) S.view = 'run'; // this workbook has no automated suite
+    if (S.view === 'automation') return banners + viewAutomation(); // the workbook's suites: no test suite needed
     if (!S.tab) return banners + (isOwner()
       ? '<div class="empty card"><h3>No test case tab found</h3><p>Open Setup and mark which tabs hold test cases.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Open Setup</button></p></div>'
       : '<div class="empty card"><h3>No test case tab yet</h3><p>Your test lead has not set up this workbook yet.</p></div>');
@@ -825,6 +826,10 @@
     var au = /^au:(\w+):(book|tab)$/.exec(bind); // Automation's attach pickers: a new workbook or test suite resets what follows it
     if (au) auPicked(au[1], au[2]);
     if (bind === 'au:l:wf') auWorkflowPicked(); // Link a suite: a workflow chosen, its artifacts and options follow
+    if (bind === 'au:l:books' && S.form['au:lk:book'] != null && auLinkBooks().indexOf(S.form['au:lk:book']) < 0) { // Try it: a workbook still ticked
+      S.form['au:lk:book'] = auLinkBooks()[0] || '';
+      auPicked('lk', 'book');
+    }
   }
 
   /**
@@ -1680,7 +1685,7 @@
     });
     h += '</tbody></table></div>' + (busy ? '<div class="spin-overlay" role="status"><span class="spinner" aria-hidden="true"></span><span class="sr">Getting the latest from GitHub</span></div>' : '') + '</div></div>';
     h += '<p class="small faint section">Downloading the workbook adds these as a <b>Known issues</b> sheet. ' +
-      (r.github ? 'Titles, states and priorities of GitHub issues come from GitHub, through the <span class="mono">gh</span> login on the laptop running Test Run.' : 'Install the GitHub CLI (<span class="mono">gh</span>) on the laptop running Test Run to fill in titles, states and priorities from GitHub.') + '</p>';
+      (r.github ? 'Titles, states and priorities of GitHub issues come from GitHub, through the <span class="mono">gh</span> login on the host-server running Test Run.' : 'Install the GitHub CLI (<span class="mono">gh</span>) on the host-server running Test Run to fill in titles, states and priorities from GitHub.') + '</p>';
     return withRail(rail, h);
   }
 
@@ -1939,7 +1944,7 @@
   /** Summary of the test suite and cycle open: the manual results, or the automated ones attached to the cycle. */
   function viewSummary() {
     var d = autoCycle();
-    return d && d.latest && S.sumView === 'automated' ? viewAutoSummary(d) : viewManualSummary(d);
+    return d && d.latest && S.sumView === 'automated' && auHere() ? viewAutoSummary(d) : viewManualSummary(d);
   }
 
   function readSumView() {
@@ -2061,10 +2066,11 @@
     var hasAuto = !!(auto && auto.latest);
     var offTitle = !auto ? 'Looking for automated runs…' : auto.error ? auto.error : 'No automated run is attached to ' + TR.tabLabel(r.tab) + ' › ' + cycleText(r.cycle) + ' yet';
     // The suite and cycle are picked above; on paper, one line says what it is.
-    var h = '<div class="report-tools no-print">' + sumSwitch(hasAuto, offTitle) + '<span class="updated grow">Updated on: ' + esc(r.generatedAt) + '</span>' +
+    var here = auHere(); // a workbook without an automated suite: Manual only, no switch
+    var h = '<div class="report-tools no-print">' + (here ? sumSwitch(hasAuto, offTitle) : '') + '<span class="updated grow">Updated on: ' + esc(r.generatedAt) + '</span>' +
       downloadButton('summary', '', '<span aria-hidden="true">⤓</span> Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
       (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') + '</div>' +
-      (auto && !hasAuto ? SUM_NOTE : '') +
+      (here && auto && !hasAuto ? SUM_NOTE : '') +
       '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(TR.tabLabel(r.tab)) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
     return h + TR.summaryHtml(r);
   }
@@ -2141,7 +2147,7 @@
       if (!r.ok) { A.error = r.error || 'The automated results could not be read.'; render(); return r; }
       A.data = r;
       A.error = '';
-      var ids = r.suites.map(function (s) { return s.id; });
+      var ids = auBookSuites().map(function (s) { return s.id; });
       if (ids.indexOf(A.suite) < 0) A.suite = ids[0] || '';
       render();
       return r;
@@ -2152,7 +2158,19 @@
     var want = id || S.auto.suite;
     return d ? d.suites.filter(function (s) { return s.id === want; })[0] || null : null;
   }
-  function auRunsOf(id) { return S.auto.data.runs.filter(function (r) { return r.suiteId === id; }); }
+  /** Does the workbook open have an automated suite (for this person)? The Automation tab shows only then. */
+  function auHere() {
+    var a = S.app && S.app.automationBooks;
+    return !a || a.indexOf(book() || '') >= 0;
+  }
+  /** Does this suite belong to the workbook open? (One linked before suites had workbooks belongs to all.) */
+  function auInBook(s, b) { return !!s && (!s.books || s.books.indexOf(b == null ? book() : b) >= 0); }
+  /** The suites of the workbook open. */
+  function auBookSuites() { var d = S.auto.data; return d ? d.suites.filter(function (s) { return auInBook(s); }) : []; }
+  /** A run going in GitHub Actions whose results come to the workbook open. */
+  function auJobHere(j) { return !!j && !!j.attach && j.attach.book === book(); }
+  /** A suite's kept runs attached to the workbook open (all: in every workbook, for Setup). */
+  function auRunsOf(id, all) { return S.auto.data.runs.filter(function (r) { return r.suiteId === id && (all || r.attach.book === book()); }); }
   function auShownRuns(id) {
     var env = val('au:f:env', ''), branch = val('au:f:branch', '');
     return auRunsOf(id).filter(function (r) { return (!env || r.env === env) && (!branch || r.branch === branch); });
@@ -2218,7 +2236,7 @@
     var keep = S.auto.data.keep;
     return '<div class="stack-s"><label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label><div class="link-path">' +
       dropdown({ bind: 'au:' + prefix + ':book', id: 'au_' + prefix + '_book', cls: 'top-dd', value: b, prefix: '<span class="dd-prefix">Workbook</span>', title: 'Workbook',
-        options: S.app.books.map(function (x) { return { value: x.name, label: bookTitle(x.name) }; }) }) +
+        options: auAllowedBooks(prefix).map(function (x) { return { value: x, label: bookTitle(x) }; }) }) +
       dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading…' : 'Select',
         options: tabs.map(function (x) { return { value: x.name, label: TR.tabLabel(x.name) }; }) }) +
       dropdown({ bind: 'au:' + prefix + ':cycle', id: 'au_' + prefix + '_cycle', cls: 'top-dd', value: val('au:' + prefix + ':cycle', ''), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'Test cycle', disabled: !tab,
@@ -2276,8 +2294,11 @@
       if (!A.loading && !A.error) auLoad();
       return A.error ? '<div class="banner bad"><span>' + esc(A.error) + '</span><span class="grow"></span><button data-action="au-reload">Try Again</button></div>' : '<div class="loading">Loading the automated results…</div>';
     }
+    var mine = auBookSuites();
+    if (!mine.some(function (x) { return x.id === A.suite; })) A.suite = mine.length ? mine[0].id : ''; // another workbook: its first suite
     if (A.screen === 'run' && A.runId) {
       var det = auDetail();
+      if (det && det.run.attach.book !== book()) { A.screen = 'runs'; A.runId = ''; A.detail = null; return viewAutomation(); } // a run of another workbook
       return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run…</div>');
     }
     var s = auSuite();
@@ -2290,7 +2311,7 @@
     if (A.screen === 'start' && A.data.canAct && s.workflowId) return withRail(auRail(s.id), auStart(s));
     if (A.screen === 'running') {
       var job = auJob(A.jobId);
-      if (job) return withRail(auRail(job.suiteId), auRunning(job, auSuite(job.suiteId)));
+      if (job && auJobHere(job)) return withRail(auRail(job.suiteId), auRunning(job, auSuite(job.suiteId)));
       A.screen = 'runs';
     }
     return withRail(auRail(s.id), auRunsList(s));
@@ -2300,7 +2321,7 @@
   function auRail(active) {
     var d = S.auto.data;
     var h = '<div class="rail-group subtabs" role="tablist" aria-label="Automated suites"><span class="rail-title">Automated suites</span>' +
-      d.suites.map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') + '</div>';
+      auBookSuites().map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') + '</div>';
     if (active && S.auto.screen === 'runs') {
       var runs = auRunsOf(active);
       var envs = distinctOf(runs, 'env'), branches = distinctOf(runs, 'branch');
@@ -2526,7 +2547,7 @@
   function auImport(s) {
     var A = S.auto, f = A.file;
     var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
-    h += '<section class="card card-pad stack"><div><h2>Import results</h2><p class="small muted">For a run done outside Test Run: on a laptop, another CI, or a GitHub run started there. JUnit XML or CTRF JSON; several files, or a .zip of them, make one run.</p></div>';
+    h += '<section class="card card-pad stack"><div><h2>Import results</h2><p class="small muted">For a run done outside Test Run: on a host-server, another CI, or a GitHub run started there. JUnit XML or CTRF JSON; several files, or a .zip of them, make one run.</p></div>';
     var fromGh = !!s.workflowId && val('au:im:src', 'file') === 'github';
     if (s.workflowId) {
       h += '<span class="seg" role="group" aria-label="Where the results come from"><button data-action="au-im-src" data-src="file" aria-pressed="' + !fromGh + '">Results File</button>' +
@@ -2583,7 +2604,9 @@
           : '<div class="small muted">Any repository Test Run\'s GitHub access can read. Check it to pick its workflow, so ▶ Run can start it; without that, results come in with ⤒ Import Results.</div>') + '</div>';
     // 2 · Name, workflow and results
     h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>' + (c ? 'Workflow and results' : 'Name') + '</div><div class="form-grid' + (c ? '' : ' narrow') + '">' +
-      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">');
+      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">') +
+      auField('au_l_books', 'Workbooks', dropdown({ bind: 'au:l:books', id: 'au_l_books', values: auLinkBooks(), title: 'Workbooks',
+        options: S.app.books.map(function (b) { return { value: b.name, label: bookTitle(b.name) }; }) }), 'Its results show only in these workbooks');
     var wf = c ? auLinkWorkflow() : null;
     if (c) {
       var can = c.workflows.filter(function (w) { return w.dispatch && w.active; });
@@ -2615,6 +2638,18 @@
     return h;
   }
 
+  /** The workbooks ticked in Link a suite (those still in Test Run). */
+  function auLinkBooks() {
+    var names = S.app.books.map(function (b) { return b.name; });
+    return (S.form['au:l:books'] || []).filter(function (b) { return names.indexOf(b) >= 0; });
+  }
+  /** The workbooks a run of this form may attach to: those ticked in Link a suite, or the suite's own. */
+  function auAllowedBooks(prefix) {
+    var all = S.app.books.map(function (b) { return b.name; });
+    if (prefix === 'lk') return auLinkBooks();
+    var s = auSuite();
+    return s && s.books ? all.filter(function (b) { return s.books.indexOf(b) >= 0; }) : all;
+  }
   /** Closes the Link a suite popup, dropping what was typed in it. */
   function auLinkClose() {
     var A = S.auto;
@@ -2674,7 +2709,7 @@
     if (G.artsFor === id && (G.arts || G.artsLoading)) return;
     G.artsFor = id; G.arts = null; G.artsError = ''; G.artsLoading = true;
     if (!S.form['au:lk:book']) {
-      var names = S.app.books.map(function (b) { return b.name; });
+      var names = auLinkBooks(); // Try it attaches to one of the suite's workbooks
       S.form['au:lk:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
       auTargets(S.form['au:lk:book'], function () { auDefaults('lk'); });
     }
@@ -2700,6 +2735,7 @@
       repo: auRepoTyped(),
       casePattern: String(val('au:l:pattern', s ? s.casePattern : '')).trim(),
       masking: String(val('au:l:mask', s ? s.masking.join('\n') : '')),
+      books: auLinkBooks(),
       workflowId: wf ? wf.id : 0,
       artifact: String(val('au:l:art', '')).trim(),
       envInput: val('au:l:env', '')
@@ -2753,7 +2789,7 @@
 
   /** On a suite's page: its runs going in GitHub Actions, and finished ones that brought nothing in. */
   function auJobsCard(s) {
-    var list = (S.auto.jobs || []).filter(function (j) { return j.suiteId === s.id && j.state !== 'imported'; });
+    var list = (S.auto.jobs || []).filter(function (j) { return j.suiteId === s.id && j.state !== 'imported' && auJobHere(j); });
     if (!list.length) return '';
     return '<section class="card card-pad stack"><h2>In GitHub Actions</h2>' + list.map(function (j) {
       var active = AU_ACTIVE[j.state];
@@ -2768,8 +2804,10 @@
     return { waiting: 'Starting in GitHub Actions', queued: 'Queued in GitHub Actions', in_progress: 'Running in GitHub Actions', importing: 'Bringing the results in',
       imported: 'Results imported', no_results: 'Finished without results', cancelled: 'Cancelled', failed: 'The results did not come in' }[j.state] || 'In GitHub Actions';
   }
+  /** A run (or step) under way in GitHub Actions: a yellow circle fading in and out (DESIGN.md › Status). */
+  var AU_GOING = '<span class="dot going" aria-hidden="true"></span>';
   function auJobDot(j) {
-    if (AU_ACTIVE[j.state]) return TR.dot('none', true) + '<span class="sr">Going.</span>';
+    if (AU_ACTIVE[j.state]) return AU_GOING + '<span class="sr">Going.</span>';
     var c = j.state === 'imported' ? 'pass' : j.state === 'cancelled' ? 'other' : 'fail';
     return TR.dot(c) + '<span class="sr">' + TR.CLS_LABEL[c] + '.</span>';
   }
@@ -2789,7 +2827,7 @@
   }
   function auStepDot(x) {
     if (x.status === 'completed') return TR.dot(x.conclusion === 'success' ? 'pass' : x.conclusion === 'failure' || x.conclusion === 'timed_out' ? 'fail' : 'other');
-    if (x.status === 'in_progress') return TR.dot('none', true);
+    if (x.status === 'in_progress') return AU_GOING + '<span class="sr">Going.</span>';
     return TR.dot('none');
   }
 
@@ -2955,7 +2993,7 @@
     if (keeps.indexOf(String(keep)) < 0) keeps.push(String(keep));
     var suites = A.data.suites;
     var h = '<section class="card card-pad stack"><div><h2>Automation</h2><p class="small muted">Suites run in their own repositories\' GitHub Actions. Test Run keeps their results; GitHub keeps the full reports. Who can see and run them is in <button class="linkish" data-action="setup-part" data-part="access">Access › Users</button>.</p></div><div class="kv-grid kv-wide">' +
-      '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this laptop, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
+      '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this host-server, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
       '<span class="kv-k kv-label"><label for="auKeep">Runs kept</label>' + infoTip('auKeepTip', 'Runs kept', 'For each test suite and cycle. The oldest goes when a new one comes in.') + '</span>' +
       '<span>' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) + '</span>' +
       '<span class="kv-k kv-label"><label for="auEvery">Check running runs every</label>' + infoTip('auEveryTip', 'Check running runs every', 'How often Test Run asks GitHub how a run is doing. 1 minute uses five times more of GitHub\'s 5,000 requests an hour.') + '</span>' +
@@ -2964,13 +3002,14 @@
       auExcludeField() +
       '</div></section>';
     // + Add sits at the right of the card's title, whether or not suites are linked yet; a suite's name opens it to change
-    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
+    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Workbooks</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
       (suites.length ? suites.map(function (s) {
         var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
-        return '<tr><td><button class="linkish" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”">' + esc(s.name) + '</button>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
+        return '<tr><td><button class="linkish" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”">' + esc(s.name) + '</button>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td>' +
+          '<td class="small">' + (s.books ? (s.books.length ? s.books.map(function (b) { return esc(bookTitle(b)); }).join('<br>') : '<span class="faint">None</span>') : '<span class="muted">All workbooks</span>') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
           '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
           '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
-      }).join('') : '<tr><td colspan="5" class="no-data">No suites linked yet. + Add links one: any framework whose workflow writes JUnit XML or CTRF JSON.</td></tr>') + '</tbody></table></div></section>';
+      }).join('') : '<tr><td colspan="6" class="no-data">No suites linked yet. + Add links one: any framework whose workflow writes JUnit XML or CTRF JSON.</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
 
@@ -3112,7 +3151,7 @@
     var r = S.team;
     var h = '<section class="section card card-pad stack team-card" id="online">';
     var head = function (on) {
-      return '<div class="row team-head"><div class="grow"><h2>Online access</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
+      return '<div class="row team-head"><div class="grow"><h2>Online access</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This host-server must stay on while they work.</p></div>' +
         (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share online</label>') + '</div>';
     };
     if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading…</div></section>'; }
@@ -3132,7 +3171,7 @@
         h += '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
           '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop Sharing</button></div>';
       } else if (a.tunnel.available) {
-        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start Sharing Over the Internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
+        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start Sharing Over the Internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this host-server.</span></div>';
       } else {
         h += '<div class="note info">Install <span class="mono">cloudflared</span> first: <span class="mono">brew install cloudflared</span>. Then press Start here, or run <span class="mono">npm run share</span>.</div>';
       }
@@ -3144,7 +3183,7 @@
       var keeps = t.publish && t.gist && live;
       h += '<div class="links-verdict small ' + (keeps ? 'ok' : 'warn') + '">' + (keeps ? '✓ Invite links keep working when the address changes.' : 'Invite links stop working when the tunnel restarts' + (t.publish && live ? ', until the gist is written.' : '. Set up the link settings below to keep them working.')) + '</div>';
       h += '<details class="how link-settings"' + (keeps ? '' : ' open') + '><summary class="small"><b>Link settings</b> <span class="muted">hosted page and secret gist</span></summary><div class="stack-s">' +
-        '<p class="small muted">Invite links open the console on GitHub Pages (the hosted page), which looks up this laptop’s current address in a secret GitHub gist. If the tunnel drops (sleep, Wi-Fi change), Test Run opens it again by itself and updates the gist.</p>' +
+        '<p class="small muted">Invite links open the console on GitHub Pages (the hosted page), which looks up this host-server’s current address in a secret GitHub gist. If the tunnel drops (sleep, Wi-Fi change), Test Run opens it again by itself and updates the gist.</p>' +
         '<label class="check"><input type="checkbox" data-action="team-publish"' + (t.publish ? ' checked' : '') + '> Keep the current address in a secret gist <span class="faint">(uses your <span class="mono">gh</span> login)</span></label>' +
         (t.gist ? '<div class="small muted" style="margin-left:24px">Gist <a href="https://gist.github.com/' + esc(t.gist) + '" target="_blank" rel="noopener" class="mono">' + esc(t.gist.slice(0, 8)) + '…</a>' + (t.publishedAt ? ', updated ' + esc(t.publishedAt) : '') + '.</div>' : '') +
         (t.publishError ? '<div class="note bad">' + esc(t.publishError) + '</div>' : '') +
@@ -3335,10 +3374,10 @@
       '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="automation" aria-selected="' + (part === 'automation') + '">Automation</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
-        : part === 'access' ? '<p class="small muted rail-note">Who can use this Test Run, and how they reach this laptop. Applies to all workbooks.</p>'
+        : part === 'access' ? '<p class="small muted rail-note">Who can use this Test Run, and how they reach this host-server. Applies to all workbooks.</p>'
           : part === 'media' ? '<p class="small muted rail-note">Media is for everyone using Test Run Extension: their screenshots and recordings follow these limits.</p>'
-            : part === 'automation' ? '<p class="small muted rail-note">Automation is for all workbooks. Only the host sees this.</p>'
-            : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
+            : part === 'automation' ? '<p class="small muted rail-note">Each suite belongs to the workbooks it tests: its results show only there. Only the host sees this.</p>'
+            : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this host-server is off. It also lets someone else carry on from a clone of the repository.</p>');
     return withRail(rail, part === 'access' ? youCard() + onlineCard() + usersCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : part === 'automation' ? auSetupCard() : setupWorkbook());
   }
 
@@ -3381,9 +3420,9 @@
       '<span class="kv-k">Each file</span><span>Up to ' + fmtBytes(md.maxBytes) + ' <span class="small muted">(recording stops just before)</span></span>' +
       '<span class="kv-k">Photos</span><span>Up to ' + md.photo.width + '×' + md.photo.height + ', PNG</span>' +
       '<span class="kv-k">Audio</span><span>As picked in Chrome\'s share window</span>' +
-      '<label class="kv-k" for="mediaKeep">Keep a Complete Report</label><span class="row"><select id="mediaKeep" data-change="media-keep">' + keep + '</select><span class="small muted">then it\'s deleted from this laptop</span></span>' +
+      '<label class="kv-k" for="mediaKeep">Keep a Complete Report</label><span class="row"><select id="mediaKeep" data-change="media-keep">' + keep + '</select><span class="small muted">then it\'s deleted from this host-server</span></span>' +
       '</div>' +
-      '<p class="small muted media-foot">Evidence stays on this laptop' + (md.used != null ? ' (' + fmtBytes(md.used) + ' used' + (me().local ? ', in <span class="mono">sheets/.testrun/evidence/</span>' : '') + ')' : '') + '. It is never published.</p></section>';
+      '<p class="small muted media-foot">Evidence stays on this host-server' + (md.used != null ? ' (' + fmtBytes(md.used) + ' used' + (me().local ? ', in <span class="mono">sheets/.testrun/evidence/</span>' : '') + ')' : '') + '. It is never published.</p></section>';
   }
 
   // ---------------------------------------------------------------------------
@@ -3423,8 +3462,8 @@
         var rem = r.remote || {};
         askConfirm({
           title: 'Replace the newer published copy?',
-          banner: rem.at ? esc((rem.by || 'Someone') + ' published at ' + rem.at + ', after this laptop last published or got the data.') : esc(r.error), bannerKind: 'bad',
-          items: ['Publishing now replaces their copy with this laptop’s.', 'To keep their changes, get their copy first, then publish.'],
+          banner: rem.at ? esc((rem.by || 'Someone') + ' published at ' + rem.at + ', after this host-server last published or got the data.') : esc(r.error), bannerKind: 'bad',
+          items: ['Publishing now replaces their copy with this host-server’s.', 'To keep their changes, get their copy first, then publish.'],
           extra: { label: 'Get their copy first', fn: function () { ACTIONS['publish-get'](null); } },
           yes: 'Publish anyway', danger: true
         }, function () { publishNow(Object.assign({}, extra, { force: true })); });
@@ -3517,8 +3556,8 @@
       (dirty ? '<span class="small muted">Unsaved changes</span><button class="ghost" data-action="publish-discard">Discard</button>' : '') + '</div>';
     var l = r.last || {};
     h += '<div class="row publish-row"><button data-action="publish-now"' + (S.publishBusy || r.problem || dirty ? ' disabled' : '') + (dirty ? ' title="Save your preferences first"' : '') + '>' + (S.publishBusy ? 'Publishing…' : 'Publish now') + '</button>' +
-      '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this laptop yet.') + '</span>' +
-      '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this laptop">Preview here</a>' +
+      '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this host-server yet.') + '</span>' +
+      '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this host-server">Preview here</a>' +
       '</div>' +
       (l.error ? '<div class="note bad">' + esc(l.error) + '</div>' : '') +
       (!l.error && l.pagesError ? '<div class="note warn">' + esc(l.pagesError) + '</div>' : '');
@@ -3699,7 +3738,7 @@
     var title = name.replace(/\.xlsx$/i, '');
     openModal('<h2>Delete “' + esc(title) + '”?</h2>' +
       '<p class="banner bad" style="margin-top:10px"><b>This cannot be undone.</b></p>' +
-      '<ul class="modal-list"><li>The workbook file is deleted from this laptop’s sheets folder, for everyone using this Test Run.</li>' +
+      '<ul class="modal-list"><li>The workbook file is deleted from this host-server’s sheets folder, for everyone using this Test Run.</li>' +
       '<li>Its Test Run setup, findings and known issues are deleted with it, and its screenshots and recordings.</li>' +
       '<li>Copies published to GitHub stay until the next publish.</li></ul>' +
       '<div class="modal-actions"><button data-action="modal-close">Cancel</button>' +
@@ -4174,7 +4213,7 @@
       askConfirm({
         title: 'Delete “' + esc(ev.name) + '”?',
         banner: 'This cannot be undone.', bannerKind: 'bad',
-        items: ['The file is deleted from this laptop and can’t be brought back.'],
+        items: ['The file is deleted from this host-server and can’t be brought back.'],
         yes: 'Delete file', danger: true
       }, function () {
         TR.http('POST', '/api/evidence/remove', { book: book(), tab: tab, cycle: cycle, key: k, kind: kind }).then(function (r) {
@@ -4366,7 +4405,7 @@
         askConfirm({
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
-          items: ['Someone has to turn it back on at the laptop.'],
+          items: ['Someone has to turn it back on at the host-server.'],
           yes: 'Stop Sharing', danger: true
         }, function () { teamCall('/api/team', { enabled: false }); }, function () { el.checked = true; });
         return;
@@ -4413,7 +4452,7 @@
         askConfirm({
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
-          items: ['It has to be started again at the laptop.'],
+          items: ['It has to be started again at the host-server.'],
           yes: 'Stop Sharing', danger: true
         }, go);
         return;
@@ -4438,7 +4477,7 @@
       askConfirm({
         title: 'Replace the workbooks here with the published ones?',
         banner: 'A copy of each workbook here is kept first.', bannerKind: 'warn',
-        items: ['The published workbooks replace the ones on this laptop.', 'The copies are in <span class="mono">sheets/.testrun/backups/</span>.'],
+        items: ['The published workbooks replace the ones on this host-server.', 'The copies are in <span class="mono">sheets/.testrun/backups/</span>.'],
         yes: 'Get published data', danger: true
       }, function () {
         if (el) el.disabled = true;
@@ -4657,6 +4696,7 @@
     // Link a suite: a popup, from Setup › Automation's + Add
     'au-link': function () {
       S.auto.linkOpen = true; S.auto.editing = false; clearForm('au:l:'); clearForm('au:lk:');
+      S.form['au:l:books'] = book() ? [book()] : [];
       S.auto.gh = auGhFresh(); S.ddOpen = null;
       render(); auLinkFocus();
     },
@@ -4665,6 +4705,8 @@
       var id = el && el.getAttribute('data-id');
       if (id) S.auto.suite = id;
       S.auto.linkOpen = true; S.auto.editing = true; clearForm('au:l:'); clearForm('au:lk:');
+      var s0 = auSuite();
+      S.form['au:l:books'] = s0 && s0.books ? s0.books.slice() : S.app.books.map(function (b) { return b.name; }); // linked before workbooks: all of them
       S.auto.gh = auGhFresh(); S.ddOpen = null;
       render(); auLinkFocus();
       var s = auSuite();
@@ -4675,6 +4717,7 @@
     'au-gh-import-latest': function () {
       var A = S.auto, G = A.gh, body = auLinkBody(), a = auAttachChosen('lk');
       if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n0 = $('auName'); if (n0) n0.focus(); return; }
+      if (!body.books.length) { toast('Choose the workbooks this suite belongs to: its results show only there.', 'bad'); return; }
       if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
       G.importing = true; G.imported = null;
       render();
@@ -4687,7 +4730,7 @@
           var t = x.run.totals;
           G.imported = { ok: true, text: '✓ Read ' + plural(t.total, 'test') + ' from run #' + x.githubRun.number + ' (' + auDate(x.run.startedAt, false) + '): ✓ ' + t.passed + ' ✗ ' + t.failed + ' – ' + t.skipped };
           toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '” and imported its latest run into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
-          auLoad();
+          auLoad(); refreshApp();
         });
       });
     },
@@ -4794,7 +4837,7 @@
     'au-setup-remove': function (el) {
       var A = S.auto, s = A.data && A.data.suites.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
       if (!s) return;
-      var n = auRunsOf(s.id).length;
+      var n = auRunsOf(s.id, true).length;
       askConfirm({
         title: 'Remove “' + esc(s.name) + '”?',
         banner: 'This cannot be undone.', bannerKind: 'bad',
@@ -4803,6 +4846,7 @@
       }, function () {
         TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
           if (!r.ok) { toast(r.error, 'bad'); return; }
+          refreshApp();
           toast('Removed “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
           if (A.suite === s.id) A.suite = '';
           auLoad();
@@ -4891,19 +4935,20 @@
       var A = S.auto;
       var body = auLinkBody();
       if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n = $('auName'); if (n) n.focus(); return; }
+      if (!body.books.length) { toast('Choose the workbooks this suite belongs to: its results show only there.', 'bad'); return; }
       // checked on GitHub with a workflow chosen: saved with its workflow; else as a suite whose results are imported
       TR.http('POST', body.workflowId ? '/api/automation/github/link' : '/api/automation/suites', body).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }
         auLinkClose();
         A.suite = r.suite.id;
         toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '”.');
-        auLoad();
+        auLoad(); refreshApp(); // the Automation tab shows in its workbooks
       });
     },
     'au-suite-remove': function () {
       var s = auSuite();
       if (!s) return;
-      var n = auRunsOf(s.id).length;
+      var n = auRunsOf(s.id, true).length;
       askConfirm({
         title: 'Unlink “' + esc(s.name) + '”?',
         banner: 'This cannot be undone.', bannerKind: 'bad',
@@ -4914,6 +4959,7 @@
           if (!r.ok) { toast(r.error, 'bad'); return; }
           auLinkClose();
           S.auto.screen = 'runs'; S.auto.suite = '';
+          refreshApp();
           toast('Unlinked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
           auLoad();
         });

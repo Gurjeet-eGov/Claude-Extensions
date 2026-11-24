@@ -114,8 +114,14 @@ function normalizeSuite(s) {
     workflowPath: clip(s.workflowPath, 300),
     inputs: normalizeInputs(s.inputs),
     defaultBranch: clip(s.defaultBranch, 250),
+    // the workbooks this suite belongs to: its results show (and its runs attach) only there.
+    // null: linked before suites had workbooks, so it shows in every workbook until it is changed
+    books: Array.isArray(s.books) ? [...new Set(s.books.map((b) => clip(b, 260)).filter(Boolean))].slice(0, 50) : null,
   };
 }
+
+/** Does this suite belong to this workbook? (A suite linked before suites had workbooks belongs to all.) */
+export const suiteInBook = (suite, book) => !!suite && (suite.books == null || suite.books.includes(book));
 
 const slug = (name) => String(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'suite';
 const groupKey = (m) => JSON.stringify([m.suiteId, m.attach.book, m.attach.tab, m.attach.cycle]);
@@ -158,7 +164,8 @@ export class AutomationStore {
   }
 
   /**
-   * Link a suite, or change one (input.id). input: { id?, name, repo, casePattern, masking: [] | text (one per line) }.
+   * Link a suite, or change one (input.id). input: { id?, name, repo, casePattern, masking: [] | text (one per line),
+   * books? (workbook file names, checked by the caller; left out: kept as they were) }.
    * Throws BAD_INPUT with a message to show. Returns the suite as saved.
    */
   saveSuite(input, { by = '', now = new Date() } = {}) {
@@ -181,6 +188,7 @@ export class AutomationStore {
       ...(was || { ...NO_GITHUB, format: '', linkedBy: by, linkedAt: now.toISOString() }),
       ...(was && was.repo !== repo ? NO_GITHUB : {}), // another repository: its workflow link no longer fits
       id, name, repo, casePattern, masking,
+      ...(Array.isArray(input.books) ? { books: input.books } : {}),
     });
     this.writeSuites(was ? list.map((s) => (s === was ? suite : s)) : list.concat([suite]));
     return suite;

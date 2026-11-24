@@ -189,7 +189,7 @@ test('two hosts: a newer publish by someone else is not overwritten unasked; Get
     assert.equal(bs.newer, true);
     const refused = await b.local('POST', '/api/publish/now', { confirmPublic: true });
     assert.equal(refused.code, 'NEWER_REMOTE');
-    assert.match(refused.error, /published at .+ after this laptop/);
+    assert.match(refused.error, /published at .+ after this host-server/);
     // b gets a's data, then can publish on top of it
     const c = (await a.call('api_loadTab', TAB, '')).cases.find((x) => x.id === 'CMS/12');
     await a.call('api_mark', { tab: TAB, key: c.key, sh: c.sh, row: c.row, cycle: 'v2.12', expect: '', status: 'Fail' });
@@ -221,7 +221,7 @@ test('if someone else publishes while this laptop is publishing, it is refused r
     await h.local('POST', '/api/publish/settings', { books: { [BOOK]: true } });
     const r = await h.local('POST', '/api/publish/now', { confirmPublic: true });
     assert.equal(r.code, 'NEWER_REMOTE', r.error);
-    assert.match(r.error, /^Someone Else published at 2026-11-24 09:00, after this laptop/);
+    assert.match(r.error, /^Someone Else published at 2026-11-24 09:00, after this host-server/);
     assert.deepEqual(Object.keys(files(gh)), ['reports/index.json'], 'theirs is kept');
     assert.equal(json(files(gh)['reports/index.json']).by, 'Someone Else');
     assert.equal(gh.dispatches().length, 0, 'the site is not built for a publish that did not happen');

@@ -257,3 +257,58 @@ test('an upload over 20 MB is refused with 413', async () => {
     assert.deepEqual([r.status, r.code], [413, 'TOO_BIG']);
   } finally { s.close(); }
 });
+
+test('a suite belongs to workbooks: the Automation tab, imports and moves follow them', async () => {
+  const s = await start();
+  try {
+    const OTHER = 'Bomet UAT.xlsx';
+    writeFileSync(join(s.sheets, OTHER), await buildSampleXlsx());
+    const app = async (key) => (await s.req('GET', '/api/app', { key })).automationBooks;
+    assert.deepEqual(await app(), [], 'no suite yet: no workbook shows Automation');
+
+    // the workbooks are checked: ones that exist and may be opened, at least one
+    assert.equal((await s.req('POST', '/api/automation/suites', { body: { name: 'X', books: [] } })).code, 'BAD_INPUT');
+    assert.equal((await s.req('POST', '/api/automation/suites', { body: { name: 'X', books: ['Nope.xlsx'] } })).code, 'BAD_INPUT');
+    const linked = await s.req('POST', '/api/automation/suites', { body: { name: 'CMS Automation', books: [BOOK] } });
+    assert.equal(linked.ok, true, linked.error);
+    assert.deepEqual(linked.suite.books, [BOOK]);
+    const id = linked.suite.id;
+    assert.deepEqual(await app(), [BOOK], 'Automation shows in its workbook only');
+    assert.deepEqual(await app(KEYS.outsider), [], 'someone without that workbook: nowhere');
+
+    // results attach only to a workbook the suite belongs to
+    const call2 = (fn, ...args) => s.req('POST', `/api/call/${fn}`, { body: { book: OTHER, args } });
+    const boot2 = await call2('api_bootstrap');
+    await call2('api_saveSetup', { tabs: boot2.tabs.map((t) => ({ name: t.name, ...t.detected })) });
+    const there = await s.importFile(id, 'r.xml', fx('playwright-junit.xml'), { book: OTHER, tab: TAB, cycle: 'v2.12' });
+    assert.equal(there.code, 'NOT_IN_BOOK');
+    assert.match(there.error, /isn't linked to “Bomet UAT”/);
+    const here = await s.importFile(id, 'r.xml', fx('playwright-junit.xml'));
+    assert.equal(here.ok, true, here.error);
+    assert.equal((await s.req('POST', '/api/automation/reattach', { body: { id: here.run.id, book: OTHER, tab: TAB, cycle: 'v2.12' } })).code, 'NOT_IN_BOOK', 'nor moved to another one');
+
+    // changed: both workbooks; left out of a change, the workbooks stay as they were
+    const both = await s.req('POST', '/api/automation/suites', { body: { id, name: 'CMS Automation', books: [BOOK, OTHER] } });
+    assert.deepEqual(both.suite.books, [BOOK, OTHER]);
+    assert.deepEqual((await app()).sort(), [BOOK, OTHER].sort());
+    const renamed = await s.req('POST', '/api/automation/suites', { body: { id, name: 'CMS Automation 2' } });
+    assert.deepEqual(renamed.suite.books, [BOOK, OTHER]);
+  } finally { s.close(); }
+});
+
+test('a suite linked before suites had workbooks belongs to the workbooks its runs are attached to', async () => {
+  const s = await start();
+  try {
+    const old = await s.req('POST', '/api/automation/suites', { body: { name: 'Old Suite' } });
+    assert.equal(old.suite.books, null, 'no workbooks given: none set');
+    assert.deepEqual((await s.req('GET', '/api/app')).automationBooks, [BOOK], 'until then, every workbook');
+    assert.equal((await s.importFile(old.suite.id, 'r.xml', fx('playwright-junit.xml'))).ok, true);
+    s.close();
+    // the next start gives it the workbooks of its runs
+    const again = createServer({ sheetsDir: s.sheets, ghPath: '/nope/gh' });
+    try {
+      const suites = JSON.parse(readFileSync(join(s.sheets, '.testrun', 'automation', 'suites.json'), 'utf8')).suites;
+      assert.deepEqual(suites.find((x) => x.id === old.suite.id).books, [BOOK]);
+    } finally { again.close(); }
+  } finally { s.close(); }
+});

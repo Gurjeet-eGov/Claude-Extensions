@@ -107,7 +107,7 @@ export async function request(conn, method, path, { body, raw = false, timeoutMs
     try { return await go(conn.server); } catch (e) { if (!conn.gist) throw new Offline(e?.name === 'AbortError' ? 'Test Run did not answer in time.' : 'Test Run is not answering.'); }
   }
   const moved = await addressFromGist(conn.gist);
-  if (!moved || moved === conn.server) throw new Offline('Test Run is not answering. The laptop running it may be off or asleep.');
+  if (!moved || moved === conn.server) throw new Offline('Test Run is not answering. The host-server running it may be off or asleep.');
   conn.server = moved;
   if (onMove) await onMove(moved);
   try { return await go(moved); } catch (e) { throw new Offline('Test Run is not answering.'); }

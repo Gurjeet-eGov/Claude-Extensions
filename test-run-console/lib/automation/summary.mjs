@@ -13,6 +13,7 @@
 // for the cycle, the newest run that has the case decides.
 import { previousRun, compareRuns, groupCauses, passRate, lineOf, historyOf, byFile } from './results.mjs';
 import { canSeeSuite } from './access.mjs';
+import { suiteInBook } from './store.mjs';
 
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
 const p2 = (n) => String(n).padStart(2, '0');
@@ -165,7 +166,7 @@ export async function cycleRoute(ctx, store, url, person, keep) {
   if (!ctx.mayOpen(person, book)) return { code: 403, json: { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' } };
   const attach = { book, tab, cycle };
   const index = store.index();
-  const metas = cycleRunsOf(index, attach).filter((m) => canSeeSuite(person, m.suiteId));
+  const metas = cycleRunsOf(index, attach).filter((m) => canSeeSuite(person, m.suiteId) && suiteInBook(store.suite(m.suiteId), attach.book));
   const base = { attach, generatedAt: stamp(), keep };
   if (!metas.length) return ok({ ...base, latest: null, runs: [], cases: {}, coverage: null });
   const runs = metas.map((m) => store.run(m.id)).filter(Boolean);

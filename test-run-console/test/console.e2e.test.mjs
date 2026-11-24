@@ -545,7 +545,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('[data-action=setup-part][data-part=access]').click();
       await page.locator('#online').waitFor();
       await page.locator('#users').waitFor();
-      assert.equal(await page.locator('.rail-note', { hasText: 'Who can use this Test Run, and how they reach this laptop.' }).count(), 1);
+      assert.equal(await page.locator('.rail-note', { hasText: 'Who can use this Test Run, and how they reach this host-server.' }).count(), 1);
       // Access was called Sharing: the old part name still opens it
       await page.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-action', 'setup-part'); b.setAttribute('data-part', 'sharing'); b.id = 'oldPart'; document.body.appendChild(b); });
       await page.locator('[data-action=setup-part][data-part=workbook]').click();

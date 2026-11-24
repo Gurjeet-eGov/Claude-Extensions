@@ -228,7 +228,7 @@ export function publicPeople(team) {
 export function inviteLink(team, address, key, { hostedLive = true } = {}) {
   const join = `join=${encodeURIComponent(key)}`;
   if (team.hostedUrl && !hostedLive && address) {
-    return { link: `${address}/#${join}`, warning: `The hosted page is not live yet, so this link names this laptop's address directly.${team.mode === 'fixed' ? '' : ' It stops working when the quick tunnel restarts with a new address.'}` };
+    return { link: `${address}/#${join}`, warning: `The hosted page is not live yet, so this link names this host-server's address directly.${team.mode === 'fixed' ? '' : ' It stops working when the quick tunnel restarts with a new address.'}` };
   }
   if (team.hostedUrl && hostedLive) {
     const base = team.hostedUrl.replace(/\/?$/, '/');

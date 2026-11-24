@@ -184,7 +184,8 @@ class JobFile {
 // ---------------------------------------------------------------------------
 
 /**
- * ctx: { sheetsDir, store (AutomationStore), github (lib/github.mjs client), checkAttach(q, person),
+ * ctx: { sheetsDir, store (AutomationStore), github (lib/github.mjs client), checkAttach(q, person, suite?),
+ *        checkBooks(given, person) (a suite's workbooks from a request),
  *        keep(), setKeep(n), checkEvery() (minutes: 1 or 5), setCheckEvery(n), excludeEnvironments() (names
  *        the run form leaves out), setExcludeEnvironments(list), mayOpen(person, book),
  *        isOwner(person), jsonBody(req), log, pollMs (fixed ms, for tests: overrides checkEvery),
@@ -230,7 +231,7 @@ export function createGithubRuns(ctx) {
     if (e && /^(BAD_|TOO_|NO_ATTACH|NO_BOOK|NO_TAB|NO_CYCLE|FORBIDDEN|GONE|ALREADY)/.test(e.code || '') && !e.status) return e;
     const msg = String((e && e.message) || e || 'no answer');
     if (e && e.code === 'NO_GH') return err('NO_GH', 'The GitHub CLI (gh) is not installed. Install it and run: gh auth login');
-    if (e && (e.code === 'GH_AUTH' || e.status === 401)) return err('GH_AUTH', `GitHub didn't accept Test Run's access (${msg}). On the host laptop, run: gh auth login`);
+    if (e && (e.code === 'GH_AUTH' || e.status === 401)) return err('GH_AUTH', `GitHub didn't accept Test Run's access (${msg}). On the host-server, run: gh auth login`);
     if (e && e.status === 404) return err('GH_NOT_FOUND', `Test Run can't ${what}${full ? ` in ${full}` : ''}: GitHub says it isn't there, or Test Run's GitHub access can't see it.`);
     if (e && e.status === 403) return err('GH_FORBIDDEN', `GitHub refused to let Test Run ${what}${full ? ` in ${full}` : ''} (${msg}). Its GitHub access needs Actions write and Contents read there.`);
     if (e && e.code === 'GH_TIMEOUT') return err('GH_TIMEOUT', `GitHub didn't answer in time when Test Run tried to ${what}. Try again.`);
@@ -350,7 +351,7 @@ export function createGithubRuns(ctx) {
     if (envInput && !w.inputs.some((x) => x.name === envInput)) throw err('BAD_INPUT', `“${w.name}” has no option called ${envInput}.`);
     if (!envInput) envInput = envFieldOf(w.inputs, ''); // none chosen: the workflow's environment field, when it has one
     const id = body.id ? String(body.id) : '';
-    const saved = store.saveSuite({ id, name: body.name, repo: full, casePattern: body.casePattern, masking: body.masking }, { by: person.name });
+    const saved = store.saveSuite({ id, name: body.name, repo: full, casePattern: body.casePattern, masking: body.masking, books: ctx.checkBooks ? ctx.checkBooks(body.books, person) : undefined }, { by: person.name });
     const suite = store.setGithub(saved.id, { workflowId: w.id, workflowPath: w.path, workflow: w.name, inputs: w.inputs, artifact: clip(body.artifact, 140) || 'test-results', envInput, defaultBranch: w.defaultBranch });
     return { suite, created: !id };
   }
@@ -440,7 +441,7 @@ export function createGithubRuns(ctx) {
     if (!ghRun) throw err('NO_RUN', `“${suite.workflow}” has no finished run on GitHub yet.`);
     if (Number(ghRun.workflow_id) !== Number(suite.workflowId)) throw err('BAD_INPUT', `That run is not a run of “${suite.workflow}”.`);
     if (ghRun.status !== 'completed') throw err('NOT_DONE', `Run #${ghRun.run_number} is still ${ghRun.status === 'queued' ? 'queued' : 'running'} on GitHub. Bring it in once it has finished.`);
-    const at = await checkAttach(body, person);
+    const at = await checkAttach(body, person, suite);
     if (!at.ok) throw err(at.code, at.error);
     const had = alreadyKept(suite.id, ghRun.id, at.attach);
     if (had) throw err('ALREADY', `Run #${ghRun.run_number} is already in Test Run, attached to ${at.attach.tab} › ${at.attach.cycle ? `Cycle ${at.attach.cycle}` : 'Status'}.`);
@@ -559,7 +560,7 @@ export function createGithubRuns(ctx) {
     const f = await formOf(suite, owner, repo, branch);
     const inputs = inputValues(f.inputs, body.inputs && typeof body.inputs === 'object' ? body.inputs : {});
     const envInput = f.suite.envInput;
-    const at = await checkAttach(body, person);
+    const at = await checkAttach(body, person, suite);
     if (!at.ok) throw err(at.code, at.error);
     // the runs there before this one, so the new one can be told apart
     let known = [];

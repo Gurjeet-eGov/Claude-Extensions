@@ -270,6 +270,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       team: { enabled: app.team.enabled },
       // for the host: published data to start from (a fresh clone), or a newer publish by someone else
       published: isOwnerPerson(person) && !lib.list().length ? localOffer() : null,
+      automationBooks: automation.booksWithSuites(person), // the workbooks where the Automation tab shows
       publishNotice: isOwnerPerson(person) && pub.remote && pub.remote.id && pub.remote.id !== app.publish.knownId ? { by: pub.remote.by, at: pub.remote.publishedAt } : null,
       version: VERSION,
     };
@@ -367,7 +368,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       const r = await fetch(`${url}/api/status`, { headers: { 'X-Test-Run': '1' }, signal: AbortSignal.timeout(8000) });
       const j = await r.json().catch(() => null);
       if (j && j.app === 'test-run' && j.instance === INSTANCE) res = { ok: true, message: 'Reaches this Test Run.' };
-      else if (j && j.app === 'test-run') res = { ok: false, message: 'It reaches a different Test Run (another laptop, or an earlier run).' };
+      else if (j && j.app === 'test-run') res = { ok: false, message: 'It reaches a different Test Run (another host-server, or an earlier run).' };
       else res = { ok: false, message: `Something else answers there (${r.status}). Check the tunnel sends it to port ${server.address().port}.` };
     } catch (e) {
       res = { ok: false, message: `No answer (${(e.cause && e.cause.code) || e.name || e.message}). Is the tunnel for this address running?` };
@@ -812,7 +813,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       try { c = await repoContext(); } catch (e) { return { ok: false, code: e.code || 'NO_REPO', error: e.message }; }
       /** Someone else published after this laptop last published or got the data: say who, and do not replace it unasked. */
       const newer = (remote, fallback) => {
-        const res = { ok: false, code: 'NEWER_REMOTE', remote: remote ? { by: remote.by, at: remote.publishedAt } : {}, error: remote && remote.publishedAt ? `${remote.by || 'Someone'} published at ${remote.publishedAt}, after this laptop last published or got the data. Publishing now replaces their copy.` : `${fallback} Publishing now replaces their copy.` };
+        const res = { ok: false, code: 'NEWER_REMOTE', remote: remote ? { by: remote.by, at: remote.publishedAt } : {}, error: remote && remote.publishedAt ? `${remote.by || 'Someone'} published at ${remote.publishedAt}, after this host-server last published or got the data. Publishing now replaces their copy.` : `${fallback} Publishing now replaces their copy.` };
         if (auto) { P.last = { ...P.last, error: `Not published by itself: ${res.error}` }; saveApp(); }
         return res;
       };
@@ -1376,7 +1377,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         return json(200, { ok: true, app: 'test-run', version: VERSION, instance: INSTANCE, book: (seen && app.last.book) || null, tab: (seen && app.last.tab) || null, cycle: (seen && app.last.cycle) || null, user: app.user, me: { name: person.name, role: person.role, local: !!person.local, admin: !!person.admin }, consoleUrl: consoleUrl(person) });
       }
       if (!person) {
-        return json(401, { ok: false, code: 'AUTH', error: app.team.enabled ? 'This Test Run is shared by invite. Open your invite link (or paste it in Bug Reporter settings).' : 'This Test Run is not shared. Only the laptop running it can open it.' });
+        return json(401, { ok: false, code: 'AUTH', error: app.team.enabled ? 'This Test Run is shared by invite. Open your invite link (or paste it in Bug Reporter settings).' : 'This Test Run is not shared. Only the host-server running it can open it.' });
       }
       const ownerOnly = () => json(403, { ok: false, code: 'FORBIDDEN', error: 'Only the person running Test Run can do that.' });
 

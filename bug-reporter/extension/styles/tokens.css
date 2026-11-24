@@ -25,6 +25,7 @@
   --other-bg: #fbf0d9;
   --none: #98a0a8;
   --none-bg: #eceff2;
+  --going: #e8b100;        /* an automated run going in GitHub Actions: the yellow fading circle */
   --loc: #7e22ce;          /* Track localizations (Bug Reporter): purple, apart from pass and fail */
   --loc-bg: #f3e8ff;
   --loc-fill: #7e22ce;
@@ -55,6 +56,7 @@
     --fail-bg: #3d1a19;
     --fail-fill: #da3633;  /* deeper than --fail, so white text on it is readable (4.6:1) */
     --other: #e3b341;
+    --going: #f2c94c;
     --other-bg: #36290e;
     --none: #6e7681;
     --none-bg: #262a30;

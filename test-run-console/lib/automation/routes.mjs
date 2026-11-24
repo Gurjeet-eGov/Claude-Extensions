@@ -9,14 +9,14 @@
 //   POST /api/automation/preview?suite=   a results upload read without keeping it (format and counts)
 //   POST /api/automation/import?suite=&book=&tab=&cycle=&branch=&env=&name=   keep an upload as a run
 //   POST /api/automation/delete {id}      POST /api/automation/reattach {id, book, tab, cycle}
-//   POST /api/automation/suites {id?, name, repo, casePattern, masking}
+//   POST /api/automation/suites {id?, name, repo, casePattern, masking, books}   (books: the workbooks it belongs to)
 //   POST /api/automation/suites/remove {id}   (the host only; the suite's runs go with it)
 //   /api/automation/github/*, /api/automation/job(s), /api/automation/settings: GitHub Actions runs
 //   and Setup › Automation, in ./github-runs.mjs
 // Uploads are a raw body (one JSON, XML or .zip file, its name in ?name=) or multipart/form-data
 // with several files; either way at most 20 MB.
 import ExcelJS from 'exceljs';
-import { AutomationStore, normalizeAutomationSettings } from './store.mjs';
+import { AutomationStore, normalizeAutomationSettings, suiteInBook } from './store.mjs';
 import { canSeeSuite, canAct } from './access.mjs';
 import { cycleRoute } from './summary.mjs';
 import { parseResults, buildRun, filesFromMultipart, previousRun, compareRuns, groupCauses, historyOf, lineOf, byFile, passRate, FORMAT_LABEL, RUN_ID } from './results.mjs';
@@ -51,19 +51,43 @@ export function createAutomation(ctx) {
   const suiteOut = (s, person) => (canAct(person) ? s : { ...s, masking: [] });
   const withRate = (m) => (m ? { ...m, passRate: passRate(m.totals) } : null);
 
-  /** A workbook › test suite › test cycle that exists and that this person may open. */
-  async function checkAttach(q, person) {
+  /**
+   * A workbook › test suite › test cycle that exists and that this person may open; with a suite,
+   * the workbook must be one the suite belongs to.
+   */
+  async function checkAttach(q, person, suite) {
     const book = clip(q.book, 260);
     const tab = clip(q.tab, 160);
     if (!book || !tab || q.cycle == null) return { ok: false, code: 'NO_ATTACH', error: 'Choose the workbook, test suite and test cycle these results belong to.' };
     const cycle = clip(q.cycle, 60);
     if (!lib.list().some((b) => b.name === book)) return { ok: false, code: 'NO_BOOK', error: `“${book.replace(/\.xlsx$/i, '')}” is not in Test Run any more.` };
     if (!mayOpen(person, book)) return { ok: false, code: 'FORBIDDEN', error: 'This workbook is not shared with you. Ask your test lead.' };
+    if (suite && !suiteInBook(suite, book)) return { ok: false, code: 'NOT_IN_BOOK', error: `“${suite.name}” isn't linked to “${book.replace(/\.xlsx$/i, '')}”. The host adds the workbook to the suite in Setup › Automation.` };
     const m = await callApi('api_loadTab', [tab, cycle], book, quiet(person));
     if (!m || !m.ok) return m && m.code ? { ok: false, code: m.code, error: m.error } : { ok: false, code: 'NO_TAB', error: `There is no test suite “${tab}” in that workbook.` };
     if (m.role !== 'manual') return { ok: false, code: 'NO_TAB', error: `“${tab}” is not a test suite in Test Run.` };
     if (!m.cycles.some((c) => c.label === cycle)) return { ok: false, code: 'NO_CYCLE', error: `${m.tab} has no test cycle “${cycle}”.` };
     return { ok: true, attach: { book, tab: m.tab, cycle } };
+  }
+
+  /**
+   * The workbooks a suite is linked to, from a request: workbook file names that exist and this person
+   * may open, at least one. undefined when the request names none (the suite keeps its own).
+   */
+  function checkBooks(given, person) {
+    if (given === undefined) return undefined;
+    const names = new Set(lib.list().map((b) => b.name));
+    const list = [...new Set((Array.isArray(given) ? given : []).map((b) => clip(b, 260)).filter(Boolean))];
+    const bad = list.find((b) => !names.has(b) || !mayOpen(person, b));
+    if (bad) throw Object.assign(new Error(`“${bad.replace(/\.xlsx$/i, '')}” is not a workbook you can open in Test Run.`), { code: 'BAD_INPUT' });
+    if (!list.length) throw Object.assign(new Error('Choose the workbooks this suite belongs to: its results show only there.'), { code: 'BAD_INPUT' });
+    return list;
+  }
+
+  /** The workbooks with at least one suite this person may see (the Automation tab shows only there). */
+  function booksWithSuites(person) {
+    const suites = store.suites().filter((s) => canSeeSuite(person, s.id));
+    return lib.list().map((b) => b.name).filter((b) => mayOpen(person, b) && suites.some((s) => suiteInBook(s, b)));
   }
 
   /** The files of an upload: a raw body (one file) or multipart/form-data (several). */
@@ -154,7 +178,21 @@ export function createAutomation(ctx) {
   }
 
   // GitHub Actions: link a suite to its workflow, start and follow runs, import them
-  const github = createGithubRuns({ ...ctx, store, checkAttach, keep, jsonBody });
+  const github = createGithubRuns({ ...ctx, store, checkAttach, checkBooks, keep, jsonBody });
+
+  // Suites linked before suites had workbooks: they belong to the workbooks their runs (kept, or
+  // started from Test Run) are attached to. One with no run anywhere stays in every workbook until changed.
+  (function workbooksForOldSuites() {
+    const list = store.suites();
+    if (!list.some((s) => s.books == null)) return;
+    const used = new Map();
+    const note = (id, b) => { if (b) { if (!used.has(id)) used.set(id, new Set()); used.get(id).add(b); } };
+    for (const m of store.index()) note(m.suiteId, m.attach && m.attach.book);
+    for (const j of github.jobs()) note(j.suiteId, j.attach && j.attach.book);
+    let changed = false;
+    for (const s of list) if (s.books == null && used.has(s.id)) { s.books = [...used.get(s.id)]; changed = true; }
+    if (changed) store.writeSuites(list);
+  })();
 
   async function post(path, url, req, person) {
     if (path === '/api/automation/suites/remove') {
@@ -168,7 +206,7 @@ export function createAutomation(ctx) {
     if (path === '/api/automation/suites') {
       const body = await jsonBody(req);
       if (body.id && !canSeeSuite(person, String(body.id))) return forbid('That suite is not shared with you.');
-      const suite = store.saveSuite({ id: body.id ? String(body.id) : '', name: body.name, repo: body.repo, casePattern: body.casePattern, masking: body.masking }, { by: person.name });
+      const suite = store.saveSuite({ id: body.id ? String(body.id) : '', name: body.name, repo: body.repo, casePattern: body.casePattern, masking: body.masking, books: checkBooks(body.books, person) }, { by: person.name });
       return okJson({ suite, created: !body.id });
     }
     if (path === '/api/automation/preview' || path === '/api/automation/import') {
@@ -180,7 +218,7 @@ export function createAutomation(ctx) {
       if (path === '/api/automation/preview') return okJson(summary);
       const q = Object.fromEntries(['book', 'tab', 'branch', 'env'].map((k) => [k, url.searchParams.get(k) || '']));
       q.cycle = url.searchParams.has('cycle') ? url.searchParams.get('cycle') : null;
-      const at = await checkAttach(q, person);
+      const at = await checkAttach(q, person, suite);
       if (!at.ok) return fail(at.code, at.error);
       const fileName = files.length === 1 ? files[0].name : `${files.length} files`;
       const run = buildRun(parsed, { suite, attach: at.attach, source: { kind: 'upload', fileName }, branch: q.branch, env: q.env, by: person.name });
@@ -196,7 +234,7 @@ export function createAutomation(ctx) {
       return okJson({ removed: m, kept: store.group(m).map(withRate) });
     }
     if (path === '/api/automation/reattach') {
-      const at = await checkAttach(body, person);
+      const at = await checkAttach(body, person, store.suite(m.suiteId));
       if (!at.ok) return fail(at.code, at.error);
       const { meta, removed } = store.reattach(m.id, at.attach, keep());
       return okJson({ run: withRate(meta), removed, kept: store.group(meta).map(withRate) });
@@ -234,6 +272,7 @@ export function createAutomation(ctx) {
     handle,
     store,
     github,
+    booksWithSuites,
     stop: () => github.stop(),
     /** A workbook was deleted: its runs go with it. */
     removeBook(name) {

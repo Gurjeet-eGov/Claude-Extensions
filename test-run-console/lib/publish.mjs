@@ -83,7 +83,7 @@ export async function readRef({ cmd, owner, repo, branch }) {
 }
 
 /** Someone else published to the branch while this was being built: refuse, as with a newer publish. */
-const newerRemote = (branch) => Object.assign(new Error(`Someone else published to ${branch} while this laptop was publishing.`), { code: 'NEWER_REMOTE' });
+const newerRemote = (branch) => Object.assign(new Error(`Someone else published to ${branch} while this host-server was publishing.`), { code: 'NEWER_REMOTE' });
 
 /**
  * Commit files ([{ path, content }]) in one commit on branch.
