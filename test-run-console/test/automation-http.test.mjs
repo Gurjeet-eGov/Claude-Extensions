@@ -199,7 +199,7 @@ test('the host\'s keep setting (app.json automation.keep) decides how many runs 
     const old = await s.importFile(id, 'old.xml', earlierPlaywright());
     assert.equal(old.code, 'TOO_OLD', 'older than the one kept: refused, not kept and removed at once');
     const app = JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8'));
-    assert.deepEqual(app.automation, { keep: 1, checkEvery: 5 }, 'kept when app.json is saved');
+    assert.deepEqual(app.automation, { keep: 1, checkEvery: 5, excludeEnvironments: ['github-pages'] }, 'kept when app.json is saved');
   } finally { s.close(); }
 });
 

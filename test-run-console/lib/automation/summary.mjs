@@ -85,7 +85,7 @@ export function runSummary(run, prev, { causes = 2, names = 3 } = {}) {
     env: run.env,
     options: run.options || {},
     by: run.by,
-    source: { kind: src.kind, format: src.format, runUrl: src.runUrl || '' },
+    source: { kind: src.kind, format: src.format, runUrl: src.runUrl || '', expiresAt: src.expiresAt || '' },
     attach: run.attach,
     totals: run.totals,
     passRate: passRate(run.totals),
@@ -104,7 +104,7 @@ export function runBrief(m, prevMeta) {
   const src = m.source || {};
   return {
     id: m.id, suiteId: m.suiteId, suiteName: m.suiteName, startedAt: m.startedAt, branch: m.branch, sha: m.sha, env: m.env, options: m.options || {},
-    source: { kind: src.kind, runUrl: src.runUrl || '' }, attach: m.attach, totals: m.totals, passRate: passRate(m.totals),
+    source: { kind: src.kind, runUrl: src.runUrl || '', expiresAt: src.expiresAt || '' }, attach: m.attach, totals: m.totals, passRate: passRate(m.totals),
     prevPassRate: prevMeta ? passRate(prevMeta.totals) : null,
   };
 }

@@ -234,7 +234,7 @@ The **Automation** screen keeps the results of automated suites, whatever the fr
 
 Test Run talks to GitHub with the host's own `gh` login (`gh auth login`), through one client (`lib/github.mjs`) that only uses GitHub's REST API, so a token can replace `gh` later.
 
-**Making a suite Test Run-ready and linking it:** [docs/automation.md](docs/automation.md), with copy-paste snippets for Playwright, Cypress, Jest, pytest, Maven/JUnit, TestNG, Robot Framework, Karate, Newman and Go.
+**Making a suite Test Run-ready and linking it:** start with [docs/connect-a-suite.md](docs/connect-a-suite.md) (one page: an example set-up, a workflow to copy, linking it); [docs/automation.md](docs/automation.md) has the detail, with copy-paste snippets for Playwright, Cypress, Jest, pytest, Maven/JUnit, TestNG, Robot Framework, Karate, Newman and Go.
 
 ## Test Run Extension
 

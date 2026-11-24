@@ -1,7 +1,7 @@
 // The Automation screen's server side: /api/automation/*. server.mjs hands each request here
 // with the person asking; everything else (workbooks, who may open which) comes from it.
 //
-//   GET  /api/automation                 suites and kept runs this person may see, the keep setting
+//   GET  /api/automation                 suites and kept runs this person may see, the settings (keep, checkEvery, excludeEnvironments)
 //   GET  /api/automation/run?id=          one run, with the previous run, what changed, causes, history
 //   GET  /api/automation/targets?book=    a workbook's test suites and their cycles (the attach pickers)
 //   GET  /api/automation/excel?id=        the run as an .xlsx, made now and never kept
@@ -30,7 +30,8 @@ const localStamp = (iso) => { const d = new Date(iso); return Number.isNaN(d.get
 /**
  * ctx: { sheetsDir, lib (the Library), callApi(fn, args, book, person), mayOpen(person, book),
  *        isOwner(person), keep() (runs kept per suite and cycle), readBody(req, max),
- *        github (lib/github.mjs client), setKeep(n), log, pollMs }
+ *        github (lib/github.mjs client), setKeep(n), checkEvery(), setCheckEvery(n), excludeEnvironments(),
+ *        setExcludeEnvironments(list), log, pollMs }
  */
 export function createAutomation(ctx) {
   const { sheetsDir, lib, callApi, mayOpen, isOwner, readBody } = ctx;
@@ -91,6 +92,7 @@ export function createAutomation(ctx) {
       runs,
       keep: keep(),
       checkEvery: normalizeAutomationSettings({ checkEvery: ctx.checkEvery ? ctx.checkEvery() : undefined }).checkEvery,
+      excludeEnvironments: normalizeAutomationSettings({ excludeEnvironments: ctx.excludeEnvironments ? ctx.excludeEnvironments() : undefined }).excludeEnvironments,
       canAct: canAct(person),
       isOwner: !!isOwner(person),
       formats: FORMAT_LABEL,

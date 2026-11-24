@@ -5,10 +5,15 @@
 // (dispatches), its runs, jobs and steps, artifacts and their zips, cancelling, gists and the
 // GraphQL issue lookup. Nothing goes to GitHub. Every request is kept in calls.
 //
+// A workflow file can differ per branch (byBranch: { branch: yaml }, null where the file isn't),
+// as on GitHub; starting a run checks the inputs against that branch's file and refuses any it
+// doesn't have ("Unexpected inputs provided"), as GitHub does.
+//
 // Runs move on only when told (setRun), unless the fake was made with autoAdvance: then a run
 // started here is queued for a moment, goes through its steps, and finishes with a results
 // artifact (made by results(run)), as a real one would.
 import JSZip from 'jszip';
+import YAML from 'yaml';
 import { createGithub, GithubError } from '../lib/github.mjs';
 
 /** A zip of { name: text or bytes }, as GitHub serves an artifact. */
@@ -21,6 +26,18 @@ export async function zipOf(files) {
 const fail = (status, message, body) => { throw new GithubError(message, { status, body: body || { message } }); };
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 const sha = (n) => (String(n).padStart(7, '0') + 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678').slice(0, 40);
+const DAY = 86400000;
+
+/** The names of a workflow file's workflow_dispatch inputs (null when it can't be started by hand). */
+function dispatchInputs(yaml) {
+  let doc;
+  try { doc = YAML.parse(String(yaml || '')); } catch { return null; }
+  const on = doc && (Object.prototype.hasOwnProperty.call(doc, 'on') ? doc.on : doc.true);
+  if (on === 'workflow_dispatch' || (Array.isArray(on) && on.includes('workflow_dispatch'))) return [];
+  if (!on || typeof on !== 'object' || !Object.prototype.hasOwnProperty.call(on, 'workflow_dispatch')) return null;
+  const inputs = on.workflow_dispatch && on.workflow_dispatch.inputs;
+  return inputs && typeof inputs === 'object' ? Object.keys(inputs) : [];
+}
 
 /**
  * o: { login ('test-user'), now () => ms, autoAdvance: { queuedMs, stepMs, steps: [names], results(run) -> zip bytes,
@@ -36,7 +53,10 @@ export function makeFakeGithub(o = {}) {
   const failures = []; // { match: RegExp, method, status, message, times }
   let nextId = 9000;
 
-  /** Add a repository. r: { private, defaultBranch, branches, environments, workflows: [{ id, name, path, yaml, state }] } */
+  /**
+   * Add a repository. r: { private, defaultBranch, branches, environments, workflows: [{ id, name, path, yaml, state,
+   * byBranch: { branch: yaml, or null where the file isn't on that branch } }] }
+   */
   function addRepo(full, r = {}) {
     const [owner, name] = full.split('/');
     const repo = {
@@ -45,7 +65,7 @@ export function makeFakeGithub(o = {}) {
       defaultBranch: r.defaultBranch || 'main',
       branches: r.branches || [r.defaultBranch || 'main'],
       environments: r.environments || [],
-      workflows: (r.workflows || []).map((w) => ({ id: w.id || ++nextId, name: w.name, path: w.path, yaml: w.yaml || '', state: w.state || 'active' })),
+      workflows: (r.workflows || []).map((w) => ({ id: w.id || ++nextId, name: w.name, path: w.path, yaml: w.yaml || '', state: w.state || 'active', byBranch: w.byBranch || {} })),
       runs: [],
       artifacts: new Map(), // id -> { id, name, runId, bytes, expired }
     };
@@ -69,10 +89,11 @@ export function makeFakeGithub(o = {}) {
     return run;
   }
 
+  /** a: { id, expired, size, expiresAt (ms; null for none in GitHub's answer; 90 days after the run by default) } */
   function addArtifact(full, runId, name, bytes, a = {}) {
     const repo = repos.get(full);
     const id = a.id || ++nextId;
-    repo.artifacts.set(id, { id, name, runId, bytes: bytes || Buffer.alloc(0), expired: !!a.expired, size: a.size });
+    repo.artifacts.set(id, { id, name, runId, bytes: bytes || Buffer.alloc(0), expired: !!a.expired, size: a.size, expiresAt: a.expiresAt });
     return id;
   }
 
@@ -163,16 +184,23 @@ export function makeFakeGithub(o = {}) {
       if (!w) fail(404, 'Not Found');
       return { id: w.id, name: w.name, path: w.path, state: w.state };
     }
+    // a workflow file as it is on a branch (the default branch's when no ref is given)
+    const fileOn = (w, ref) => (ref && Object.prototype.hasOwnProperty.call(w.byBranch, ref) ? w.byBranch[ref] : w.yaml);
     if ((r = /^\/contents\/(.+)$/.exec(rest)) && m === 'GET') {
       const w = repo.workflows.find((x) => x.path === r[1]);
-      if (!w) fail(404, 'Not Found');
-      return { type: 'file', path: w.path, encoding: 'base64', content: Buffer.from(w.yaml).toString('base64').replace(/(.{60})/g, '$1\n') };
+      if (!w || (q.ref && !repo.branches.includes(q.ref))) fail(404, q.ref && w ? `No commit found for the ref ${q.ref}` : 'Not Found');
+      const yaml = fileOn(w, q.ref);
+      if (yaml == null) fail(404, 'Not Found');
+      return { type: 'file', path: w.path, encoding: 'base64', content: Buffer.from(yaml).toString('base64').replace(/(.{60})/g, '$1\n') };
     }
     if ((r = /^\/actions\/workflows\/([^/]+)\/dispatches$/.exec(rest)) && m === 'POST') {
       const w = wfOf(r[1]);
       if (!w) fail(404, 'Not Found');
       if (!body || !repo.branches.includes(body.ref)) fail(422, `No ref found for: ${body && body.ref}`);
-      if (!/workflow_dispatch/.test(w.yaml)) fail(422, 'Workflow does not have \'workflow_dispatch\' trigger');
+      const names = dispatchInputs(fileOn(w, body.ref));
+      if (!names) fail(422, 'Workflow does not have \'workflow_dispatch\' trigger');
+      const extra = Object.keys(body.inputs || {}).filter((k) => !names.includes(k));
+      if (extra.length) fail(422, `Unexpected inputs provided: ${JSON.stringify(extra)}`);
       const run = addRun(repo.full, { workflowId: w.id, event: 'workflow_dispatch', branch: body.ref, status: 'queued', conclusion: null, inputs: body.inputs || {} });
       run.auto = true;
       if (o.returnsRunDetails && body.return_run_details) return { workflow_run_id: run.id, run_url: `https://api.github.com/repos/${repo.full}/actions/runs/${run.id}`, html_url: `https://github.com/${repo.full}/actions/runs/${run.id}` };
@@ -204,7 +232,8 @@ export function makeFakeGithub(o = {}) {
     if ((r = /^\/actions\/runs\/(\d+)\/artifacts$/.exec(rest)) && m === 'GET') {
       const x = await runOf(r[1]);
       const list = [...repo.artifacts.values()].filter((a) => a.runId === x.id);
-      return { total_count: list.length, artifacts: list.map((a) => ({ id: a.id, name: a.name, size_in_bytes: a.size != null ? a.size : a.bytes.length, expired: a.expired, archive_download_url: `https://api.github.com/repos/${repo.full}/actions/artifacts/${a.id}/zip`, created_at: iso(x.updatedAt) })) };
+      return { total_count: list.length, artifacts: list.map((a) => ({ id: a.id, name: a.name, size_in_bytes: a.size != null ? a.size : a.bytes.length, expired: a.expired, archive_download_url: `https://api.github.com/repos/${repo.full}/actions/artifacts/${a.id}/zip`, created_at: iso(x.updatedAt),
+        expires_at: a.expiresAt === null ? null : iso(a.expiresAt || x.updatedAt + 90 * DAY) })) };
     }
     if ((r = /^\/actions\/artifacts\/(\d+)\/zip$/.exec(rest)) && m === 'GET') {
       const a = repo.artifacts.get(Number(r[1]));
@@ -279,6 +308,43 @@ jobs:
           path: results/junit.xml
 `;
 
+/**
+ * The simpler form a branch can have (CMS-Automation's "Integration tests" today): the environment is
+ * a GitHub environment (its secrets CONFIG_ENV and SECRETS_ENV), a scope, an optional grep; the results
+ * go up as test-results, kept 90 days.
+ */
+export const SIMPLE_WORKFLOW = `name: Integration tests
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment to test, a GitHub environment holding CONFIG_ENV and SECRETS_ENV
+        type: environment
+        required: true
+      scope:
+        description: Which tests
+        type: choice
+        options: [full, profile-only, smoke, api]
+        default: full
+      grep:
+        description: Only tests whose title or tags match
+        type: string
+        required: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    environment: \${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx playwright test --reporter=junit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: results.xml
+          retention-days: 90
+`;
+
 /** A JUnit file for a demo run: a few passes and one failure. */
 export function sampleJunit(at = new Date().toISOString()) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -305,9 +371,11 @@ export function demoGithub() {
     autoAdvance: { queuedMs: 4000, stepMs: 3500, results: () => zipOf({ 'results/junit.xml': sampleJunit() }) },
   });
   fake.addRepo('demo-org/cms-automation', {
-    defaultBranch: 'master', branches: ['master', 'product-suite'], environments: ['naipepea', 'net_two', 'bomet'],
+    // simple-run-form: the newer, simpler run form (an environment field listing the GitHub environments,
+    // less github-pages, which GitHub made by itself when Pages was switched on)
+    defaultBranch: 'master', branches: ['master', 'product-suite', 'simple-run-form'], environments: ['naipepea', 'net_two', 'bomet', 'github-pages'],
     workflows: [
-      { id: 101, name: 'Integration tests', path: '.github/workflows/integration.yml', yaml: SAMPLE_WORKFLOW },
+      { id: 101, name: 'Integration tests', path: '.github/workflows/integration.yml', yaml: SAMPLE_WORKFLOW, byBranch: { 'simple-run-form': SIMPLE_WORKFLOW } },
       { id: 102, name: 'Lint', path: '.github/workflows/lint.yml', yaml: 'name: Lint\non: [push]\njobs: {}\n' },
     ],
   });

@@ -20,17 +20,42 @@ export const SUITE_ID = /^[a-z0-9][a-z0-9-]{0,59}$/;
 const err = (code, message) => Object.assign(new Error(message), { code });
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
 
-/** app.json's automation block: { keep } (host only). */
 /** How often (minutes) Test Run asks GitHub about a run it follows: 5 normally, 1 while debugging. */
 export const CHECK_EVERY = [1, 5];
 export const DEFAULT_CHECK_EVERY = 5;
+/**
+ * GitHub environments the run form leaves out (matched without regard to case). GitHub makes
+ * github-pages by itself when Pages is switched on; it is not a place tests run.
+ */
+export const DEFAULT_EXCLUDE_ENVIRONMENTS = ['github-pages'];
+export const MAX_EXCLUDE_ENVIRONMENTS = 20;
+export const MAX_ENVIRONMENT_NAME = 100;
 
+/** A list of environment names, as kept: trimmed, none empty or too long, each once (case aside), at most 20. */
+function cleanEnvironmentList(list) {
+  const out = [];
+  const seen = new Set();
+  for (const x of list) {
+    const name = typeof x === 'string' ? x.trim() : '';
+    if (!name || name.length > MAX_ENVIRONMENT_NAME || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push(name);
+  }
+  return out.slice(0, MAX_EXCLUDE_ENVIRONMENTS);
+}
+
+/**
+ * app.json's automation block (the host's): { keep, checkEvery, excludeEnvironments }. A missing
+ * excludeEnvironments is the default list; an empty one stays empty (the host cleared it).
+ */
 export function normalizeAutomationSettings(a = {}) {
   const keep = Math.round(Number(a && a.keep));
   const every = Number(a && a.checkEvery);
+  const ex = a && a.excludeEnvironments;
   return {
     keep: keep >= 1 && keep <= 20 ? keep : DEFAULT_KEEP,
     checkEvery: CHECK_EVERY.includes(every) ? every : DEFAULT_CHECK_EVERY,
+    excludeEnvironments: Array.isArray(ex) ? cleanEnvironmentList(ex) : DEFAULT_EXCLUDE_ENVIRONMENTS.slice(),
   };
 }
 

@@ -2,7 +2,9 @@
 // the real one: link a suite (check the repository, its workflows and inputs, the artifacts and
 // which hold results), start a run and follow it (queued → in progress → completed → imported),
 // a run that ends without its results artifact, cancelling, a restart that picks a run up again,
-// Import from GitHub, Setup › Automation, and who may do what.
+// Import from GitHub, Setup › Automation, and who may do what. Also: the run form read from the
+// branch being run, the environments the host excludes, the artifact's expiry date, the environment
+// field picked by itself, and the example workflow in docs/connect-a-suite.md.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
@@ -11,7 +13,9 @@ import { tmpdir } from 'node:os';
 import { createServer } from '../server.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
 import { hashKey, newKey } from '../lib/team.mjs';
-import { makeFakeGithub, SAMPLE_WORKFLOW, zipOf, sampleJunit } from '../dev/fake-github.mjs';
+import { makeFakeGithub, SAMPLE_WORKFLOW, SIMPLE_WORKFLOW, zipOf, sampleJunit } from '../dev/fake-github.mjs';
+import { parseWorkflowInputs } from '../lib/automation/github-runs.mjs';
+import YAML from 'yaml';
 
 const BOOK = 'CMS Sign Off (sample).xlsx';
 const TAB = 'CMS 2.20.1';
@@ -254,7 +258,7 @@ test('who may: viewers, testers without Start runs, suites not shared, workbooks
     assert.equal((await s.req('POST', '/api/automation/settings', { checkEvery: 3 })).code, 'BAD_INPUT');
     assert.equal((await s.req('POST', '/api/automation/settings', { checkEvery: 1 })).checkEvery, 1);
     assert.equal((await s.req('GET', '/api/automation')).checkEvery, 1);
-    assert.deepEqual(JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8')).automation, { keep: 3, checkEvery: 1 }, 'both kept in app.json');
+    assert.deepEqual(JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8')).automation, { keep: 3, checkEvery: 1, excludeEnvironments: ['github-pages'] }, 'both kept in app.json');
     assert.equal((await s.req('POST', '/api/automation/settings', {})).code, 'BAD_INPUT');
   } finally { s.close(); }
 });
@@ -282,4 +286,209 @@ test('GitHub access problems are reported in plain words', async () => {
     assert.match(r.error, /Actions write/);
     assert.equal((await s.req('GET', '/api/automation/jobs')).jobs.length, 0, 'no job for a run that did not start');
   } finally { s.close(); }
+});
+
+/** The suite's repository with a second form on branch simple-run-form (and none on no-workflow). */
+function twoForms(o = {}) {
+  const fake = fakeRepo(o);
+  const r = fake.repos.get(REPO);
+  r.branches.push('simple-run-form', 'no-workflow');
+  r.environments = ['net_two', 'bomet', 'github-pages'];
+  r.workflows[0].byBranch = { 'simple-run-form': SIMPLE_WORKFLOW, 'no-workflow': null };
+  return fake;
+}
+const form = (s, suite, branch, key) => s.req('GET', `/api/automation/github/form?suite=${suite.id}&branch=${encodeURIComponent(branch)}`, undefined, key);
+const names = (list) => list.map((x) => x.name);
+
+test('the run form comes from the branch being run: its own fields, and only those are sent', async () => {
+  const fake = twoForms();
+  const s = await start({ fake });
+  try {
+    const suite = await linked(s);
+    assert.deepEqual(names(suite.inputs), ['environment', 'scope', 'grep', 'headed'], 'the saved copy: master\'s form');
+    let f = await form(s, suite, 'master');
+    assert.equal(f.ok, true, f.error);
+    assert.deepEqual([names(f.inputs), f.from, f.dispatch, f.note, f.refreshed], [['environment', 'scope', 'grep', 'headed'], 'branch', true, '', false]);
+    assert.deepEqual([f.environments, f.noEnvironments], [[], false], 'master\'s environment is a choice: no environments to list');
+    f = await form(s, suite, 'simple-run-form');
+    assert.deepEqual(names(f.inputs), ['environment', 'scope', 'grep'], 'the branch\'s own form');
+    assert.deepEqual([f.inputs[0].type, f.inputs[0].required, f.inputs[1].default], ['environment', true, 'full']);
+    assert.deepEqual(f.environments, ['net_two', 'bomet'], 'github-pages is left out');
+    assert.equal(f.noEnvironments, false);
+    assert.equal(fake.callsTo(/contents\//).at(-1).query.ref, 'simple-run-form', 'read on that branch');
+
+    // GitHub refuses fields the branch's workflow doesn't have…
+    await assert.rejects(fake.github.dispatchWorkflow('qa-team', 'cms-automation', WF, 'simple-run-form', { environment: 'bomet', headed: 'true' }), /Unexpected inputs provided: \["headed"\]/);
+    // …so only the branch's fields are sent, whatever the page sends
+    const r = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'simple-run-form', inputs: { environment: 'bomet', scope: 'smoke', grep: '', headed: true }, ...ATTACH });
+    assert.equal(r.ok, true, r.error);
+    assert.deepEqual(fake.callsTo(/dispatches$/, 'POST').at(-1).body, { ref: 'simple-run-form', inputs: { environment: 'bomet', scope: 'smoke' } });
+    assert.deepEqual([r.job.env, r.job.inputs, r.job.flags], ['bomet', { environment: 'bomet', scope: 'smoke' }, []]);
+    // a choice the branch's form doesn't offer is refused before GitHub is asked
+    assert.equal((await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'simple-run-form', inputs: { environment: 'bomet', scope: 'citizen' }, ...ATTACH })).code, 'BAD_INPUT');
+    // and master still runs with master's form
+    const m = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'master', inputs: { scope: 'api', headed: true }, ...ATTACH });
+    assert.equal(m.ok, true, m.error);
+    assert.deepEqual(fake.callsTo(/dispatches$/, 'POST').at(-1).body, { ref: 'master', inputs: { environment: 'net_two', scope: 'api', headed: 'true' } });
+
+    // a branch without the workflow file: the saved form, and a note saying it can't run there
+    f = await form(s, suite, 'no-workflow');
+    assert.deepEqual([f.from, f.dispatch, names(f.inputs)], ['saved', false, ['environment', 'scope', 'grep', 'headed']]);
+    assert.match(f.note, /isn't on no-workflow/);
+    // GitHub can't be read: the form saved when the suite was linked
+    fake.failNext('GET', /\/contents\//, 502, 'Server Error');
+    f = await form(s, suite, 'simple-run-form');
+    assert.deepEqual([f.ok, f.from, names(f.inputs)], [true, 'saved', ['environment', 'scope', 'grep', 'headed']]);
+    assert.match(f.note, /saved when the suite was linked/);
+    fake.failNext('GET', /\/contents\//, 502, 'Server Error');
+    const fb = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'master', inputs: { scope: 'full' }, ...ATTACH });
+    assert.equal(fb.ok, true, fb.error);
+    assert.deepEqual(fake.callsTo(/dispatches$/, 'POST').at(-1).body.inputs, { environment: 'net_two', scope: 'full', headed: 'false' }, 'started with the saved form');
+
+    // who may: as for the other suite routes
+    assert.equal((await form(s, suite, 'master', KEYS.viewer)).status, 403);
+    assert.equal((await form(s, suite, 'master', KEYS.norun)).status, 403);
+    assert.equal((await form(s, suite, 'master', KEYS.other)).code, 'NO_SUITE');
+    assert.equal((await form(s, suite, '')).code, 'BAD_INPUT');
+    assert.equal((await form(s, suite, 'master', KEYS.tester)).ok, true);
+  } finally { s.close(); }
+});
+
+test('the default branch\'s form changed: the saved copy is refreshed, its environment field picked', async () => {
+  const fake = twoForms();
+  const s = await start({ fake });
+  try {
+    const suite = await linked(s);
+    assert.deepEqual((await s.req('GET', `/api/automation/github/branches?suite=${suite.id}`)).environments, [], 'no environment field in the saved form yet');
+    fake.repos.get(REPO).workflows[0].yaml = SIMPLE_WORKFLOW; // master now has the simpler form
+    const f = await form(s, suite, 'master');
+    assert.deepEqual([f.refreshed, f.envInput, names(f.inputs)], [true, 'environment', ['environment', 'scope', 'grep']]);
+    const kept = (await s.req('GET', '/api/automation')).suites[0];
+    assert.deepEqual([names(kept.inputs), kept.envInput], [['environment', 'scope', 'grep'], 'environment']);
+    const onDisk = JSON.parse(readFileSync(join(s.sheets, '.testrun', 'automation', 'suites.json'), 'utf8')).suites[0];
+    assert.deepEqual(names(onDisk.inputs), ['environment', 'scope', 'grep'], 'kept in suites.json');
+    assert.equal((await form(s, suite, 'master')).refreshed, false, 'once');
+    // the run form's branches() now lists the environments too, less github-pages
+    assert.deepEqual((await s.req('GET', `/api/automation/github/branches?suite=${suite.id}`)).environments, ['net_two', 'bomet']);
+    // another branch's form never replaces the saved copy
+    fake.repos.get(REPO).workflows[0].byBranch.develop = SAMPLE_WORKFLOW;
+    assert.equal((await form(s, suite, 'develop')).refreshed, false);
+    assert.deepEqual(names((await s.req('GET', '/api/automation')).suites[0].inputs), ['environment', 'scope', 'grep']);
+  } finally { s.close(); }
+});
+
+test('no environments to pick: the run form says so (the hint links the guide)', async () => {
+  const fake = twoForms();
+  fake.repos.get(REPO).environments = ['github-pages'];
+  const s = await start({ fake });
+  try {
+    const suite = await linked(s);
+    let f = await form(s, suite, 'simple-run-form');
+    assert.deepEqual([f.environments, f.noEnvironments], [[], true], 'only github-pages, which is left out');
+    assert.equal((await form(s, suite, 'master')).noEnvironments, false, 'master has no environment field');
+    fake.failNext('GET', /\/environments$/, 403, 'Resource not accessible');
+    assert.equal((await form(s, suite, 'simple-run-form')).noEnvironments, false, 'not known: no hint');
+    assert.deepEqual((await s.req('POST', '/api/automation/settings', { excludeEnvironments: [] })).excludeEnvironments, []);
+    f = await form(s, suite, 'simple-run-form');
+    assert.deepEqual([f.environments, f.noEnvironments], [['github-pages'], false], 'nothing excluded: github-pages is listed');
+  } finally { s.close(); }
+});
+
+test('Exclude environments (Setup › Automation): the host\'s, checked, kept in app.json, matched without regard to case', async () => {
+  const fake = twoForms();
+  fake.repos.get(REPO).environments = ['net_two', 'GitHub-Pages', 'Staging', 'bomet'];
+  const s = await start({ fake });
+  try {
+    const suite = await linked(s);
+    const app = () => JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8')).automation;
+    assert.deepEqual((await s.req('GET', '/api/automation')).excludeEnvironments, ['github-pages'], 'github-pages to start with');
+    assert.deepEqual((await form(s, suite, 'simple-run-form')).environments, ['net_two', 'Staging', 'bomet'], 'GitHub-Pages is left out too');
+    assert.equal((await s.req('POST', '/api/automation/settings', { excludeEnvironments: ['x'] }, KEYS.tester)).status, 403);
+    for (const bad of ['github-pages', [1], [''], ['  '], ['a'.repeat(101)], Array.from({ length: 21 }, (_, i) => `e${i}`), { a: 1 }]) {
+      assert.equal((await s.req('POST', '/api/automation/settings', { excludeEnvironments: bad })).code, 'BAD_INPUT', JSON.stringify(bad).slice(0, 40));
+    }
+    assert.deepEqual(app().excludeEnvironments, ['github-pages'], 'unchanged by the refused ones');
+    const r = await s.req('POST', '/api/automation/settings', { excludeEnvironments: ['github-pages', ' staging '] });
+    assert.deepEqual(r.excludeEnvironments, ['github-pages', 'staging'], 'trimmed');
+    assert.deepEqual((await s.req('GET', '/api/automation')).excludeEnvironments, ['github-pages', 'staging']);
+    assert.deepEqual(app(), { keep: 2, checkEvery: 5, excludeEnvironments: ['github-pages', 'staging'] }, 'kept in app.json');
+    assert.deepEqual((await form(s, suite, 'simple-run-form')).environments, ['net_two', 'bomet'], 'Staging is left out');
+    assert.deepEqual((await s.req('POST', '/api/automation/settings', { excludeEnvironments: Array.from({ length: 20 }, (_, i) => `e${i}`) })).excludeEnvironments.length, 20, '20 is the most');
+    // cleared: every environment is listed, and the empty list is kept (not the default again)
+    assert.deepEqual((await s.req('POST', '/api/automation/settings', { excludeEnvironments: [] })).excludeEnvironments, []);
+    assert.deepEqual(app().excludeEnvironments, []);
+    assert.deepEqual((await form(s, suite, 'simple-run-form')).environments, ['net_two', 'GitHub-Pages', 'Staging', 'bomet']);
+    s.close();
+    const s2 = await start({ fake, sheets: s.sheets });
+    try {
+      assert.deepEqual((await s2.req('GET', '/api/automation')).excludeEnvironments, [], 'still cleared after a restart');
+    } finally { s2.close(); }
+  } finally { s.close(); }
+});
+
+test('the environment field is picked by itself when linking', async () => {
+  const fake = twoForms();
+  fake.repos.get(REPO).workflows[0].yaml = SIMPLE_WORKFLOW;
+  const s = await start({ fake });
+  try {
+    const r = await s.req('POST', '/api/automation/github/link', { name: 'CMS 3.0', repo: REPO, workflowId: WF, artifact: 'test-results', envInput: '' });
+    assert.equal(r.ok, true, r.error);
+    assert.equal(r.suite.envInput, 'environment', 'its input of type environment');
+    // a form without one: none, unless chosen
+    fake.repos.get(REPO).workflows[0].yaml = SAMPLE_WORKFLOW;
+    const r2 = await s.req('POST', '/api/automation/github/link', { id: r.suite.id, name: 'CMS 3.0', repo: REPO, workflowId: WF, artifact: 'test-results', envInput: '' });
+    assert.equal(r2.suite.envInput, '', 'environment there is a choice: not guessed on the server');
+    const r3 = await s.req('POST', '/api/automation/github/link', { id: r.suite.id, name: 'CMS 3.0', repo: REPO, workflowId: WF, artifact: 'test-results', envInput: 'scope' });
+    assert.equal(r3.suite.envInput, 'scope', 'what was chosen stays');
+  } finally { s.close(); }
+});
+
+test('the results artifact\'s expiry date is kept with the run, for the Full report\'s ?', async () => {
+  const s = await start();
+  try {
+    const suite = await linked(s);
+    s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number: 301, createdAt: Date.parse('2026-11-23T08:00:00Z'), artifacts: [{ name: 'test-results', bytes: await results('2026-11-23T08:00:00Z'), expiresAt: Date.parse('2026-12-08T09:30:00Z') }] });
+    const im = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });
+    assert.equal(im.ok, true, im.error);
+    assert.equal(im.run.source.expiresAt, '2026-12-08T09:30:00.000Z');
+    assert.equal((await s.req('GET', `/api/automation/run?id=${im.run.id}`)).run.source.expiresAt, '2026-12-08T09:30:00.000Z', 'the run view has it');
+    const cyc = await s.req('GET', `/api/automation/cycle?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
+    assert.equal(cyc.latest.source.expiresAt, '2026-12-08T09:30:00.000Z', 'Summary › Automated has it');
+    assert.equal(cyc.runs[0].source.expiresAt, '2026-12-08T09:30:00.000Z');
+    // GitHub gives no date: none kept (the ? then says "at most 90 days")
+    s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number: 302, artifacts: [{ name: 'test-results', bytes: await results('2026-11-24T08:00:00Z'), expiresAt: null }] });
+    const im2 = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });
+    assert.equal(im2.ok, true, im2.error);
+    assert.equal(im2.run.source.expiresAt, '');
+    // a run started from Test Run keeps it too
+    const r = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'master', inputs: {}, ...ATTACH });
+    const ours = s.fake.runs(REPO).at(-1);
+    s.fake.addArtifact(REPO, ours.id, 'test-results', await results('2026-11-24T10:00:00Z'), { expiresAt: Date.parse('2027-02-22T10:00:00Z') });
+    s.fake.setRun(REPO, ours.id, { status: 'completed', conclusion: 'success' });
+    await s.gh.tick();
+    const j = (await s.req('GET', `/api/automation/job?id=${r.job.id}`)).job;
+    assert.equal(j.state, 'imported', j.message);
+    assert.equal((await s.req('GET', `/api/automation/run?id=${j.importedRunId}`)).run.source.expiresAt, '2027-02-22T10:00:00.000Z');
+  } finally { s.close(); }
+});
+
+test('the guide\'s example workflow (docs/connect-a-suite.md) reads as a run form with an environment field', () => {
+  const md = readFileSync(new URL('../docs/connect-a-suite.md', import.meta.url), 'utf8');
+  const block = /```yaml\n([\s\S]*?)```/.exec(md);
+  assert.ok(block, 'a yaml block');
+  const lines = block[1].trim().split('\n').length;
+  assert.ok(lines >= 20 && lines <= 32, `about 25 lines (${lines})`);
+  const p = parseWorkflowInputs(block[1]);
+  assert.equal(p.dispatch, true, 'workflow_dispatch');
+  assert.deepEqual([p.inputs[0].name, p.inputs[0].type, p.inputs[0].required], ['environment', 'environment', true]);
+  const doc = YAML.parse(block[1]);
+  const job = Object.values(doc.jobs)[0];
+  assert.equal(job.environment, '${{ inputs.environment }}');
+  const upload = job.steps.find((x) => String(x.uses || '').startsWith('actions/upload-artifact@v4'));
+  assert.deepEqual([upload.if, upload.with.name, upload.with['retention-days']], ['always()', 'test-results', 90]);
+  const run = job.steps.find((x) => x.env && x.env.CONFIG_ENV);
+  assert.deepEqual([run.env.CONFIG_ENV, run.env.SECRETS_ENV], ['${{ secrets.CONFIG_ENV }}', '${{ secrets.SECRETS_ENV }}'], 'secrets passed as env');
+  // the guide is linked from the console's docs and the README
+  assert.match(readFileSync(new URL('../docs/automation.md', import.meta.url), 'utf8'), /\(connect-a-suite\.md\)/);
+  assert.match(readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /\(docs\/connect-a-suite\.md\)/);
 });

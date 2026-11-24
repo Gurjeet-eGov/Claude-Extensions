@@ -88,10 +88,11 @@ test('retention: a third run for the same suite, workbook, test suite and cycle 
   // a run older than everything kept would be removed straight away: refused instead
   assert.throws(() => store.add(runAt('2026-11-01T00:00:00Z'), 1), (e) => e.code === 'TOO_OLD');
   assert.deepEqual(store.group(r4).map((m) => m.id), [r4.id]);
-  assert.deepEqual(normalizeAutomationSettings({}), { keep: 2, checkEvery: 5 });
-  assert.deepEqual(normalizeAutomationSettings({ keep: 5 }), { keep: 5, checkEvery: 5 });
-  assert.deepEqual(normalizeAutomationSettings({ keep: 0 }), { keep: 2, checkEvery: 5 });
-  assert.deepEqual(normalizeAutomationSettings({ keep: 'x' }), { keep: 2, checkEvery: 5 });
+  const ex = ['github-pages'];
+  assert.deepEqual(normalizeAutomationSettings({}), { keep: 2, checkEvery: 5, excludeEnvironments: ex });
+  assert.deepEqual(normalizeAutomationSettings({ keep: 5 }), { keep: 5, checkEvery: 5, excludeEnvironments: ex });
+  assert.deepEqual(normalizeAutomationSettings({ keep: 0 }), { keep: 2, checkEvery: 5, excludeEnvironments: ex });
+  assert.deepEqual(normalizeAutomationSettings({ keep: 'x' }), { keep: 2, checkEvery: 5, excludeEnvironments: ex });
 });
 
 test('delete, and attaching a run to another cycle (which can push out that cycle\'s oldest)', () => {

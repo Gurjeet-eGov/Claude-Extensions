@@ -6,6 +6,7 @@
 //   POST /api/automation/github/artifacts {repo, workflowId}  the latest run's artifacts, and which hold a results file
 //   POST /api/automation/github/link {id?, name, repo, workflowId, artifact, envInput, casePattern, masking}
 //   GET  /api/automation/github/branches?suite=               the run form: branches and the repository's environments
+//   GET  /api/automation/github/form?suite=&branch=           the run form's fields on that branch (its own workflow file)
 //   GET  /api/automation/github/runs?suite=                   recent finished runs of the suite's workflow (Import from GitHub)
 //   POST /api/automation/github/import {suite, runId?, book, tab, cycle}   bring one in (the latest finished one without runId)
 //   POST /api/automation/github/run {suite, branch, inputs, book, tab, cycle}   start a run; a job follows it
@@ -13,8 +14,9 @@
 //   GET  /api/automation/job?id=     one of them
 //   POST /api/automation/job/cancel {id}    POST /api/automation/job/dismiss {id}
 //   GET  /api/automation/github/status      (the host) which GitHub access Test Run has
-//   POST /api/automation/settings {keep?, checkEvery?}  (the host) runs kept per test suite and cycle;
-//        minutes between looks at a run Test Run follows (1 or 5)
+//   POST /api/automation/settings {keep?, checkEvery?, excludeEnvironments?}  (the host) runs kept per test
+//        suite and cycle; minutes between looks at a run Test Run follows (1 or 5); GitHub environments
+//        the run form leaves out (github-pages by default)
 //
 // A started run is a job, kept in sheets/.testrun/automation/jobs.json so it survives a restart:
 // { id, suiteId, attach, branch, inputs, by, githubRunId, state, … }. state: waiting (started,
@@ -31,7 +33,7 @@ import { maySeeSuite, mayStartRuns } from '../team.mjs';
 import { canAct } from './access.mjs';
 import { splitRepo } from '../github.mjs';
 import { parseResults, buildRun, passRate } from './results.mjs';
-import { cleanRepo, normalizeInputs, normalizeAutomationSettings, CHECK_EVERY } from './store.mjs';
+import { cleanRepo, normalizeInputs, normalizeAutomationSettings, CHECK_EVERY, MAX_EXCLUDE_ENVIRONMENTS, MAX_ENVIRONMENT_NAME } from './store.mjs';
 
 const err = (code, message, extra) => Object.assign(new Error(message), { code }, extra || {});
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
@@ -108,6 +110,17 @@ export function inputValues(defs, given = {}) {
 }
 
 /**
+ * Which field of a Run workflow form says where the tests run: keep (the one chosen) while the form
+ * still has it, else the form's field of type environment, else none ('').
+ */
+export function envFieldOf(inputs, keep = '') {
+  const list = inputs || [];
+  if (keep && list.some((x) => x.name === keep)) return keep;
+  const e = list.find((x) => x.type === 'environment');
+  return e ? e.name : '';
+}
+
+/**
  * The run a dispatch made, from a list of the workflow's runs (GitHub's JSON): event workflow_dispatch,
  * on the branch, created at or after since (less a minute for the clocks), not among known (ids seen
  * before starting) or claimed (ids other jobs follow), by actor when known. The newest that fits, or null.
@@ -172,7 +185,8 @@ class JobFile {
 
 /**
  * ctx: { sheetsDir, store (AutomationStore), github (lib/github.mjs client), checkAttach(q, person),
- *        keep(), setKeep(n), checkEvery() (minutes: 1 or 5), setCheckEvery(n), mayOpen(person, book),
+ *        keep(), setKeep(n), checkEvery() (minutes: 1 or 5), setCheckEvery(n), excludeEnvironments() (names
+ *        the run form leaves out), setExcludeEnvironments(list), mayOpen(person, book),
  *        isOwner(person), jsonBody(req), log, pollMs (fixed ms, for tests: overrides checkEvery),
  *        findTimeoutMs (how long to look for a started run, 3 min), now() (ms) }
  */
@@ -190,6 +204,8 @@ export function createGithubRuns(ctx) {
   const findTimeoutMs = ctx.findTimeoutMs || 3 * 60000;
   const isOwner = ctx.isOwner || ((p) => !!p && p.role === 'owner');
   const keep = () => normalizeAutomationSettings({ keep: ctx.keep ? ctx.keep() : undefined }).keep;
+  /** The environments the run form leaves out, lower case (the host's setting; github-pages by default). */
+  const excluded = () => new Set(normalizeAutomationSettings({ excludeEnvironments: ctx.excludeEnvironments ? ctx.excludeEnvironments() : undefined }).excludeEnvironments.map((x) => x.toLowerCase()));
   const jobs = new JobFile(join(ctx.sheetsDir, '.testrun', 'automation'));
   let timer = null;
   let ticking = false;
@@ -319,8 +335,9 @@ export function createGithubRuns(ctx) {
     const full = cleanRepo(body.repo);
     if (!full) throw err('BAD_INPUT', 'Paste the suite\'s GitHub repository link, like https://github.com/owner/repo.');
     const w = await workflowOf(full, Number(body.workflowId));
-    const envInput = clip(body.envInput, 100);
+    let envInput = clip(body.envInput, 100);
     if (envInput && !w.inputs.some((x) => x.name === envInput)) throw err('BAD_INPUT', `“${w.name}” has no option called ${envInput}.`);
+    if (!envInput) envInput = envFieldOf(w.inputs, ''); // none chosen: the workflow's environment field, when it has one
     const id = body.id ? String(body.id) : '';
     const saved = store.saveSuite({ id, name: body.name, repo: full, casePattern: body.casePattern, masking: body.masking }, { by: person.name });
     const suite = store.setGithub(saved.id, { workflowId: w.id, workflowPath: w.path, workflow: w.name, inputs: w.inputs, artifact: clip(body.artifact, 140) || 'test-results', envInput, defaultBranch: w.defaultBranch });
@@ -344,7 +361,7 @@ export function createGithubRuns(ctx) {
 
   /**
    * Download a finished GitHub run's results artifact, read it, and keep it as a run attached to attach.
-   * ghRun: GitHub's JSON for the run. o: { by, branch, inputs }. Returns { meta, removed, summary, artifact },
+   * ghRun: GitHub's JSON for the run. o: { by, branch, inputs, flags (the yes/no fields of the form it was started with) }. Returns { meta, removed, summary, artifact },
    * or throws NO_RESULTS (no such artifact, or no results file in it) and the rest as they come.
    */
   async function importRun(suite, owner, repo, ghRun, attach, o = {}) {
@@ -382,15 +399,17 @@ export function createGithubRuns(ctx) {
     const env = suite.envInput && inputs[suite.envInput] ? inputs[suite.envInput] : '';
     const options = {};
     const defs = suite.inputs || [];
+    // the yes/no fields: those of the form the run was started with (its branch's), else the saved form's
+    const isFlag = (k) => (Array.isArray(o.flags) ? o.flags.includes(k) : (defs.find((x) => x.name === k) || {}).type === 'boolean');
     for (const [k, v] of Object.entries(inputs)) {
       if (k === suite.envInput || v === '' || v == null) continue;
-      const d = defs.find((x) => x.name === k);
-      if (d && d.type === 'boolean') { if (v === 'true') options[k] = k; continue; }
+      if (isFlag(k)) { if (v === 'true') options[k] = k; continue; }
       options[k] = v;
     }
     const run = buildRun(parsed, {
       suite, attach,
-      source: { kind: 'github', repo: full, workflow: suite.workflow || String(suite.workflowId), runId: String(ghRun.id), runUrl: ghRun.html_url, fileName: used ? used.name : '' },
+      // expiresAt: when GitHub deletes the results artifact (its retention-days), for the Full report's ?
+      source: { kind: 'github', repo: full, workflow: suite.workflow || String(suite.workflowId), runId: String(ghRun.id), runUrl: ghRun.html_url, fileName: used ? used.name : '', expiresAt: used ? used.expires_at : '' },
       branch: o.branch || ghRun.head_branch || '', sha: ghRun.head_sha || '', env, options, by: o.by,
     });
     const { meta, removed } = store.add(run, keep());
@@ -439,12 +458,69 @@ export function createGithubRuns(ctx) {
     } catch (e) { throw ghProblem(e, full, 'list the branches'); }
     let envs = [];
     if ((suite.inputs || []).some((x) => x.type === 'environment')) {
-      try { envs = (((await github.listEnvironments(owner, repo)) || {}).environments || []).map((e) => e.name); } catch { envs = []; }
+      try { envs = await environmentsOf(owner, repo); } catch { envs = []; }
     }
     const dflt = (info && info.default_branch) || suite.defaultBranch || '';
     const names = (list || []).map((b) => b.name).filter(Boolean);
     names.sort((a, b) => (a === dflt ? -1 : b === dflt ? 1 : a.localeCompare(b)));
     return { branches: names.map((name) => ({ name, default: name === dflt })), defaultBranch: dflt, environments: envs };
+  }
+
+  /** The repository's GitHub environments, less those the host excludes (Setup › Automation). Throws as GitHub does. */
+  async function environmentsOf(owner, repo) {
+    const out = excluded();
+    return (((await github.listEnvironments(owner, repo)) || {}).environments || []).map((e) => e && e.name).filter((n) => n && !out.has(String(n).toLowerCase()));
+  }
+
+  /**
+   * The Run workflow form of the suite's workflow on a branch, read from that branch's own workflow
+   * file (each branch can have its own form, and GitHub refuses fields the branch's file doesn't have):
+   * { branch, inputs, from: 'branch' | 'saved', dispatch, note, suite }. When GitHub can't be read, or
+   * the file isn't on the branch, it is the copy saved when the suite was linked (from 'saved', with a
+   * note saying why). The default branch's form, when it differs from the saved copy, replaces it.
+   */
+  async function formOf(suite, owner, repo, branch) {
+    const saved = { branch, inputs: suite.inputs || [], from: 'saved', dispatch: true, note: '', suite };
+    if (!suite.workflowPath || !branch) return saved;
+    const full = `${owner}/${repo}`;
+    let file;
+    try { file = await github.getFile(owner, repo, suite.workflowPath, branch); } catch (e) {
+      return { ...saved, note: `${ghProblem(e, full, `read ${suite.workflowPath} on ${branch}`).message} The form below is the one saved when the suite was linked.` };
+    }
+    if (!file) return { ...saved, dispatch: false, note: `${suite.workflowPath} isn't on ${branch}, so GitHub can't run “${suite.workflow}” there. Choose another branch.` };
+    let p;
+    try { p = parseWorkflowInputs(file.toString('utf8')); } catch (e) {
+      return { ...saved, note: `${suite.workflowPath} on ${branch}: ${e.message} The form below is the one saved when the suite was linked.` };
+    }
+    let now = suite;
+    if (branch === suite.defaultBranch && JSON.stringify(p.inputs) !== JSON.stringify(suite.inputs || [])) {
+      now = store.setGithub(suite.id, { ...suite, inputs: p.inputs, envInput: envFieldOf(p.inputs, suite.envInput) }) || suite;
+    }
+    return {
+      branch, inputs: p.inputs, from: 'branch', dispatch: p.dispatch, suite: now,
+      note: p.dispatch ? '' : `“${suite.workflow}” can't be started by hand on ${branch}: its workflow file there has no workflow_dispatch.`,
+    };
+  }
+
+  /** The run form on a branch, as the ▶ Run page shows it, with the environments for its environment field. */
+  async function form(id, branch, person) {
+    const { suite, owner, repo } = runnable(id, person);
+    const b = clip(branch, 250);
+    if (!b) throw err('BAD_INPUT', 'Choose the branch to run.');
+    const f = await formOf(suite, owner, repo, b);
+    const hasEnv = f.inputs.some((x) => x.type === 'environment');
+    let environments = [];
+    let envError = '';
+    if (hasEnv) {
+      try { environments = await environmentsOf(owner, repo); } catch (e) { envError = ghProblem(e, `${owner}/${repo}`, 'list the environments').message; }
+    }
+    return {
+      branch: b, inputs: f.inputs, from: f.from, dispatch: f.dispatch, note: f.note,
+      envInput: f.suite.envInput, refreshed: f.suite !== suite,
+      environments,
+      // the workflow asks for an environment, but the repository has none (after the host's exclusions)
+      noEnvironments: hasEnv && !envError && !environments.length,
+    };
   }
 
   // ------------------------------------------------------------------ start and follow runs
@@ -468,7 +544,10 @@ export function createGithubRuns(ctx) {
     const full = `${owner}/${repo}`;
     const branch = clip(body.branch, 250);
     if (!branch) throw err('BAD_INPUT', 'Choose the branch to run.');
-    const inputs = inputValues(suite.inputs, body.inputs && typeof body.inputs === 'object' ? body.inputs : {});
+    // the branch's own form, read again now: only its fields are sent (GitHub refuses any others)
+    const f = await formOf(suite, owner, repo, branch);
+    const inputs = inputValues(f.inputs, body.inputs && typeof body.inputs === 'object' ? body.inputs : {});
+    const envInput = f.suite.envInput;
     const at = await checkAttach(body, person);
     if (!at.ok) throw err(at.code, at.error);
     // the runs there before this one, so the new one can be told apart
@@ -486,7 +565,8 @@ export function createGithubRuns(ctx) {
     const job = {
       id: `j${dispatchedAt.toString(36)}${randomBytes(3).toString('hex')}`,
       suiteId: suite.id, suiteName: suite.name, repo: full, workflowId: suite.workflowId, workflow: suite.workflow,
-      attach: at.attach, branch, inputs, env: suite.envInput ? inputs[suite.envInput] || '' : '', by: person.name, actor,
+      attach: at.attach, branch, inputs, flags: f.inputs.filter((x) => x.type === 'boolean').map((x) => x.name),
+      env: envInput ? inputs[envInput] || '' : '', by: person.name, actor,
       dispatchedAt, githubRunId: started.runId || null, runUrl: started.runUrl || '', runNumber: null, sha: '',
       state: 'waiting', status: '', conclusion: '', jobs: [], message: '', lastError: '', startedAt: '', finishedAt: 0,
       importedRunId: '', totals: null, removed: [], cancelWanted: false, known,
@@ -568,7 +648,7 @@ export function createGithubRuns(ctx) {
     const at = await checkAttach({ book: job.attach.book, tab: job.attach.tab, cycle: job.attach.cycle }, ownerAs(job.by));
     if (!at.ok) { finish(job, 'failed', `The run finished, but its results couldn't be attached: ${at.error} Bring them in with ⤒ Import Results › GitHub Run.`); return; }
     try {
-      const r = await importRun(suite, owner, repo, run, at.attach, { by: job.by, branch: job.branch, inputs: job.inputs });
+      const r = await importRun(suite, owner, repo, run, at.attach, { by: job.by, branch: job.branch, inputs: job.inputs, flags: job.flags });
       finish(job, 'imported');
       job.importedRunId = r.meta.id;
       job.totals = r.meta.totals;
@@ -661,6 +741,7 @@ export function createGithubRuns(ctx) {
         }
       }
       if (path === '/api/automation/github/branches') return okJson(await branches(q('suite'), person));
+      if (path === '/api/automation/github/form') return okJson(await form(q('suite'), q('branch'), person));
       if (path === '/api/automation/github/runs') return okJson({ runs: await recentRuns(q('suite'), person) });
       return null;
     }
@@ -682,6 +763,15 @@ export function createGithubRuns(ctx) {
         if (!CHECK_EVERY.includes(m)) return fail('BAD_INPUT', 'Check every 1 or 5 minutes.');
         out.checkEvery = ctx.setCheckEvery ? ctx.setCheckEvery(m) : m;
         schedule(Math.min(pollMs(), 1000)); // the new pace applies to runs already being followed
+      }
+      if (body.excludeEnvironments != null) {
+        const list = body.excludeEnvironments;
+        if (!Array.isArray(list) || list.some((x) => typeof x !== 'string')) return fail('BAD_INPUT', 'Send the environments to exclude as a list of names.');
+        const names = list.map((x) => x.trim());
+        if (names.some((x) => !x)) return fail('BAD_INPUT', 'An environment to exclude needs a name.');
+        if (names.some((x) => x.length > MAX_ENVIRONMENT_NAME)) return fail('BAD_INPUT', `An environment's name is at most ${MAX_ENVIRONMENT_NAME} characters.`);
+        if (names.length > MAX_EXCLUDE_ENVIRONMENTS) return fail('BAD_INPUT', `Exclude at most ${MAX_EXCLUDE_ENVIRONMENTS} environments.`);
+        out.excludeEnvironments = ctx.setExcludeEnvironments ? ctx.setExcludeEnvironments(names) : normalizeAutomationSettings({ excludeEnvironments: names }).excludeEnvironments;
       }
       if (!Object.keys(out).length) return fail('BAD_INPUT', 'Nothing to change.');
       return okJson(out);

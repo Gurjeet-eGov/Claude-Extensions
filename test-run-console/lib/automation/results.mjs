@@ -5,7 +5,7 @@
 //
 // A test:  { id, title, file, suite, tags[], caseIds[], status: 'pass'|'fail'|'other',
 //            durationMs, retries, flaky, message, stack, masked? }
-// A run:   { id, suiteId, suiteName, source: { kind, fileName, format, tool, repo, workflow, runId, runUrl },
+// A run:   { id, suiteId, suiteName, source: { kind, fileName, format, tool, repo, workflow, runId, runUrl, expiresAt },
 //            branch, sha, env, options, by, startedAt, importedAt, durationMs,
 //            attach: { book, tab, cycle }, totals: { passed, failed, skipped, flaky, total }, tests[] }
 import { createHash, randomBytes } from 'node:crypto';
@@ -561,6 +561,9 @@ export function cleanAttach(a) {
   return { book: clip(a.book, 260), tab: clip(a.tab, 160), cycle: clip(a.cycle, 60) };
 }
 
+/** A date as ISO text, or '' when it isn't one. */
+const isoOrEmpty = (v) => { const t = Date.parse(String(v || '')); return Number.isNaN(t) ? '' : new Date(t).toISOString(); };
+
 /**
  * The run as kept. parsed: from parseResults. o: { suite, attach (required), source, branch, sha, env, options, by, now }.
  */
@@ -584,6 +587,7 @@ export function buildRun(parsed, o = {}) {
       workflow: clip(src.workflow, 140),
       runId: clip(src.runId, 40),
       runUrl: /^https:\/\//i.test(String(src.runUrl || '')) ? clip(src.runUrl, 400) : '',
+      expiresAt: isoOrEmpty(src.expiresAt), // when GitHub deletes the run's results artifact ('' when not known)
     },
     branch: clip(o.branch || parsed.branch, 120),
     sha: clip(o.sha || parsed.sha, 64),

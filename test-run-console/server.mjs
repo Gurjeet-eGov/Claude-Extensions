@@ -90,7 +90,7 @@ function normalizeApp(a = {}) {
     team: normalizeTeam(a.team),
     publish: normalizePublish(a.publish),
     media: normalizeMedia(a.media),
-    automation: normalizeAutomationSettings(a.automation), // { keep, checkEvery }: runs kept per suite and cycle; minutes between looks at a GitHub run (set by the host)
+    automation: normalizeAutomationSettings(a.automation), // { keep, checkEvery, excludeEnvironments }: runs kept per suite and cycle; minutes between looks at a GitHub run; environments the run form leaves out (set by the host)
     lock: cleanLock(a.lock), // { identity }: the host's own age key for the published automated results (lib/automation/seal.mjs)
   };
 }
@@ -202,8 +202,10 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     sheetsDir, lib, callApi, mayOpen, isOwner: isOwnerPerson, keep: () => app.automation.keep, readBody,
     github: github || createGithub({ ghPath }), log, pollMs: automationPollMs,
     checkEvery: () => app.automation.checkEvery,
+    excludeEnvironments: () => app.automation.excludeEnvironments,
     setKeep: (n) => { app.automation = normalizeAutomationSettings({ ...app.automation, keep: n }); saveApp(); return app.automation.keep; },
     setCheckEvery: (n) => { app.automation = normalizeAutomationSettings({ ...app.automation, checkEvery: n }); saveApp(); return app.automation.checkEvery; },
+    setExcludeEnvironments: (list) => { app.automation = normalizeAutomationSettings({ ...app.automation, excludeEnvironments: list }); saveApp(); return app.automation.excludeEnvironments; },
   });
 
   async function openBook(name, person) {

@@ -2,6 +2,8 @@
 
 Test Run keeps the results of automated tests next to the manual runs, whatever framework wrote them. It doesn't look at the framework at all: it reads one **results file**. This guide is for a QA who owns a suite and wants it in Test Run.
 
+**New here?** [Connect your test suite to Test Run](connect-a-suite.md) is one short page: how CMS-Automation is set up, a workflow to copy, and how to link it.
+
 - [What Test Run needs from a suite](#what-test-run-needs-from-a-suite)
 - [The workflow, step by step](#the-workflow-step-by-step)
 - [Snippets per framework](#snippets-per-framework)
@@ -16,10 +18,10 @@ Four things, all in the suite's own repository:
 
 1. **A results file**: **JUnit XML** (almost every framework writes it) or **CTRF JSON** (an open JSON standard that also carries retries and flaky tests). Test Run tells them apart by their content, not their name. Several files are fine: they make one run.
 2. **Uploaded as an artifact**, named **`test-results`** by default (any name works; you pick it when linking). Keep the results in an artifact of their own: the full HTML report, videos and traces can go in another one. Upload with `if: always()`, so failed runs still upload.
-3. **A `workflow_dispatch` trigger**, so Test Run can start the workflow. Its `inputs` become Test Run's run form: a `choice` becomes a dropdown, a `boolean` a checkbox, a `string` or `number` a text field, an `environment` a dropdown of the repository's environments.
+3. **A `workflow_dispatch` trigger**, so Test Run can start the workflow. Its `inputs` become Test Run's run form: a `choice` becomes a dropdown, a `boolean` a checkbox, a `string` or `number` a text field, an `environment` a dropdown of the repository's environments (less those the host leaves out in **Setup → Automation → Exclude environments**: `github-pages` by default, which GitHub makes by itself when Pages is switched on). Each branch can have its own form: the run form shows the fields of the workflow file on the branch you run.
 4. **Secrets in GitHub**, never in Test Run: put passwords and tokens in the repository's **Settings → Environments** (one environment per deployment, say `net_two`, `staging`) and pick the environment from an input. Test Run never sees them.
 
-What Test Run keeps of each test: its title, file, suite, tags, status, time and retries, and for failures the message and the top of the stack (tokens, passwords and `Authorization` headers masked). No screenshots. The full report stays on the GitHub run (GitHub keeps artifacts up to 90 days); Test Run links to it.
+What Test Run keeps of each test: its title, file, suite, tags, status, time and retries, and for failures the message and the top of the stack (tokens, passwords and `Authorization` headers masked). No screenshots. The full report stays on the GitHub run; Test Run links to it (**↗ Full Report**). The **?** next to it says how long GitHub keeps it: "Available until 8 Dec 2026.", the date GitHub gave for the results artifact when the run came in (set it with `retention-days`, at most 90). When no date is known (a results file, or a run brought in before Test Run kept the date), it says the artifacts are on GitHub for a limited time after the run, at most 90 days.
 
 ## The workflow, step by step
 
@@ -156,17 +158,19 @@ gotestsum --junitfile results/junit.xml ./...
 Once per repository, by the host or a tester allowed to start runs: **Automation → + Link Suite**.
 
 1. **Repository**: paste the link (`https://github.com/owner/repo`) and press **Check**. Test Run reads it with the host's GitHub access, and lists its workflows; those that can be started by hand (with `workflow_dispatch`) can be picked.
-2. **Workflow and results**: the name people see in Test Run; the **Workflow**; the **Results artifact** (Test Run looks inside the latest run's artifacts and shows which hold a results file; you can also type a name that isn't there yet); and, optionally, which input is the **environment** (runs are grouped by it, and the run form names it as the place secrets come from).
+2. **Workflow and results**: the name people see in Test Run; the **Workflow**; the **Results artifact** (Test Run looks inside the latest run's artifacts and shows which hold a results file; you can also type a name that isn't there yet); and, optionally, which input is the **environment** (runs are grouped by it, and the run form names it as the place secrets come from). An input of `type: environment` is picked by itself when none is chosen.
 3. **Extras** (optional): the case-ID pattern, and extra masking rules for values that must never be kept (a text, or a `/pattern/`).
 4. **Try it**: choose a workbook › test suite › test cycle and press **Import Latest Run**. It saves the suite and brings in the latest finished run, so you see the counts straight away.
 
 Then **Save Suite**. A suite can also be saved without a workflow: its results then come in only with **⤒ Import Results**.
 
-Who sees a suite's results, and who may start runs, is set per person in **Setup → Access → Users**. The host sees **Setup → Automation**: the GitHub access Test Run has, how many runs are kept per test suite and cycle, and the linked suites.
+Who sees a suite's results, and who may start runs, is set per person in **Setup → Access → Users**. The host sees **Setup → Automation**: the GitHub access Test Run has, how many runs are kept per test suite and cycle, how often a running run is checked, the GitHub environments the run form leaves out (**Exclude environments**: type a name and press Enter or **+ Add**, ✕ removes one; `github-pages` to start with), and the linked suites.
 
 ## Running it from Test Run
 
 On the suite's page, **▶ Run** opens the run form: the branch, the workflow's own options, and (required) the workbook › test suite › test cycle the results belong to. **Start Run** starts the workflow on GitHub, exactly as its **Run workflow** button would.
+
+The options are read from the workflow file **on the branch you choose**, and read again when you pick another branch: fields you already filled in stay, if that branch's form has them too. Only that branch's fields are sent, so a branch with a newer (or older) form runs with its own fields. If GitHub can't be read just then, the form saved when the suite was linked is used instead; when the default branch's form has changed, that saved copy is refreshed.
 
 The **Running** view follows it: queued or running, the current job and its steps, the time so far, and **↗ GitHub Log**. The Automation tab shows how many runs are going. You can leave the page, or close the browser: the run goes on, and Test Run follows it even across a restart of Test Run. When it ends, the results artifact is read and the run is attached where you chose; the run view opens by itself. **Cancel Run** asks first, then asks GitHub to stop it.
 
@@ -188,6 +192,7 @@ A scheduled run, a push, or the **Run workflow** button on GitHub: **⤒ Import 
 | "GitHub refused to let Test Run start the workflow" | The host's account needs Actions write on the suite repository. |
 | "The run has no artifact named …" | Upload the results with the name chosen when linking (or change it in ✎ Edit), and use `if: always()`. |
 | "… holds no JUnit XML or CTRF JSON results file" | The artifact holds something else: check the reporter's output path and the upload's `path:`. |
+| "This repository has no GitHub environments yet" (in ▶ Run) | The workflow has an environment field, but the repository has no environments (or only ones the host leaves out). Add one in the repository's **Settings → Environments**: [Connect your test suite](connect-a-suite.md). |
 | "GitHub didn't show the new run" | Very busy runners can take a while to list a run. Find it on the Actions page; once done, use ⤒ Import Results → GitHub Run. |
 
 **For a later move to a token** (instead of the host's `gh` login), the token needs: on suite repositories, Actions read and write and Contents read; on this repository, Contents read and write and Actions write (publishing); on the account, Gists read and write (the shared address).

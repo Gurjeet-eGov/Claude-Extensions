@@ -2401,10 +2401,21 @@
     });
   }
 
+  /** "8 Dec 2026", in this computer's time ('' when it isn't a date). */
+  function auDay(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(); }
+  /**
+   * How long GitHub keeps a run's artifacts: the date it gave for the results artifact when the run
+   * was imported (source.expiresAt), or, without one, the most it keeps them.
+   */
+  function auKeptText(src) {
+    var until = src && src.expiresAt ? auDay(src.expiresAt) : '';
+    if (!until) return 'Available on GitHub for a limited time after the run, at most 90 days.';
+    return Date.parse(src.expiresAt) < Date.now() ? 'Was available until ' + until + '.' : 'Available until ' + until + '.';
+  }
   /** The Full report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
   function auReportTip(r) {
     var text = r.source && r.source.runUrl
-      ? 'The suite\'s own report, traces, videos and logs, on its GitHub Actions run. Kept by GitHub for up to 90 days, or until it\'s deleted there. The results on this page stay in Test Run.'
+      ? 'The suite\'s own report, traces, videos and logs, on its GitHub Actions run. ' + auKeptText(r.source) + ' The results on this page stay in Test Run.'
       : 'This run was imported from a results file, so Test Run has no link to the suite\'s own report: it stays wherever the run was done. The results on this page stay in Test Run.';
     return helpButton({ id: 'frTip', label: 'About the full report', title: 'Full report', html: '<span>' + esc(text) + '</span>' });
   }
@@ -2600,6 +2611,7 @@
 
   function auGhFresh() { return { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null }; }
   var AU_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/automation.md';
+  var AU_CONNECT_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/connect-a-suite.md';
   /** The workflow chosen on Link a suite (from the check), or null. */
   function auLinkWorkflow() {
     var c = S.auto.gh.check, id = val('au:l:wf', '');
@@ -2788,7 +2800,7 @@
     return '<div class="stack">' + head + h + '</section></div>';
   }
 
-  /** The Run form's branches (and the repository's environments), read once per form. */
+  /** The Run form's branches (and the repository's environments), read once per form; then the chosen branch's fields. */
   function auRunFormLoad(s) {
     var A = S.auto;
     A.runForm = { suite: s.id, loading: true };
@@ -2797,8 +2809,40 @@
       if (!r.ok) { A.runForm = { suite: s.id, error: r.error }; render(); return; }
       A.runForm = { suite: s.id, branches: r.branches, environments: r.environments || [], defaultBranch: r.defaultBranch };
       if (!S.form['au:rn:branch']) S.form['au:rn:branch'] = r.defaultBranch || (r.branches[0] && r.branches[0].name) || '';
+      auRunFieldsLoad(s, S.form['au:rn:branch']);
       render();
     });
+  }
+  /**
+   * The run form's fields on a branch, from that branch's own workflow file (each branch can have its
+   * own form, and GitHub refuses fields the branch doesn't have). What was typed for a field the branch
+   * still has is kept; a choice it no longer offers goes back to the default.
+   */
+  function auRunFieldsLoad(s, branch) {
+    var A = S.auto, rf = A.runForm;
+    if (!rf || rf.suite !== s.id || !branch) return;
+    rf.fields = { branch: branch, loading: true };
+    TR.http('GET', '/api/automation/github/form?suite=' + enc(s.id) + '&branch=' + enc(branch)).then(function (r) {
+      var now = A.runForm;
+      if (!now || now.suite !== s.id || !now.fields || now.fields.branch !== branch) return; // another branch was picked meanwhile
+      if (!r.ok) { now.fields = { branch: branch, inputs: s.inputs || [], environments: now.environments || [], error: r.error, dispatch: true }; render(); return; }
+      now.fields = { branch: branch, inputs: r.inputs, environments: r.environments || [], noEnvironments: !!r.noEnvironments, note: r.note || '', from: r.from, dispatch: r.dispatch !== false };
+      r.inputs.forEach(function (d) {
+        var k = 'au:in:' + d.name, v = S.form[k];
+        if (v == null) return;
+        var drop = d.type === 'boolean' ? typeof v !== 'boolean'
+          : typeof v === 'boolean' || (d.type === 'choice' && d.options.indexOf(String(v)) < 0) || (d.type === 'environment' && r.environments.length && r.environments.indexOf(String(v)) < 0);
+        if (drop) delete S.form[k];
+      });
+      if (r.refreshed) { var kept = auSuite(s.id); if (kept) { kept.inputs = r.inputs; kept.envInput = r.envInput; } } // the default branch's form changed: the saved copy was refreshed
+      render();
+    });
+  }
+  /** The fields of the run form for the branch chosen: null while they are being read. */
+  function auRunFields(s) {
+    var rf = S.auto.runForm, b = val('au:rn:branch', '');
+    var f = rf && rf.suite === s.id && rf.fields && rf.fields.branch === b ? rf.fields : null;
+    return f && f.inputs ? f : null;
   }
   /** An input's value on the Run form: what was typed or picked, else its default. */
   function auInputVal(d) {
@@ -2807,32 +2851,41 @@
     return String(val(k, d.default));
   }
 
-  /** Screen 2: Start a run: branch, the workflow's own options, and where its results attach. */
+  /** Screen 2: Start a run: branch, the workflow's own options (on that branch), and where its results attach. */
   function auStart(s) {
     var A = S.auto, rf = A.runForm && A.runForm.suite === s.id ? A.runForm : null;
+    var fl = auRunFields(s), defs = fl ? fl.inputs : [];
+    var branch = val('au:rn:branch', '');
     var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
-    h += '<section class="card card-pad stack"><div><h2>Start a run</h2><p class="small muted">Runs the workflow <b>' + esc(s.workflow || 'workflow') + '</b> in GitHub Actions, in ' + esc(s.repo) + '. The options below come from that workflow.</p></div>';
+    h += '<section class="card card-pad stack"><div><h2>Start a run</h2><p class="small muted">Runs the workflow <b>' + esc(s.workflow || 'workflow') + '</b> in GitHub Actions, in ' + esc(s.repo) + '. The options below come from that workflow, as it is on the branch you choose.</p></div>';
     if (rf && rf.error) h += '<div class="note bad">' + esc(rf.error) + '</div>';
+    if (fl && fl.error) h += '<div class="note warn">' + esc(fl.error) + ' The options below are the ones saved when the suite was linked.</div>';
+    if (fl && fl.note) h += '<div class="note warn">' + esc(fl.note) + '</div>';
     var branches = rf && rf.branches ? rf.branches : null;
-    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: val('au:rn:branch', ''), title: 'Branch', disabled: !branches,
+    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: branch, title: 'Branch', disabled: !branches, change: 'au-run-branch',
       placeholder: rf && rf.loading ? 'Loading…' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
-    (s.inputs || []).forEach(function (d) {
+    if (!fl && branch) h += '<p class="small muted wide">Reading the run form on ' + esc(branch) + '…</p>';
+    defs.forEach(function (d) {
       var id = 'au_in_' + d.name.replace(/\W/g, '_'), bind = 'au:in:' + d.name, hint = esc(d.description);
       var opt = !d.required && (d.type === 'string' || d.type === 'number') ? ' <span class="faint">(optional)</span>' : '';
       if (d.type === 'boolean') {
         h += '<div><label class="note-label" for="' + id + '">' + esc(d.name) + '</label><label class="check"><input type="checkbox" id="' + id + '" data-bind="' + esc(bind) + '"' + (auInputVal(d) ? ' checked' : '') + '> ' + (hint || 'On') + '</label></div>';
         return;
       }
-      var envs = d.type === 'environment' && rf && rf.environments ? rf.environments : [];
+      var envs = d.type === 'environment' ? fl.environments || [] : [];
       var control = d.type === 'choice' || envs.length
         ? dropdown({ bind: bind, id: id, value: auInputVal(d), title: d.name, options: d.type === 'choice' ? d.options : envs })
         : '<input id="' + id + '" data-bind="' + esc(bind) + '"' + (d.type === 'number' ? ' inputmode="decimal"' : '') + ' value="' + esc(auInputVal(d)) + '">';
+      // an environment field, but no GitHub environment to pick (after the host's exclusions): how to add one
+      if (d.type === 'environment' && fl.noEnvironments) {
+        hint = '<span class="no-envs">This repository has no GitHub environments yet. <a href="' + esc(AU_CONNECT_GUIDE) + '" target="_blank" rel="noopener">How to add one ↗</a></span>';
+      }
       h += auField(id, esc(d.name) + opt, control, hint);
     });
     h += '</div>' + auAttachPickers('rn', true) + auFullWarning('rn', s.id, '');
-    var envName = s.envInput ? auInputVal((s.inputs || []).filter(function (x) { return x.name === s.envInput; })[0] || { name: s.envInput, default: '' }) : '';
-    if (!envName) { var e = (s.inputs || []).filter(function (x) { return x.type === 'environment'; })[0]; if (e) envName = auInputVal(e); }
-    var ready = val('au:rn:branch', '') && auAttachChosen('rn') && !A.starting;
+    var envDef = defs.filter(function (x) { return x.name === s.envInput; })[0] || defs.filter(function (x) { return x.type === 'environment'; })[0];
+    var envName = envDef ? auInputVal(envDef) : '';
+    var ready = branch && fl && fl.dispatch !== false && auAttachChosen('rn') && !A.starting;
     h += '<div class="row"><span class="small muted secrets-note">' + (envName ? 'Secrets come from the repository\'s GitHub environment <span class="mono">' + esc(envName) + '</span>; nothing to upload.' : 'Secrets come from the repository\'s GitHub settings; nothing to upload.') + '</span>' +
       '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-run-start"' + (ready ? '' : ' disabled') + '>' + (A.starting ? 'Starting…' : 'Start Run') + '</button></div></section>';
     return '<div class="stack">' + h + '</div>';
@@ -2889,6 +2942,7 @@
       '<label class="kv-k" for="auEvery">Check running runs every</label><span class="row">' + dropdown({ bind: 'set:au:every', id: 'auEvery', cls: 'every-dd', change: 'au-check-every', value: String(A.data.checkEvery || 5), title: 'Check running runs every',
         options: [{ value: '5', label: '5 minutes', hint: 'default' }, { value: '1', label: '1 minute', hint: 'while debugging' }] }) +
       '<span class="small muted">how often Test Run asks GitHub how a run is doing. 1 minute uses five times more of GitHub\'s 5,000 requests an hour.</span></span>' +
+      auExcludeField() +
       '<span class="kv-k">Masking</span><span class="stack-s"><span class="small">Always: tokens, passwords, Authorization headers, JWTs</span><span class="small muted">Extra rules are set on each suite, in its ✎ Edit' +
       (masks.length ? ': ' + esc(masks.map(function (s) { return s.name + ' (' + plural(s.masking.length, 'rule') + ')'; }).join(', ')) : '; none yet') + '.</span></span>' +
       '<span class="kv-k">Space on GitHub Pages</span><span class="small">Shown in <button class="linkish" data-action="setup-part" data-part="publish">Setup › Publish</button>, automation results included.</span>' +
@@ -2901,6 +2955,43 @@
           '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
       }).join('') : '<tr><td colspan="5" class="no-data">No data available</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
+  }
+
+  /**
+   * Setup › Automation › Exclude environments: GitHub environments the run form leaves out (a name
+   * typed, then Enter or + Add; ✕ on a tag removes it). Each change is saved at once.
+   */
+  function auExcludeField() {
+    var list = (S.auto.data && S.auto.data.excludeEnvironments) || [];
+    return '<label class="kv-k" for="auExclude">Exclude environments</label><span class="stack-s">' +
+      '<span class="row"><input id="auExclude" class="exclude-input" data-bind="set:au:exclude" autocomplete="off" maxlength="100" placeholder="An environment\'s name, then Enter" value="' + esc(val('set:au:exclude', '')) + '">' +
+      '<button data-action="au-exclude-add">+ Add</button></span>' +
+      (list.length ? '<div class="filter-tags">' + list.map(function (n) {
+        return '<span class="filter-tag mono">' + esc(n) + '<button type="button" data-action="au-exclude-remove" data-value="' + esc(n) + '" aria-label="Remove ' + esc(n) + '" title="Remove ' + esc(n) + '">✕</button></span>';
+      }).join('') + '</div>' : '') +
+      '<span class="small muted">' + (list.length ? 'left out of the run form\'s environment list. GitHub makes github-pages by itself when Pages is switched on; no tests run there.' : 'none: the run form lists every GitHub environment of the repository') + '</span></span>';
+  }
+  /**
+   * Save the environments to exclude, and say so (or why not). The list changes on the page at once
+   * and the field empties for the next name; saves go one after another, so quick changes all count.
+   */
+  var auExcludeQueue = null;
+  function auExcludeSave(list) {
+    var A = S.auto, before = (A.data && A.data.excludeEnvironments) || [];
+    if (A.data) A.data.excludeEnvironments = list;
+    delete S.form['set:au:exclude'];
+    render();
+    var f = $('auExclude');
+    if (f) f.focus();
+    var send = function () {
+      return TR.http('POST', '/api/automation/settings', { excludeEnvironments: list }).then(function (r) {
+        var latest = A.data && A.data.excludeEnvironments === list; // nothing changed on the page since
+        if (!r.ok) { if (latest) A.data.excludeEnvironments = before; toast(r.error, 'bad'); render(); return; }
+        if (latest) A.data.excludeEnvironments = r.excludeEnvironments;
+        toast(r.excludeEnvironments.length ? 'Saved. The run form leaves out ' + r.excludeEnvironments.join(', ') + '.' : 'Saved. The run form lists every environment.');
+      });
+    };
+    auExcludeQueue = auExcludeQueue ? auExcludeQueue.then(send, send) : send();
   }
 
   // ---------------------------------------------------------------------------
@@ -4625,9 +4716,11 @@
       var A = S.auto, s = auSuite(), a = auAttachChosen('rn');
       if (!s) return;
       if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      var fl = auRunFields(s);
+      if (!fl) { toast('Wait for the run form of the branch to load.', 'bad'); return; }
       var inputs = {};
       var missing = '';
-      (s.inputs || []).forEach(function (d) {
+      fl.inputs.forEach(function (d) { // only the fields the branch's form has
         var v = auInputVal(d);
         inputs[d.name] = d.type === 'boolean' ? !!v : String(v).trim();
         if (d.required && d.type !== 'boolean' && !inputs[d.name] && !missing) missing = d.name;
@@ -4646,6 +4739,16 @@
         render();
         window.scrollTo(0, 0);
       });
+    },
+    'au-exclude-add': function () {
+      var name = String(val('set:au:exclude', '')).trim(), list = (S.auto.data && S.auto.data.excludeEnvironments) || [];
+      if (!name) { toast('Type the environment\'s name first.', 'bad'); return; }
+      if (list.some(function (x) { return x.toLowerCase() === name.toLowerCase(); })) { toast('“' + name + '” is already left out.', 'bad'); return; }
+      auExcludeSave(list.concat([name]));
+    },
+    'au-exclude-remove': function (el) {
+      var name = el.getAttribute('data-value');
+      auExcludeSave(((S.auto.data && S.auto.data.excludeEnvironments) || []).filter(function (x) { return x !== name; }));
     },
     'au-job-open': function (el) { var A = S.auto; A.screen = 'running'; A.jobId = el.getAttribute('data-id'); render(); window.scrollTo(0, 0); },
     'au-gh-log': function (el) {
@@ -4962,6 +5065,12 @@
     },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCases; render(); },
     'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
+    // ▶ Run: another branch, and so that branch's own run form
+    'au-run-branch': function (el) {
+      var s = auSuite();
+      S.form['au:rn:branch'] = el.value;
+      if (s && el.value) auRunFieldsLoad(s, el.value);
+    },
     // Setup › Automation: runs kept per test suite and cycle
     'au-check-every': function (el) {
       TR.http('POST', '/api/automation/settings', { checkEvery: Number(el.value) }).then(function (r) {
@@ -5080,6 +5189,7 @@
       if (e.key === 'Enter' && t.hasAttribute('data-issue')) { e.preventDefault(); addIssueLink(); }
       if (e.key === 'Enter' && t.hasAttribute('data-tags')) { e.preventDefault(); addTag(t); }
       if (e.key === 'Enter' && t.id === 'fText') { e.preventDefault(); ACTIONS['add-finding'](); }
+      if (e.key === 'Enter' && t.id === 'auExclude') { e.preventDefault(); ACTIONS['au-exclude-add'](); }
       if (e.key === 'Enter' && !e.shiftKey && (t.id === 'retireReason' || t.id === 'dupReason')) { e.preventDefault(); t.blur(); retireCase(t.id === 'dupReason' ? 'duplicate' : 'deprecated'); }
       return;
     }
