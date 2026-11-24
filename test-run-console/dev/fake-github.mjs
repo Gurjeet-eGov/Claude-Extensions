@@ -379,8 +379,11 @@ export function demoGithub() {
       { id: 102, name: 'Lint', path: '.github/workflows/lint.yml', yaml: 'name: Lint\non: [push]\njobs: {}\n' },
     ],
   });
-  Promise.all([zipOf({ 'results/junit.xml': sampleJunit(new Date(Date.now() - 86400000).toISOString()) }), zipOf({ 'index.html': '<!doctype html><title>Report</title>' })]).then(([bytes, report]) => {
-    fake.addRun('demo-org/cms-automation', { workflowId: 101, event: 'schedule', branch: 'master', conclusion: 'failure', createdAt: Date.now() - 86400000, actor: 'schedule-bot', artifacts: [{ name: 'test-results', bytes }, { name: 'playwright-report', bytes: report }] });
+  // like CMS-Automation's runs: the whole output (results-<environment>, results file included) and a
+  // results-only artifact (test-results) hold the same results file; Link a suite offers it once
+  const junit = sampleJunit(new Date(Date.now() - 86400000).toISOString());
+  Promise.all([zipOf({ 'results/junit.xml': junit }), zipOf({ 'index.html': '<!doctype html><title>Report</title>' }), zipOf({ 'results.xml': junit, 'report.json': '{}', 'playwright-report/index.html': '<!doctype html><title>Report</title>' })]).then(([bytes, report, whole]) => {
+    fake.addRun('demo-org/cms-automation', { workflowId: 101, event: 'schedule', branch: 'master', conclusion: 'failure', createdAt: Date.now() - 86400000, actor: 'schedule-bot', artifacts: [{ name: 'results-naipepea', bytes: whole }, { name: 'test-results', bytes }, { name: 'playwright-report', bytes: report }] });
   });
   return fake;
 }

@@ -144,6 +144,7 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
 - **As a filter** (Findings › Test suite, Run › Test Type): no "All" option. Nothing chosen means everything, and the field reads **Select**. A single-choice filter has a round ↻ button (`.help-btn`) at the right end of its title's row, in line with the field's right edge; it clears the choice, and is disabled while nothing is chosen.
 - **With its name inside** (the top bar's **Workbook** and **Test cycle**, a form's **Test suite**): the name in 12px bold `--accent` before the value.
 - The list opens over what's below it, tags included. It is never cut off by the card or the scrolling column around it. A click outside or Escape closes it; Enter in the search box takes the first match.
+- **Disabled, or loading its options** (`button.multi-btn[disabled]`): greyed out, with `--surface-2` behind, a `--border` edge and `--faint` text ("Loading…" while its options come from GitHub). It can't be opened until they are there.
 - Not for text that is typed freely; that is an input.
 
 ### Chips, tabs and toggles
@@ -161,6 +162,7 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
 - **Card** (`.card`, `.card-pad`): `--surface`, `--border`, `--radius`, `--shadow`.
 - **Banner** (`.banner`): a card with a 4px left border, accent by default, `.warn` (other) or `.bad` (fail). For a message that stays on screen: "View only.", "This workbook is open in Excel.", "This cannot be undone."
 - **Note** (`.note`, `.info`, `.bad`): a small tinted line inside a form or card.
+- **A card's title with its action** (`.card-title-row`): the title on the left, its one action at the right end of the same row: **+ Add** on Setup › Automation › Linked suites (there whether or not anything is in the list yet), the **?** on Setup › Publish.
 
 ### Tables
 
@@ -189,7 +191,7 @@ Bottom right, stays until closed: used when something finished in the background
 
 ### Forms that open in a page
 
-Add issue, Add finding, New test case, Create test case, Already covered, + Add and Edit open a form in the page (a card, or a box under a case).
+Add issue, Add finding, New test case, Create test case, Already covered, + Add and Edit open a form in the page (a card, or a box under a case). One exception: **Link a suite** (Setup › Automation's + Add, a linked suite's name there, and ✎ Edit on Automation) opens in a popup, so the page it was opened from stays behind it.
 - **One at a time.** Opening one closes any other, and what was typed in it is dropped.
 - **Leaving the page closes it**, dropping what was typed. Only a comment or link typed on a case is kept.
 - **Width:** a short form (one or two fields, such as New issue) keeps its fields to about 680px instead of the card's full width; the card keeps its width.
@@ -198,6 +200,7 @@ Add issue, Add finding, New test case, Create test case, Already covered, + Add 
 ### Popups
 
 - `openModal()` in `client.js`: a dimmed overlay (`rgba(10, 12, 16, .45)`), a box up to 760px wide, 10px corners, 18px padding, `role="dialog"`, `aria-modal`, focus on the first button. Escape or a click outside closes it.
+- **A long form in a popup** (Link a suite, `.modal.sheet`): the overlay scrolls instead of the box, so a dropdown's list is never cut off. It is drawn with the page (it redraws with it), and Escape, a click outside or Cancel closes it, dropping what was typed.
 - **Questions** (`askConfirm()` in `client.js`) are always 560px wide (`.modal-box.confirm`), with the buttons right-aligned on one row (`.modal-actions`). Never the browser's own `confirm()` or `alert()`.
 - **Asking before an action** follows one pattern:
   1. a question as the heading, naming the thing in curly quotes: Delete “CMS Sign Off”?
@@ -215,7 +218,8 @@ For reference you glance at, such as the keyboard shortcuts behind a **?**. Not 
 - **Width:** 340px in the console; about 220px in an extension popup.
 - **A shortcut with no key** shows a greyed-out **NA** in the key's place (`kbd.na`: `--faint` text, a dashed border). No "not set" sentence.
 - **Markup:** the button has `aria-describedby` pointing at the tooltip, which has `role="tooltip"`; `aria-expanded` says whether it's pinned. Code: `helpButton()` in `client.js`, and the `.help-wrap` and `.tip` rules in `styles.css` (Bug Reporter has the same rules in `styles/common.css`).
-- **Other reference text** (Automation's Full report): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
+- **Other reference text** (Automation's Full report, Setup › Publish's "Published workbooks are public"): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
+- **Info** (`infoTip()` in `client.js`, `.info-wrap`, `.info-btn`): a setting's explanation, instead of a line of muted text beside its field. A 16px circle right after the setting's name, 1px `--accent` border, a bold 10px `--accent` **i**; hover fills `--accent-weak`. Its tooltip opens on hover and keyboard focus only (no pinning), left-aligned under the i, 300px wide, text only. Several can share a screen (Setup › Automation: Runs kept, Check running runs every, Exclude environments).
 
 ### Menus
 

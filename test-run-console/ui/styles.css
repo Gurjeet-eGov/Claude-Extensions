@@ -328,6 +328,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .modal-box textarea { font-family: var(--mono); font-size: 12px; }
 /* Question popups (askConfirm, Remove cycle, Delete workbook): one width, buttons on the right even when they wrap */
 .modal-box.confirm { width: min(560px, 100%); }
+/* A popup with a long form (Link a suite): the overlay scrolls, so the box never cuts off a dropdown's list */
+.modal.sheet { display: block; overflow-y: auto; z-index: 45; }
+.modal.sheet .modal-box { margin: 6vh auto; max-height: none; overflow: visible; }
 .modal-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 #toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
 /* Messages at the bottom: ⓘ, the text, then ✕ to close. Green when it worked, red for an error, white text.
@@ -511,12 +514,34 @@ button.help-btn:hover { background: var(--accent-weak); }
 .tip-title { color: var(--muted); margin-bottom: 6px; }
 .tip-keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center; }
 .tip-keys kbd { min-width: 44px; text-align: center; }
+/* The circled i (DESIGN.md › Tooltips › Info): reference text for a setting, next to its name. Smaller than the ?,
+   left-aligned under it, on hover and keyboard focus only; several can share a screen. */
+.info-wrap { position: relative; display: inline-flex; }
+button.info-btn {
+  width: 16px; height: 16px; min-height: 0; padding: 0; justify-content: center; border-radius: 50%;
+  border: 1px solid var(--accent); background: var(--surface); color: var(--accent); font-size: 10px; font-weight: 700; line-height: 1;
+}
+button.info-btn:hover, button.info-btn:focus-visible { background: var(--accent-weak); }
+.info-wrap .tip { left: 0; right: auto; width: 300px; }
+.info-wrap:hover .tip, .info-wrap:focus-within .tip { display: block; }
+.info-wrap.shut .tip { display: none; }
+/* A setting's name with its i (Setup › Automation); .kv-top lines it up with the field's first line, not the middle */
+.kv-label { display: inline-flex; align-items: center; gap: 6px; }
+.kv-label label { font-size: inherit; color: inherit; font-weight: inherit; }
+.kv-grid > .kv-top { align-self: start; min-height: 30px; }
+.kv-grid.kv-wide { grid-template-columns: 220px 1fr; } /* names with an i: room for "Check running runs every" on one line */
+/* A card's title with its action at the right end (Linked suites' + Add, Publish to GitHub's ?) */
+.card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-pad.card-title-row { padding-bottom: 8px; }
 
 /* Dropdowns (Run › Test Type is the model): multiple choice = checkboxes, what's ticked shows below as tags with ✕;
    single choice = the button reads the choice. A long list gets a search box and scrolls in a fixed height. */
 .multi { position: relative; min-width: 0; }
 button.multi-btn { width: 100%; justify-content: space-between; text-align: left; color: var(--text); font-weight: 400; gap: 8px; } /* reads like a dropdown */
 button.multi-btn:hover { background: var(--surface); }
+/* Disabled, or loading its options: greyed out (DESIGN.md › Dropdowns) */
+button.multi-btn[disabled] { opacity: 1; background: var(--surface-2); border-color: var(--border); color: var(--faint); }
+button.multi-btn[disabled] .dd-ph, button.multi-btn[disabled] .dd-prefix { color: var(--faint); }
 button.multi-btn > .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.multi-btn > svg { flex: none; }
 /* the rail scrolls on its own; while the type list is open it may spill out, over the tags below */
@@ -687,7 +712,7 @@ button.link-btn.danger { color: var(--fail); }
 .seg button + button { border-left: 1px solid var(--accent); }
 .seg button[aria-pressed="true"] { background: var(--accent-weak); color: var(--accent); }
 .media-foot { border-top: 1px solid var(--border); padding-top: 10px; }
-@media (max-width: 760px) { .kv-grid { grid-template-columns: 1fr; gap: 4px 0; } .kv-k { margin-top: 8px; } }
+@media (max-width: 760px) { .kv-grid, .kv-grid.kv-wide { grid-template-columns: 1fr; gap: 4px 0; } .kv-k { margin-top: 8px; } }
 
 /* A report with no data (nothing published) */
 td.no-data { text-align: center; color: var(--faint); padding: 28px 12px; }
@@ -696,12 +721,6 @@ td.no-data { text-align: center; color: var(--faint); padding: 28px 12px; }
 /* Setup → Publish: Save preferences, then Publish now below it */
 .publish-row { border-top: 1px solid var(--border); padding-top: 12px; }
 /* Space on GitHub Pages: a bar like the progress bar, in parts (workbooks, reports, automation results), against 1 GB */
-.space-meter { gap: 6px; }
-.space-bar { display: flex; height: 8px; border-radius: 6px; overflow: hidden; background: var(--none-bg); width: 260px; max-width: 100%; }
-.space-bar span { display: block; height: 100%; min-width: 3px; } /* a few MB of 1 GB still shows */
-.space-bar .wb { background: var(--accent); }
-.space-bar .rp { background: color-mix(in srgb, var(--accent) 50%, var(--surface)); }
-.space-bar .au { background: var(--pass); }
 
 /* Setup › Access: Online access (Online link, Your admin link), then Users */
 .team-card { gap: 14px; }

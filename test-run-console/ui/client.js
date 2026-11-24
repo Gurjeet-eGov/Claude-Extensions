@@ -56,10 +56,10 @@
     setup: null,
     writes: 0,
     selfDirty: false,
-    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'link'),
-    // the open run (?run=<id> in the address) and what the run view shows
+    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'start' | 'running'),
+    // the open run (?run=<id> in the address) and what the run view shows; linkOpen: the Link a suite popup
     auto: {
-      data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false,
+      data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false, linkOpen: false,
       detail: null, detailLoading: false, filter: 'failed', q: '', sel: '', open: {}, allFiles: false, moving: false,
       file: null, busy: false, targets: {}, targetsLoading: {},
       // GitHub Actions: the runs going (and lately finished) from /api/automation/jobs, the one the
@@ -362,7 +362,7 @@
     var focus = ae && ae.id ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd } : null;
     S.wide = false;
     var b = body();
-    app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>' + readyBubble();
+    app.innerHTML = topbar() + '<main id="main"' + (S.wide ? ' class="wide"' : '') + '>' + b + '</main>' + readyBubble() + auLinkPopup();
     shareSelection();
     keepViewInUrl();
     var tb = document.querySelector('.topbar');
@@ -782,7 +782,6 @@
     if (S.readOnly) banners += me().role === 'viewer'
       ? '<div class="banner"><b>View only.</b><span class="muted">You can follow the run and the summary. Results are marked by testers.</span></div>'
       : '<div class="banner warn"><b>View only.</b><span class="muted">This workbook file is read-only on this computer, so results cannot be saved.</span></div>';
-    if (S.app && S.app.publishNotice && isOwner()) banners += '<div class="banner"><span><b>' + esc(S.app.publishNotice.by || 'Someone') + '</b> published newer data to GitHub at ' + esc(S.app.publishNotice.at) + '.</span><span class="grow"></span><button data-action="publish-get">Get it</button></div>';
     if (S.excelOpen) banners += '<div class="banner warn"><b>This workbook is open in Excel.</b><span class="muted">Close it there while you test: saving from Excel would overwrite results marked here.</span></div>';
     if (S.view === 'setup' && isOwner()) return banners + viewSetup();
     if (S.view === 'automation') return banners + viewAutomation(); // across workbooks: no test suite needed
@@ -892,7 +891,8 @@
     S.covering = null; clearForm('cov:');
     S.form.noteOpen = false; ['fText', 'fIssue', 'fArea', 'fDetails', 'fTab'].forEach(function (k) { delete S.form[k]; });
     clearForm('ai'); // Add issue: aiOpen, aiUrl, aiCases, aiSuite, aiFail
-    if (S.auto.screen === 'import' || S.auto.screen === 'link' || S.auto.screen === 'start') S.auto.screen = 'runs'; // Automation's Import results, Link a suite, Run, Change cycle
+    if (S.auto.screen === 'import' || S.auto.screen === 'start') S.auto.screen = 'runs'; // Automation's Import results, Run, Change cycle
+    S.auto.linkOpen = false; // the Link a suite popup
     S.auto.file = null; S.auto.moving = false; S.auto.editing = false;
     S.auto.gh = auGhFresh();
     clearForm('au:l:'); clearForm('au:im:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
@@ -2280,11 +2280,10 @@
       var det = auDetail();
       return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run…</div>');
     }
-    if (A.screen === 'link') return withRail(auRail(A.editing ? A.suite : 'new'), auLinkForm());
     var s = auSuite();
     if (!s) {
-      return withRail(auRail(''), '<div class="empty card"><h3>No automated suites yet</h3>' + (A.data.canAct
-        ? '<p>Link a suite to bring in its results: any framework that writes JUnit XML or CTRF JSON.</p><p style="margin-top:12px"><button class="primary" data-action="au-link">+ Link Suite</button></p>'
+      return withRail(auRail(''), '<div class="empty card"><h3>No automated suites yet</h3>' + (isOwner()
+        ? '<p>Please add it from <button class="linkish" data-action="view" data-view="setup" data-part="automation">Setup › Automation</button></p>'
         : '<p>Your test lead has not linked an automated suite yet, or not shared one with you.</p>') + '</div>');
     }
     if (A.screen === 'import' && A.data.canAct) return withRail(auRail(s.id), auImport(s));
@@ -2297,13 +2296,12 @@
     return withRail(auRail(s.id), auRunsList(s));
   }
 
-  /** Left: the linked suites, + Link Suite, and the Environment and Branch filters (DESIGN.md › Dropdowns › As a filter). */
+  /** Left: the linked suites (linked in Setup › Automation), and the Environment and Branch filters (DESIGN.md › Dropdowns › As a filter). */
   function auRail(active) {
     var d = S.auto.data;
     var h = '<div class="rail-group subtabs" role="tablist" aria-label="Automated suites"><span class="rail-title">Automated suites</span>' +
-      d.suites.map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
-      (d.canAct ? '<button class="ghost" data-action="au-link"' + (active === 'new' ? ' aria-pressed="true"' : '') + '>+ Link Suite</button>' : '') + '</div>';
-    if (active && active !== 'new' && S.auto.screen === 'runs') {
+      d.suites.map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') + '</div>';
+    if (active && S.auto.screen === 'runs') {
       var runs = auRunsOf(active);
       var envs = distinctOf(runs, 'env'), branches = distinctOf(runs, 'branch');
       if (envs.length || val('au:f:env', '')) h += auFilter('au:f:env', 'Environment', envs);
@@ -2561,11 +2559,20 @@
     return '<div class="stack">' + h + '</div>';
   }
 
-  /** Screen 6: Link a suite (or change one): the repository checked on GitHub, its workflow, results artifact and environment option, then a try. */
+  /**
+   * Link a suite (or change one), in a popup over the page it was opened from (Setup › Automation's
+   * + Add, a suite's name there, or ✎ Edit on Automation): the repository checked on GitHub, its
+   * workflow, results artifact and environment option, then a try. It is part of the page, so it
+   * redraws with it; Escape, a click outside or Cancel closes it, dropping what was typed.
+   */
+  function auLinkPopup() {
+    if (!S.auto.linkOpen || !S.auto.data) return '';
+    return '<div class="modal sheet au-link-pop"><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="auLinkTitle">' + auLinkForm() + '</div></div>';
+  }
   function auLinkForm() {
     var A = S.auto, s = A.editing ? auSuite() : null, G = A.gh;
     var v = function (k, dflt) { return val('au:l:' + k, dflt == null ? '' : dflt); };
-    var h = '<section class="card card-pad stack"><div><h2>' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact. <a href="' + AU_GUIDE + '" target="_blank" rel="noopener">How, for each framework ↗</a></p></div>';
+    var h = '<div class="stack"><div><h2 id="auLinkTitle">' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact. <a href="' + AU_GUIDE + '" target="_blank" rel="noopener">How, for each framework ↗</a></p></div>';
     // 1 · Repository, checked on GitHub
     var c = G.check;
     h += '<div class="subsection"><div class="step-title"><span class="step-n">1</span>Repository</div><div class="row"><label class="sr" for="auRepo">Repository link</label>' +
@@ -2585,7 +2592,7 @@
       var arts = G.arts && G.artsFor === v('wf', '') ? G.arts : null;
       var artOpts = arts ? arts.artifacts.map(function (a) { return { value: a.name, label: a.name, hint: a.results ? a.results.formatLabel + ' · ' + plural(a.results.tests, 'test') : a.note }; }) : [];
       var artHint = !wf ? 'Choose the workflow first' : G.artsLoading ? 'Looking inside the latest run’s artifacts…' : G.artsError ? '' : arts && arts.run ? 'From the latest run (' + auDate(arts.run.createdAt, false) + '), or type the name it will have' : 'No finished run yet: type the artifact’s name (test-results by default)';
-      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf, placeholder: G.artsLoading ? 'Loading…' : 'Select', options: artOpts }),
+      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf || G.artsLoading, placeholder: G.artsLoading ? 'Loading…' : 'Select', options: artOpts }),
         G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : artHint);
       var envOpts = [{ value: '', label: 'None' }].concat(wf ? wf.inputs.map(function (x) { return { value: x.name, label: x.name, hint: x.description }; }) : []);
       h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), 'Runs are grouped by it, and the run form names its GitHub environment');
@@ -2595,8 +2602,7 @@
     h += '</div></div>';
     // 3 · Extras
     h += '<div class="subsection"><div class="step-title"><span class="step-n">3</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
-      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') +
-      auField('auMask', 'Extra masking', '<textarea id="auMask" class="mono" rows="2" data-bind="au:l:mask" placeholder="e.g. otp=\\d{6}">' + esc(v('mask', s ? s.masking.join('\n') : '')) + '</textarea>', 'One per line: a text, or a /pattern/. Tokens, passwords and Authorization headers are always masked.') + '</div></div>';
+      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') + '</div></div>';
     // 4 · Try it: saves the suite and brings the latest run in
     if (wf) {
       var im = G.imported;
@@ -2605,10 +2611,24 @@
         (im ? '<span class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</span>' : '<span class="small muted">Saves the suite, then brings in the latest finished run.</span>') + '</div></div>';
     }
     h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
-      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></section>';
-    return '<div class="stack">' + h + '</div>';
+      '<button class="ghost" data-action="au-link-close">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></div>';
+    return h;
   }
 
+  /** Closes the Link a suite popup, dropping what was typed in it. */
+  function auLinkClose() {
+    var A = S.auto;
+    A.linkOpen = false; A.editing = false; A.gh = auGhFresh();
+    clearForm('au:l:'); clearForm('au:lk:');
+    S.ddOpen = null; S.ddQ = '';
+    render();
+  }
+  /** Focus inside the popup: the repository link, or Save Suite when it is already filled in. */
+  function auLinkFocus() {
+    var f = $('auRepo');
+    if (f && !f.value) f.focus();
+    else { var b = document.querySelector('.au-link-pop button.primary'); if (b) b.focus(); }
+  }
   function auGhFresh() { return { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null }; }
   var AU_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/automation.md';
   var AU_CONNECT_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/connect-a-suite.md';
@@ -2862,7 +2882,7 @@
     if (fl && fl.error) h += '<div class="note warn">' + esc(fl.error) + ' The options below are the ones saved when the suite was linked.</div>';
     if (fl && fl.note) h += '<div class="note warn">' + esc(fl.note) + '</div>';
     var branches = rf && rf.branches ? rf.branches : null;
-    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: branch, title: 'Branch', disabled: !branches, change: 'au-run-branch',
+    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: branch, title: 'Branch', disabled: !branches || !!(rf && rf.loading), change: 'au-run-branch',
       placeholder: rf && rf.loading ? 'Loading…' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
     if (!fl && branch) h += '<p class="small muted wide">Reading the run form on ' + esc(branch) + '…</p>';
     defs.forEach(function (d) {
@@ -2934,42 +2954,38 @@
     var keeps = ['1', '2', '3', '5'];
     if (keeps.indexOf(String(keep)) < 0) keeps.push(String(keep));
     var suites = A.data.suites;
-    var masks = suites.filter(function (s) { return s.masking.length; });
-    var h = '<section class="card card-pad stack"><div><h2>Automation</h2><p class="small muted">Suites run in their own repositories\' GitHub Actions. Test Run keeps their results; GitHub keeps the full reports. Who can see and run them is in <button class="linkish" data-action="setup-part" data-part="access">Access › Users</button>.</p></div><div class="kv-grid">' +
+    var h = '<section class="card card-pad stack"><div><h2>Automation</h2><p class="small muted">Suites run in their own repositories\' GitHub Actions. Test Run keeps their results; GitHub keeps the full reports. Who can see and run them is in <button class="linkish" data-action="setup-part" data-part="access">Access › Users</button>.</p></div><div class="kv-grid kv-wide">' +
       '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this laptop, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
-      '<label class="kv-k" for="auKeep">Runs kept</label><span class="row">' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) +
-      '<span class="small muted">for each test suite and cycle; the oldest goes when a new one comes in</span></span>' +
-      '<label class="kv-k" for="auEvery">Check running runs every</label><span class="row">' + dropdown({ bind: 'set:au:every', id: 'auEvery', cls: 'every-dd', change: 'au-check-every', value: String(A.data.checkEvery || 5), title: 'Check running runs every',
-        options: [{ value: '5', label: '5 minutes', hint: 'default' }, { value: '1', label: '1 minute', hint: 'while debugging' }] }) +
-      '<span class="small muted">how often Test Run asks GitHub how a run is doing. 1 minute uses five times more of GitHub\'s 5,000 requests an hour.</span></span>' +
+      '<span class="kv-k kv-label"><label for="auKeep">Runs kept</label>' + infoTip('auKeepTip', 'Runs kept', 'For each test suite and cycle. The oldest goes when a new one comes in.') + '</span>' +
+      '<span>' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) + '</span>' +
+      '<span class="kv-k kv-label"><label for="auEvery">Check running runs every</label>' + infoTip('auEveryTip', 'Check running runs every', 'How often Test Run asks GitHub how a run is doing. 1 minute uses five times more of GitHub\'s 5,000 requests an hour.') + '</span>' +
+      '<span>' + dropdown({ bind: 'set:au:every', id: 'auEvery', cls: 'every-dd', change: 'au-check-every', value: String(A.data.checkEvery || 5), title: 'Check running runs every',
+        options: [{ value: '5', label: '5 minutes', hint: 'default' }, { value: '1', label: '1 minute', hint: 'while debugging' }] }) + '</span>' +
       auExcludeField() +
-      '<span class="kv-k">Masking</span><span class="stack-s"><span class="small">Always: tokens, passwords, Authorization headers, JWTs</span><span class="small muted">Extra rules are set on each suite, in its ✎ Edit' +
-      (masks.length ? ': ' + esc(masks.map(function (s) { return s.name + ' (' + plural(s.masking.length, 'rule') + ')'; }).join(', ')) : '; none yet') + '.</span></span>' +
-      '<span class="kv-k">Space on GitHub Pages</span><span class="small">Shown in <button class="linkish" data-action="setup-part" data-part="publish">Setup › Publish</button>, automation results included.</span>' +
       '</div></section>';
-    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Linked suites</h2></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
+    // + Add sits at the right of the card's title, whether or not suites are linked yet; a suite's name opens it to change
+    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
       (suites.length ? suites.map(function (s) {
         var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
-        return '<tr><td>' + esc(s.name) + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
+        return '<tr><td><button class="linkish" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”">' + esc(s.name) + '</button>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
           '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
           '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
-      }).join('') : '<tr><td colspan="5" class="no-data">No data available</td></tr>') + '</tbody></table></div></section>';
+      }).join('') : '<tr><td colspan="5" class="no-data">No suites linked yet. + Add links one: any framework whose workflow writes JUnit XML or CTRF JSON.</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
 
   /**
    * Setup › Automation › Exclude environments: GitHub environments the run form leaves out (a name
-   * typed, then Enter or + Add; ✕ on a tag removes it). Each change is saved at once.
+   * typed, then Enter; ✕ on a tag removes it). Each change is saved at once.
    */
   function auExcludeField() {
     var list = (S.auto.data && S.auto.data.excludeEnvironments) || [];
-    return '<label class="kv-k" for="auExclude">Exclude environments</label><span class="stack-s">' +
-      '<span class="row"><input id="auExclude" class="exclude-input" data-bind="set:au:exclude" autocomplete="off" maxlength="100" placeholder="An environment\'s name, then Enter" value="' + esc(val('set:au:exclude', '')) + '">' +
-      '<button data-action="au-exclude-add">+ Add</button></span>' +
+    return '<span class="kv-k kv-label kv-top"><label for="auExclude">Exclude environments</label>' +
+      infoTip('auExcludeTip', 'Exclude environments', 'Left out of the run form\'s environment list. GitHub makes github-pages by itself when Pages is switched on; no tests run there.') + '</span><span class="stack-s">' +
+      '<input id="auExclude" class="exclude-input" data-bind="set:au:exclude" autocomplete="off" maxlength="100" placeholder="Type name and press Enter" value="' + esc(val('set:au:exclude', '')) + '">' +
       (list.length ? '<div class="filter-tags">' + list.map(function (n) {
         return '<span class="filter-tag mono">' + esc(n) + '<button type="button" data-action="au-exclude-remove" data-value="' + esc(n) + '" aria-label="Remove ' + esc(n) + '" title="Remove ' + esc(n) + '">✕</button></span>';
-      }).join('') + '</div>' : '') +
-      '<span class="small muted">' + (list.length ? 'left out of the run form\'s environment list. GitHub makes github-pages by itself when Pages is switched on; no tests run there.' : 'none: the run form lists every GitHub environment of the repository') + '</span></span>';
+      }).join('') + '</div>' : '') + '</span>';
   }
   /**
    * Save the environments to exclude, and say so (or why not). The list changes on the page at once
@@ -3384,33 +3400,6 @@
     });
   }
 
-  /** How much of GitHub Pages' 1 GB a publish takes (measured on the server from what it would publish). */
-  function loadPublishSpace() {
-    if (S.publishSpaceLoading) return;
-    S.publishSpaceLoading = true;
-    TR.http('GET', '/api/publish/space').then(function (r) {
-      S.publishSpaceLoading = false;
-      S.publishSpace = r.ok ? r : { error: r.error || 'Could not measure it.' };
-      render();
-    });
-  }
-
-  /** Space on GitHub Pages: a bar in parts (workbooks, reports, automation results) and their sizes. */
-  function spaceMeter() {
-    var sp = S.publishSpace;
-    if (!sp) { loadPublishSpace(); return '<span class="small muted">Measuring…</span>'; }
-    if (sp.error) return '<span class="small bad-text">' + esc(sp.error) + '</span>';
-    var parts = [['wb', 'workbooks', sp.parts.workbooks], ['rp', 'reports', sp.parts.reports], ['au', 'automation results', sp.parts.automation]];
-    var size = function (n) { return n ? fmtBytes(n) : '0 KB'; };
-    var limit = fmtBytes(sp.limit).replace('.0 ', ' '); // "1 GB"
-    var used = size(sp.total) + ' of ' + limit;
-    return (sp.warn ? '<div class="note warn">The site is close to GitHub Pages’ ' + limit + ' limit. Untick workbooks nobody needs on the site any more; above the limit, GitHub may stop updating it.</div>' : '') +
-      '<span class="space-bar" role="img" aria-label="' + esc(used) + ' used">' + parts.map(function (p) {
-        return p[2] ? '<span class="' + p[0] + '" style="width:' + Math.min(100, p[2] / sp.limit * 100).toFixed(2) + '%"></span>' : '';
-      }).join('') + '</span>' +
-      '<span class="small muted">' + esc(used) + parts.filter(function (p, i) { return p[2] || i < 2; }).map(function (p) { return ' · ' + p[1] + ' ' + size(p[2]); }).join('') + '</span>';
-  }
-
   /** Publish now: asks once that it is public, and before replacing a newer publish by someone else. */
   function publishNow(extra) {
     if (S.publishBusy) return;
@@ -3420,7 +3409,6 @@
     TR.http('POST', '/api/publish/now', extra || {}).then(function (r) {
       S.publishBusy = false;
       if (r.repo != null) S.publish = r;
-      if (r.ok) S.publishSpace = null; // measured again from what was published
       render();
       if (r.code === 'CONFIRM_PUBLIC') {
         askConfirm({
@@ -3481,7 +3469,6 @@
       if (!r.ok) { toast(r.error, 'bad'); return; }
       S.publish = r;
       S.pubDraft = null;
-      S.publishSpace = null; // the ticked workbooks may have changed
       closeModal();
       render();
       if (publishAfter) publishNow({ confirmPublic: true });
@@ -3508,20 +3495,13 @@
 
   function publishCard() {
     var r = S.publish;
-    var h = '<section class="card card-pad stack" id="publish"><h2>Publish to GitHub</h2>';
+    var h = '<section class="card card-pad stack" id="publish"><div class="card-title-row"><h2>Publish to GitHub</h2>' +
+      helpButton({ id: 'publishTip', label: 'Who can read what is published', title: 'Published workbooks are public',
+        html: '<span>Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links, and anyone may keep a copy. Invite keys and team settings are never published.</span>' }) + '</div>';
     if (!r) { loadPublish(); return h + '<div class="loading">Loading…</div></section>'; }
     if (r.error && r.repo == null) return h + '<div class="note bad">' + esc(r.error) + '</div></section>';
-    h += '<div class="note warn"><b>Published workbooks are public.</b> Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links, and anyone may keep a copy. Invite keys and team settings are never published.</div>';
     if (r.problem) h += '<div class="note bad">' + esc(r.problem) + '</div>';
-    else {
-      h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '/tree/' + esc(r.dataBranch) + (r.folder ? '/' + esc(r.folder) : '') + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>' + (r.isPrivate === false ? ' (a public repository)' : '') +
-        ', branch <span class="mono">' + esc(r.dataBranch) + '</span>' + (r.folder ? ', folder <span class="mono">' + esc(r.folder) + '</span>' : '') +
-        ': one commit, replaced at each publish, so what you take off leaves the branch. The site is built from <span class="mono">' + esc(r.branch) + '</span> and that branch.</div>';
-      if (r.dataBranchExists === false) h += '<div class="small muted">The first publish creates <span class="mono">' + esc(r.dataBranch) + '</span>. Until then, <b>Get it</b> reads the data published before, in <span class="mono">' + esc(r.oldFolder) + '</span> on <span class="mono">' + esc(r.branch) + '</span>.</div>';
-    }
-    if (r.newer && r.remote) {
-      h += '<div class="note info row"><span class="grow"><b>' + esc(r.remote.by || 'Someone') + '</b> published at ' + esc(r.remote.at) + ', after this laptop last published or got the data.</span><button data-action="publish-get">Get it</button></div>';
-    }
+    else h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>' + (r.isPrivate === false ? ' (a public repository)' : '') + '.</div>';
     var d = pubDraft();
     var dirty = pubDirty();
     h += '<div class="subsection"><h3>Workbooks to publish</h3>' + (r.books.length ? r.books.map(function (b) {
@@ -3529,8 +3509,6 @@
     }).join('') : '<p class="small faint">No workbooks yet.</p>') +
       (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') +
       (r.automation && r.automation.runs ? '<p class="small muted">With them go their <b>' + plural(r.automation.runs, 'automated run') + '</b>, locked: on the site, only invited people who may see a run open it, with their own invite link. New Link, Remove or a change of access locks them again at the next publish.</p>' : '') + '</div>';
-    h += '<div class="subsection space-meter"><h3>Space on GitHub Pages</h3>' + spaceMeter() +
-      '<span class="small faint">What Publish now puts on the site: a download copy of each published workbook, its reports, and its locked automated results.</span></div>';
     h += '<div class="subsection"><h3>When</h3>' +
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
       (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
@@ -3820,6 +3798,14 @@
       '<button class="help-btn" data-action="help" aria-label="' + esc(o.label) + '" aria-describedby="' + esc(o.id) + '" aria-expanded="' + !!S.helpOpen + '">?</button>' +
       '<div id="' + esc(o.id) + '" role="tooltip" class="tip"><div class="tip-title">' + esc(o.title) + '</div>' + o.html + '</div></span>';
   }
+  /**
+   * The circled i (DESIGN.md › Tooltips › Info): reference text for a setting, next to its name, shown on
+   * hover and keyboard focus, left-aligned under the i. Several can share a screen (unlike the ?).
+   */
+  function infoTip(id, label, text) {
+    return '<span class="info-wrap"><button type="button" class="info-btn" aria-label="About ' + esc(label) + '" aria-describedby="' + esc(id) + '">i</button>' +
+      '<span id="' + esc(id) + '" role="tooltip" class="tip">' + esc(text) + '</span></span>';
+  }
   /** Pins the shortcuts open (or closes them) without redrawing the page. */
   function setHelp(open) {
     S.helpOpen = open;
@@ -3841,6 +3827,7 @@
       S.view = el.getAttribute('data-view');
       if (S.view === 'findings') S.suites = {}; // read the other suites afresh
       if (S.view === 'setup') S.setup = null;
+      if (S.view === 'setup' && el.getAttribute('data-part')) { S.form.setupPart = el.getAttribute('data-part'); S.auto.setupGh = null; S.auto.data = null; S.auto.error = ''; }
       if (S.view === 'automation') { S.auto.data = null; S.auto.error = ''; S.auto.detail = null; } // read afresh
       if (S.view === 'run' || S.view === 'summary') S.autoCycle = null; // the automated results attached to the cycle, read afresh
       if (S.view !== from) closeBlocks(); // a form left open on the page you leave closes, and what was typed in it goes
@@ -4458,7 +4445,6 @@
         TR.http('POST', '/api/publish/get-latest', {}).then(function (r) {
           if (r.repo != null) S.publish = r;
           if (!r.ok) { toast(r.error, 'bad'); render(); return; }
-          S.publishSpace = null; // other workbooks now
           toast('Got the data published by ' + (r.result.by || 'someone') + ' at ' + r.result.at + '.', 'long');
           if (S.app) S.app.publishNotice = null;
           refreshApp().then(function () { boot(S.tab, cycleLabel()); });
@@ -4668,18 +4654,23 @@
       render();
       window.scrollTo(0, 0);
     },
+    // Link a suite: a popup, from Setup › Automation's + Add
     'au-link': function () {
-      S.auto.screen = 'link'; S.auto.editing = false; S.auto.runId = ''; clearForm('au:l:'); clearForm('au:lk:');
-      S.auto.gh = auGhFresh();
-      render(); window.scrollTo(0, 0);
+      S.auto.linkOpen = true; S.auto.editing = false; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh(); S.ddOpen = null;
+      render(); auLinkFocus();
     },
-    'au-edit': function () {
-      S.auto.screen = 'link'; S.auto.editing = true; clearForm('au:l:'); clearForm('au:lk:');
-      S.auto.gh = auGhFresh();
-      render(); window.scrollTo(0, 0);
+    // Change a suite, in the same popup: ✎ Edit on Automation, or the suite's name in Setup › Automation
+    'au-edit': function (el) {
+      var id = el && el.getAttribute('data-id');
+      if (id) S.auto.suite = id;
+      S.auto.linkOpen = true; S.auto.editing = true; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh(); S.ddOpen = null;
+      render(); auLinkFocus();
       var s = auSuite();
       if (s && s.workflowId) auGhCheck(); // a linked suite: its workflows are read again, so they can be changed
     },
+    'au-link-close': function () { auLinkClose(); },
     'au-gh-check': function () { auGhCheck(); },
     'au-gh-import-latest': function () {
       var A = S.auto, G = A.gh, body = auLinkBody(), a = auAttachChosen('lk');
@@ -4903,8 +4894,8 @@
       // checked on GitHub with a workflow chosen: saved with its workflow; else as a suite whose results are imported
       TR.http('POST', body.workflowId ? '/api/automation/github/link' : '/api/automation/suites', body).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }
-        clearForm('au:l:');
-        A.screen = 'runs'; A.editing = false; A.suite = r.suite.id;
+        auLinkClose();
+        A.suite = r.suite.id;
         toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '”.');
         auLoad();
       });
@@ -4921,8 +4912,8 @@
       }, function () {
         TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
           if (!r.ok) { toast(r.error, 'bad'); return; }
-          clearForm('au:l:');
-          S.auto.screen = 'runs'; S.auto.editing = false; S.auto.suite = '';
+          auLinkClose();
+          S.auto.screen = 'runs'; S.auto.suite = '';
           toast('Unlinked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
           auLoad();
         });
@@ -5101,6 +5092,7 @@
   document.addEventListener('click', function (e) {
     var modal = $('modal');
     if (modal && e.target === modal) { closeModal(); return; }
+    if (e.target.classList && e.target.classList.contains('au-link-pop')) { auLinkClose(); return; } // a click outside the Link a suite popup
     if (S.dlMenu && !e.target.closest('.dl-wrap')) { S.dlMenu = null; render(); }
     if (S.ddOpen && !e.target.closest('.multi')) { S.ddOpen = null; S.ddQ = ''; render(); }
     if (S.helpOpen && !e.target.closest('.help-wrap')) setHelp(false);
@@ -5114,7 +5106,7 @@
   // A ? hidden with Escape shows again once the pointer or focus has left it.
   ['mouseout', 'focusout'].forEach(function (type) {
     document.addEventListener(type, function (e) {
-      var w = e.target.closest && e.target.closest('.help-wrap');
+      var w = e.target.closest && e.target.closest('.help-wrap, .info-wrap');
       if (w && !w.contains(e.relatedTarget)) w.classList.remove('shut');
     });
   });
@@ -5172,6 +5164,9 @@
     if (e.key === 'Escape' && hw && (S.helpOpen || hw.matches(':hover, :focus-within'))) { setHelp(false); return; }
     if (e.key === 'Escape' && S.dlMenu) { S.dlMenu = null; render(); return; }
     if (e.key === 'Escape' && S.ddOpen) { var ddb = document.querySelector('.multi-btn[data-dd="' + S.ddOpen + '"]'); S.ddOpen = null; S.ddQ = ''; render(); if (ddb && ddb.id) { var nb = $(ddb.id); if (nb) nb.focus(); } return; }
+    var iw = e.key === 'Escape' && document.activeElement && document.activeElement.closest && document.activeElement.closest('.info-wrap');
+    if (iw) { iw.classList.add('shut'); return; } // a focused i: its tooltip hides until focus leaves
+    if (e.key === 'Escape' && S.auto.linkOpen) { auLinkClose(); return; } // the Link a suite popup
     if (e.key === 'Enter' && e.target && e.target.hasAttribute && e.target.hasAttribute('data-dd-q')) {
       // Enter in the search box: take the first match (single choice), or the typed value
       e.preventDefault();

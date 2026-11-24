@@ -155,16 +155,16 @@ gotestsum --junitfile results/junit.xml ./...
 
 ## Linking the suite in Test Run
 
-Once per repository, by the host or a tester allowed to start runs: **Automation → + Link Suite**.
+Once per repository, by the host: **Setup → Automation → Linked suites → + Add**. The form opens in a popup; a suite's name in that list opens it again to change the suite, and so does **✎ Edit** on the Automation screen (for the host, and testers allowed to start runs).
 
 1. **Repository**: paste the link (`https://github.com/owner/repo`) and press **Check**. Test Run reads it with the host's GitHub access, and lists its workflows; those that can be started by hand (with `workflow_dispatch`) can be picked.
 2. **Workflow and results**: the name people see in Test Run; the **Workflow**; the **Results artifact** (Test Run looks inside the latest run's artifacts and shows which hold a results file; you can also type a name that isn't there yet); and, optionally, which input is the **environment** (runs are grouped by it, and the run form names it as the place secrets come from). An input of `type: environment` is picked by itself when none is chosen.
-3. **Extras** (optional): the case-ID pattern, and extra masking rules for values that must never be kept (a text, or a `/pattern/`).
+3. **Extras** (optional): the case-ID pattern.
 4. **Try it**: choose a workbook › test suite › test cycle and press **Import Latest Run**. It saves the suite and brings in the latest finished run, so you see the counts straight away.
 
 Then **Save Suite**. A suite can also be saved without a workflow: its results then come in only with **⤒ Import Results**.
 
-Who sees a suite's results, and who may start runs, is set per person in **Setup → Access → Users**. The host sees **Setup → Automation**: the GitHub access Test Run has, how many runs are kept per test suite and cycle, how often a running run is checked, the GitHub environments the run form leaves out (**Exclude environments**: type a name and press Enter or **+ Add**, ✕ removes one; `github-pages` to start with), and the linked suites.
+Who sees a suite's results, and who may start runs, is set per person in **Setup → Access → Users**. The host sees **Setup → Automation**: the GitHub access Test Run has, how many runs are kept per test suite and cycle, how often a running run is checked, the GitHub environments the run form leaves out (**Exclude environments**: type a name and press Enter, ✕ removes one; `github-pages` to start with), and the linked suites, with **+ Add** to link another. The **i** next to a setting says what it does.
 
 ## Running it from Test Run
 

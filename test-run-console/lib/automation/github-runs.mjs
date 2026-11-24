@@ -26,7 +26,7 @@
 // started by the same GitHub account when that's known: whether or not GitHub's answer names it.
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import YAML from 'yaml';
 import JSZip from 'jszip';
 import { maySeeSuite, mayStartRuns } from '../team.mjs';
@@ -319,15 +319,26 @@ export function createGithubRuns(ctx) {
         try {
           const files = await resultFilesIn(await github.downloadArtifact(owner, repo, a.id), `artifact “${a.name}”`);
           const parsed = files.length ? await parseResults(files).catch(() => null) : null;
-          if (parsed) item.results = { format: parsed.format, formatLabel: parsed.formatLabel, files: parsed.files.length, tests: parsed.totals.total, tool: parsed.tool };
-          else item.note = 'no results file';
+          if (parsed) {
+            item.results = { format: parsed.format, formatLabel: parsed.formatLabel, files: parsed.files.length, tests: parsed.totals.total, tool: parsed.tool };
+            // the results files themselves (not the rest of the artifact), to spot the same ones in another artifact of the run
+            const used = new Set(parsed.files.map((x) => x.name));
+            const h = createHash('sha256');
+            for (const f of files.filter((x) => used.has(x.name)).map((x) => x.buf.toString('base64')).sort()) h.update(f).update('\n');
+            item.digest = h.digest('hex');
+          } else item.note = 'no results file';
         } catch (e) {
           item.note = e.code === 'TOO_BIG' || e.code === 'BAD_FORMAT' ? e.message : 'could not be read';
         }
       }
       out.push(item);
     }
-    return { run: { id: chosen.id, number: chosen.run_number, createdAt: chosen.created_at, branch: chosen.head_branch, conclusion: chosen.conclusion, htmlUrl: chosen.html_url }, artifacts: out };
+    // A run may upload the same results twice: in its whole output (results-<environment>) and in a
+    // results-only artifact (test-results). Offer them once, in the smallest artifact that holds them.
+    const smallest = new Map();
+    for (const x of out) if (x.digest && (!smallest.has(x.digest) || x.size < smallest.get(x.digest).size)) smallest.set(x.digest, x);
+    const shown = out.filter((x) => !x.digest || smallest.get(x.digest) === x).map(({ digest, ...x }) => x);
+    return { run: { id: chosen.id, number: chosen.run_number, createdAt: chosen.created_at, branch: chosen.head_branch, conclusion: chosen.conclusion, htmlUrl: chosen.html_url }, artifacts: shown };
   }
 
   /** Save a suite with its GitHub workflow. */

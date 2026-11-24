@@ -64,7 +64,7 @@ Then, on GitHub, in the repository's **Settings → Environments**: **New enviro
 
 ## Link it in Test Run
 
-1. **Automation → + Link Suite.**
+1. **Setup → Automation → Linked suites → + Add** (the host).
 2. Paste the repository's link (`https://github.com/owner/repo`) and press **Check**.
 3. Pick the **workflow** ("Integration tests"). Test Run picks the environment field by itself.
 4. **Results artifact:** `test-results`.

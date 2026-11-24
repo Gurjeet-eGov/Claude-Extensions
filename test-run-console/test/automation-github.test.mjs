@@ -76,6 +76,20 @@ async function linked(s, id = '') {
 }
 const results = (at) => zipOf({ 'results/junit.xml': sampleJunit(at), 'report/index.html': '<html></html>' });
 
+test('the same results file in two artifacts of a run is offered once, in the smaller artifact', async () => {
+  const s = await start();
+  try {
+    s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number: 212, artifacts: [
+      { name: 'results-Nai Pepea', bytes: await zipOf({ 'results.xml': sampleJunit('2026-11-23T09:00:00Z'), 'report.json': '{"suites":[]}', 'run-meta.json': '{"runId":"x"}', 'report/index.html': '<html>' + 'x'.repeat(5000) + '</html>' }) },
+      { name: 'test-results', bytes: await zipOf({ 'results/junit.xml': sampleJunit('2026-11-23T09:00:00Z') }) },
+      { name: 'other-results', bytes: await zipOf({ 'junit.xml': sampleJunit('2026-11-23T10:00:00Z') }) }] });
+    const twice = await s.req('POST', '/api/automation/github/artifacts', { repo: REPO, workflowId: WF });
+    assert.equal(twice.run.number, 212);
+    assert.deepEqual(twice.artifacts.map((x) => x.name), ['test-results', 'other-results'], 'one entry per results file; different results stay apart');
+    assert.ok(twice.artifacts.every((x) => !('digest' in x)), 'the digest stays on the server');
+  } finally { s.close(); }
+});
+
 test('link a suite: the repository checked, its workflows with their inputs, the artifacts with results', async () => {
   const s = await start();
   try {
