@@ -1,7 +1,7 @@
 // Sample workbook for the unit tests and the local demo.
 // The header rows copy the layouts of the real CMS sign-off workbook (two
-// manual layouts, the automation sign-off tab, the KPI tab). Every case below
-// is made up for testing; none is copied from a real sheet.
+// manual layouts and the KPI tab). Every case below is made up for testing;
+// none is copied from a real sheet.
 import ExcelJS from 'exceljs';
 import { FakeSpreadsheet } from './fake-sheets.mjs';
 
@@ -9,7 +9,6 @@ const B = (...lines) => lines.map((l) => `• ${l}`).join('\n');
 
 export const MANUAL_HEADERS = ['S .No', 'Scenario', 'Sub feature', 'Test Type', 'Test Data', 'Pre Condition', 'Expected result', 'Test Status / v2.12', 'Comment / v2.12'];
 export const FEATURE_HEADERS = ['S .No', 'Scenario', 'Feature', 'Sub feature', 'Test Type', 'Test Data', 'Pre Condition', 'Expected result', 'Test Status / v2.20', 'Comment / v2.20', 'Linked issue'];
-export const AUTOMATION_HEADERS = ['Suite', 'Functionality', 'Test File', 'Test Case ID/playwright path', 'Test Scenario', 'Test Summary', 'Pre-requisites', 'Acceptance Criteria', 'Issue/Story Ref', 'Status', 'Notes'];
 export const KPI_HEADERS = ['KPI', 'Definition', 'Formula', 'Status', 'Notes'];
 
 const STATUS = ['Fail', 'NA (Skipped)', 'Pass'];
@@ -45,14 +44,6 @@ const featureRows = [
   ['CMS/007', 'Verify if the public dashboard loads without signing in', 'Public dashboard', 'Dashboard', 'Functional', '', 'Dashboard enabled', B('KPIs shall load for an anonymous visitor'), '', '', ''],
 ];
 
-const automationRows = [
-  ['Employee', 'Complaint Management', 'inbox-search.spec.ts', 'Inbox search › by complaint number', 'Search by number', 'Searches by number', 'Complaint exists', 'Complaint listed', '', 'NA (Skipped)', 'No seeded complaint'],
-  ['Employee', 'Complaint Management', 'inbox-search.spec.ts', 'Inbox search › by mobile', 'Search by mobile', 'Searches by mobile', 'Complaint exists', 'Complaint listed', '', 'Pass', ''],
-  ['Employee', 'Complaint Management', 'complaints.spec.ts', 'Create complaint › mandatory only', 'Create mandatory', 'Creates with mandatory fields', 'CSR', 'Complaint created', '', 'Pass', ''],
-  ['Employee', 'Workflow', 'workflow-assign.spec.ts', 'Assign › GRO assigns', 'GRO assigns', 'GRO assigns to LME', 'Pending complaint', 'PENDINGATLME', '', 'Fail', 'Assign button missing'],
-  ['Citizen', 'Rating', 'citizen-rate.spec.ts', 'Rate › resolved complaint', 'Citizen rates', 'Citizen rates a resolved complaint', 'Resolved complaint', 'Closed after resolution', '', 'Pass', ''],
-];
-
 const kpiRows = [
   ['New Complaints Created', 'how many complaints were filed', 'Complaints created in the selected range', 'Pass', ''],
   ['Open Complaints', 'how many complaints are open', 'Complaints not in a closing state', 'Pass', ''],
@@ -63,7 +54,6 @@ const kpiRows = [
 const SHEETS = [
   { name: 'CMS 2.20.1', rows: [MANUAL_HEADERS, ...manualRows], validations: [{ col: 8, values: STATUS }], styled: true },
   { name: 'CMS 2.20.1 Features', rows: [FEATURE_HEADERS, ...featureRows], validations: [{ col: 9, values: STATUS }], styled: true },
-  { name: 'CMS Automation', rows: [AUTOMATION_HEADERS, ...automationRows], validations: [] },
   { name: 'Dashboard KPI', rows: [KPI_HEADERS, ...kpiRows], validations: [{ col: 4, values: ['Fail', 'Need more data', 'Pass'] }] },
 ];
 

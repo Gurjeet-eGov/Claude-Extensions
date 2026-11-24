@@ -108,12 +108,16 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 
 **A row of tools** (`.case-tools`: ✎ Edit, ⧉ Mark Duplicate, ↺ Clear Status, ⊘ Deprecated) is a grid of buttons of the same size: four in a row, two by two when the column is narrow.
 
+**Download buttons read "⤓ Download":** the ⤓ symbol (in `<span aria-hidden="true">`), then the word Download.
+- What you get goes in the button's title or, for the host, in its menu (Summary Report, Complete Report), never in the label: "⤓ Download", not "⤓ Excel".
+- A choice that needs more words keeps the symbol first: "⤓ Download Existing".
+- Used on Summary, the published reports page and the Complete Report popup.
+
 ### Status
 
 - **Symbols:** ✓ pass, ✗ fail, – other (NA, Skipped, Blocked…), ○ not run, ⊘ retired. Defined once in `shared.js` (`SYM`, `CLS_LABEL`); use those, don't retype them.
 - **Shapes:** `.dot` (a 20px circle with the symbol; not run is a hollow ring), `.pill` (11px, tinted), `.bar` (8px progress bar in pass, fail and other segments over `--none-bg`), `.legend` (symbol, count and word).
 - **Status buttons** show the symbol and the value: "✓ Pass". The keys are listed under **?**, not on the buttons.
-- **Automation badges** on cases: "Auto ✓", "Auto ✗", "Auto –".
 
 ### Fields
 
@@ -234,7 +238,7 @@ Two exceptions, drawn as inline SVG outlines with `stroke="currentColor"` becaus
 - **Button labels in Title Case** (DIGIT's rule), as in the case tools: "Save Comment", "Mark Duplicate", "Clear Status". One word where it is clear: "Save", "+ Add". Older sentence-case buttons are listed under Known gaps.
 - **Buttons say what they do**, as a verb: "Publish now", not "OK".
 - **"+ "** starts a label that adds something: "+ Add issue", "+ New test case".
-- **"…"** ends a label that asks for more before acting: "Duplicate of…", "Already covered…". It also marks work in progress: "Saving…".
+- **"…"** ends a label that asks for more before acting: "Duplicate of…", "Already covered…". It also marks work in progress: "Saving…". Exception: Automation's **▶ Run** has no "…", though it opens the run form first.
 - **Tool labels** carry their symbol: "✎ Edit", "⧉ Mark Duplicate", "↺ Clear Status", "⊘ Deprecated".
 - **Messages** say what happened and what to do, with no "Error:" prefix: "Test Run is not answering. Is it still running in the terminal?", "View only: you need edit access to mark results."
 - **Separators:** "·" between items on a line ("John Doe · 20 Nov"); "–" for an empty value; curly quotes around names.

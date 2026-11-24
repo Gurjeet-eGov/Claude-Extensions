@@ -31,7 +31,9 @@ import { extensionIdFromKey } from './lib/extension-id.mjs';
 import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
 
 const UI = join(ROOT, 'ui');
-const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js' };
+const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js',
+  // The Automation template: a clickable mock-up for review, removed when the real screens are built.
+  '/automation-template.html': 'automation-template.html', '/automation-template.js': 'automation-template.js' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8' };
 const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 
@@ -565,15 +567,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         }
         suites.push({ tab: t.name, current: cur.cycle, cycles: cur.cycles.map((c) => c.label), summaries });
       }
-      const auto = await callApi('api_automationSummary', [], b.name, me);
-      const report = { app: 'test-run', book: b.name, title, slug, sheetName: boot.sheetName, publishedAt: index.publishedAt, by: index.by, suites, automation: auto.ok && auto.tabs.length ? cleanReport(auto) : null };
+      const report = { app: 'test-run', book: b.name, title, slug, sheetName: boot.sheetName, publishedAt: index.publishedAt, by: index.by, suites };
       // the workbook and its sidecar as saved (every change is saved at once), for whoever carries on
       files.push({ path: `${PUBLISHED}/workbooks/${b.name}`, content: readFileSync(lib.path(b.name)) });
       const side = lib.storeFile(b.name);
       if (existsSync(side)) files.push({ path: `${PUBLISHED}/workbooks/.testrun/${basename(side)}`, content: readFileSync(side) });
       files.push({ path: `${PUBLISHED}/reports/${slug}.json`, content: Buffer.from(JSON.stringify(report)) });
       files.push({ path: `${PUBLISHED}/reports/${slug}.xlsx`, content: await downloadCopy(b.name) }); // the Download on the reports page
-      index.workbooks.push({ name: b.name, title, slug, suites: suites.map((x) => x.tab), automation: !!report.automation, xlsx: true });
+      index.workbooks.push({ name: b.name, title, slug, suites: suites.map((x) => x.tab), xlsx: true });
     }
     files.push({ path: `${PUBLISHED}/reports/index.json`, content: Buffer.from(JSON.stringify(index, null, 1)) });
     return { files, index };

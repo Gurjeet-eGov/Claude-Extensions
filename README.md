@@ -7,14 +7,12 @@ Tools for everyday QA work on web apps: run manual test cycles as a team, collec
 | [**Test Run console**](test-run-console/) | A web app for manual test runs on your `.xlsx` test case workbooks. Shows what to test next, marks results with one click or one key, writes them into the workbook, and gives management a summary. One person runs it; testers and managers join with links; reports can be published for anyone to read. | Test leads, testers, managers |
 | [**Test Run Extension**](test-run-console/extension/) | A Chrome extension that works with the console: mark the case you're testing from the toolbar, with a screenshot or a screen recording as evidence. | Testers using Test Run |
 | [**Bug Reporter**](bug-reporter/) | A Chrome extension and a small local helper, on its own. Record while you test, halt on a defect, and file a GitHub issue with a screenshot, a trimmed video, the failing API calls and the project board fields; Claude writes the description. Also re-tests existing issues and tracks missing localizations. | Anyone filing bugs |
-| [**Automation**](automation/) | The catalogue of automated test suites (each kept in its own repository) and the environments they run against. Planned: run a suite from Test Run and publish its report. | Test leads, automation teams |
 
 ## Pick your path
 
 - **I only want to file bugs faster.** Install Bug Reporter: follow its **[setup guide](bug-reporter/docs/SETUP.md)** (about 10 minutes). Nothing else from this repository is needed.
 - **I run test cycles with a team.** Start the **[Test Run console](test-run-console/README.md#quick-start)** on your computer, invite your testers, and have them install **[Test Run Extension](test-run-console/extension/README.md)**. Bug Reporter can add the bugs they file straight into Test Run.
 - **I've been sent a Test Run link.** Open it in your browser; that's all you need to mark results. For screenshots and recordings, install [Test Run Extension](test-run-console/extension/README.md).
-- **I maintain automated tests.** See **[automation/](automation/README.md)** for how suites are listed and how runs will work.
 
 ## How the pieces fit
 
@@ -29,14 +27,12 @@ flowchart LR
   GH["GitHub<br/>issues and boards"]
   REPO["This repository<br/>test-run-console/published/"]
   PAGES["GitHub Pages<br/>public reports"]
-  AUTO["automation/ catalogue<br/>(suites in their own repos)"]
 
   B -- "tunnel" --> TR
   TRX -- "results, screenshots, recordings" --> TR
   BR -- "files issues" --> GH
   BR -. "optional: adds the bug" .-> TR
   TR -- "Publish" --> REPO --> PAGES
-  AUTO -. "planned: run a suite, publish its report" .-> TR
 ```
 
 - **Test Run** runs on one computer, the host's. Everything it holds stays there. Teammates reach it through a tunnel (Cloudflare or Tailscale) with their own invite links.
@@ -82,7 +78,6 @@ test-run-console/       Test Run: the console (Node app, server + web UI)
   extension/            Test Run Extension (Chrome)
   published/            what the host published: public, served by GitHub Pages
 bug-reporter/           Bug Reporter: extension/ (Chrome) + host/ (local helper) + docs/
-automation/             the catalogue of automated suites and environments (no test code)
 .github/workflows/      publishes the Test Run page and reports to GitHub Pages
 ```
 
@@ -131,5 +126,4 @@ The console's browser tests (which also drive both extensions) need Playwright: 
 
 ## What's next
 
-- Run automated suites from Test Run against a chosen environment, and publish each suite's own report ([automation/](automation/README.md)).
 - Bring both extensions in line with the design guide ([docs/design-alignment.md](docs/design-alignment.md)).

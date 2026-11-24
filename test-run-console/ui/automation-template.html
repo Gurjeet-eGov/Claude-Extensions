@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automation template</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Only for this template: the strip that switches screens. Everything else uses the console's styles.css. */
+    .tpl-strip { padding: 8px 18px; background: var(--surface-2); border-bottom: 1px dashed var(--border-strong); display: flex; flex-direction: column; gap: 6px; }
+    .tpl-row { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+    .tpl-variant { border-top: 1px dashed var(--border); padding-top: 6px; }
+    .tpl-strip .tpl-tag { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--other); background: var(--other-bg); border-radius: 4px; padding: 1px 6px; }
+    .tpl-strip .chip { min-height: 26px; padding: 2px 9px; }
+
+    /* New pieces the real screens would add to styles.css */
+    .with-rail > * { min-width: 0; } /* when the rail stacks, the content must not grow to fit a long value */
+    .auto-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .auto-head h2 { margin-bottom: 2px; }
+    .auto-head .row { flex: none; }
+    .step-title { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+    .step-n { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--accent-weak); color: var(--accent); flex: none; }
+    .link-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .link-path .multi { width: 280px; max-width: 100%; }
+    .drop { border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+    .file-chosen { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+    .steps-list { display: flex; flex-direction: column; gap: 6px; }
+    .steps-list > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .changed { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .changed button { flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; min-height: 0; border-color: var(--border); color: var(--text); font-weight: 400; white-space: normal; text-align: left; }
+    .changed button:hover { border-color: var(--accent); }
+    .changed .v { font-size: 20px; font-weight: 750; line-height: 1.1; }
+    .changed .l { font-size: 12px; color: var(--muted); }
+    .delta { font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .delta.good { color: var(--pass); }
+    .delta.bad { color: var(--fail); }
+    .table-wrap:has(.multi-pop) { overflow: visible; } /* a dropdown in a table row opens over the rows below */
+    .keep-dd { width: 90px; }
+    .u-new { width: 170px; }
+    .report-tools .seg { flex: none; }
+    .seg.same button { min-width: 112px; justify-content: center; } /* Manual and Automated: the same size */
+    .report-tools .run-actions { flex: none; }
+    .cause { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .cause + .cause { margin-top: 8px; }
+    .cause-head { width: 100%; border: none; border-radius: 0; background: var(--surface); color: var(--text); font-weight: 400; display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; padding: 9px 12px; text-align: left; white-space: normal; min-height: 0; }
+    .cause-head:hover { background: var(--surface-2); }
+    .cause-head .mono { word-break: break-word; }
+    .cause-body { border-top: 1px solid var(--border); background: var(--surface-2); padding: 6px 12px 8px 36px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+    .cause.collapsed .cause-body { display: none; }
+    .cause.collapsed .chev { transform: rotate(-90deg); }
+    .stack-s > .bar.thin { flex: none; width: 140px; } /* a thin bar above its counts: sized by width, not as a row item */
+    .hist { display: inline-flex; gap: 3px; align-items: center; }
+    .hist .dot { width: 14px; height: 14px; font-size: 9px; }
+    .hist .dot.none { width: 12px; height: 12px; }
+    .test-row { cursor: pointer; }
+    .test-row:hover td { background: var(--surface-2); }
+    .test-row.sel td { background: var(--accent-weak); }
+    pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+    .masked { color: var(--other); font-weight: 700; }
+    .run-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .run-actions .tip { width: 300px; }
+    .tip .tip-title { display: block; }
+    .space-bar { display: flex; height: 8px; border-radius: 6px; overflow: hidden; background: var(--none-bg); width: 260px; max-width: 100%; }
+    .space-bar .wb { background: var(--accent); }
+    .space-bar .au { background: var(--pass); }
+    .opt-table td, .opt-table th { vertical-align: middle; }
+    .report-tools { flex-wrap: wrap; }
+    @media (max-width: 760px) {
+      .tpl-strip { padding: 8px 12px; }
+      .link-path .multi { width: 100%; }
+      .context { margin: 0 -12px; padding: 10px 12px; } /* the console keeps -18px here and overflows by 6px */
+      /* the tooltip opens under the whole actions row, so it never runs off a narrow screen */
+      .run-actions { position: relative; }
+      .run-actions .help-wrap { position: static; }
+      .run-actions .tip { width: auto; left: 0; right: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tpl-strip" id="tplStrip"></div>
+  <div id="app" class="app"><div class="loading">Loading&hellip;</div></div>
+  <div id="modal" class="modal hidden"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script src="shared.js"></script>
+  <script src="automation-template.js"></script>
+</body>
+</html>

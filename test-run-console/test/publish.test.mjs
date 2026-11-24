@@ -61,12 +61,11 @@ test('publish: the host ticks workbooks, confirms once, and one commit holds the
     assert.equal(blobSha(f[`${PREFIX}/workbooks/${BOOK}`]), blobSha(readFileSync(join(h.sheetsDir, BOOK))), 'the workbook exactly as saved');
     assert.ok(!Object.keys(f).some((p) => /app\.json|backups|exports/.test(p)), 'never the team settings, backups or exports');
     const index = json(f[`${PREFIX}/reports/index.json`]);
-    assert.deepEqual(index.workbooks.map((w) => [w.name, w.slug, w.automation, w.xlsx]), [[BOOK, slug, true, true]]);
+    assert.deepEqual(index.workbooks.map((w) => [w.name, w.slug, w.xlsx]), [[BOOK, slug, true]]);
     const report = json(f[`${PREFIX}/reports/${slug}.json`]);
     const suite = report.suites.find((x) => x.tab === TAB);
     assert.equal(suite.current, 'v2.12');
     assert.equal(suite.summaries['v2.12'].summary.counts.total, 18);
-    assert.equal(report.automation.tabs[0].tab, 'CMS Automation');
     assert.equal(ok.last.note, '5 files updated.');
 
     // Nothing changed: no new commit

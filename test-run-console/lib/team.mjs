@@ -21,7 +21,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 export const ROLES = ['tester', 'viewer'];
 
 /** api_* functions anyone signed in may call (they only read). */
-export const READ_FNS = new Set(['api_bootstrap', 'api_loadTab', 'api_version', 'api_listFindings', 'api_summary', 'api_listIssues', 'api_automationSummary']);
+export const READ_FNS = new Set(['api_bootstrap', 'api_loadTab', 'api_version', 'api_listFindings', 'api_summary', 'api_listIssues']);
 /** ... and those a tester may call too. */
 export const TESTER_FNS = new Set(['api_mark', 'api_addCases', 'api_editCase', 'api_updateCase', 'api_retireCase', 'api_restoreCase',
   'api_saveFinding', 'api_setFindingState', 'api_deleteFinding', 'api_writeSummaryTab', 'api_saveIssueMeta', 'api_linkBug']);

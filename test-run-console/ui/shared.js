@@ -392,17 +392,11 @@ var TR = (function () {
         '<tr><td>Still failing</td><td class="num"><b>' + s.comparison.stillFailing + '</b></td></tr></tbody></table>' +
         listIds('Newly failing', s.comparison.newlyFailing) + '</div>');
     }
-    var a = s.automation;
-    side.push('<div class="card card-pad"><h2>Manual and automated</h2><table style="margin-top:8px"><tbody>' +
-      '<tr><td>Cases linked to automation</td><td class="num"><b>' + a.linked + '</b> of ' + c.total + '</td></tr>' +
-      '<tr><td>Automation passing</td><td class="num"><b class="sym-pass">' + a.pass + '</b></td></tr>' +
-      '<tr><td>Automation failing</td><td class="num"><b class="sym-fail">' + a.fail + '</b></td></tr>' +
-      '<tr><td>Skipped or mixed</td><td class="num"><b>' + a.other + '</b></td></tr></tbody></table></div>');
     if (s.testers.length) {
       side.push('<div class="card card-pad"><h2>Testers</h2><table style="margin-top:8px"><tbody>' +
         s.testers.map(function (t) { return '<tr><td>' + esc(t.name) + '</td><td class="num">' + t.count + '</td></tr>'; }).join('') + '</tbody></table></div>');
     }
-    h.push('<div class="section grid">' + side.join('') + '</div>');
+    if (side.length) h.push('<div class="section grid">' + side.join('') + '</div>');
     return h.join('');
   }
 

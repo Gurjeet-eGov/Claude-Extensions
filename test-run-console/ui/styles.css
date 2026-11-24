@@ -573,7 +573,6 @@ button.dd-free { color: var(--accent); font-weight: 600; }
   .rail-group { flex-direction: row; flex-wrap: wrap; align-items: center; }
   .rail .chip { width: auto; }
 }
-.ctx-sep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 2px 4px; flex: none; }
 
 /* The page keeps room for the scrollbar, so short and long pages line up the same */
 html { scrollbar-gutter: stable; }

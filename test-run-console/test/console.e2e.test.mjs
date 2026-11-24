@@ -506,20 +506,6 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await newCase.click();
     });
 
-    await t.test('Automation is its own item next to the test suites: an overall summary of automated results', async () => {
-      await page.locator('.nav [data-view=summary]').click();
-      await page.locator('.ctx-tab.auto').click();
-      await page.locator('.ctx-tab.auto.on').waitFor();
-      await page.locator('main .report-tools .updated', { hasText: /^Updated on: / }).waitFor();
-      await page.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
-      await page.locator('table', { hasText: 'Assign button missing' }).waitFor();
-      await page.locator('.context #autoCycle > .grow', { hasText: 'Latest results' }).waitFor();
-      assert.equal(await page.getByText('Pick a test suite above').count(), 0, 'no intro line');
-      await page.locator('.context .progress-wrap', { hasText: 'automated tests' }).waitFor();
-      await page.locator(`.ctx-tab[data-tab="${TAB}"]`).click();
-      await page.locator('.kpi', { hasText: 'executed' }).waitFor();
-    });
-
     await t.test('Setup has Workbook and Sharing parts; cycles come before the columns', async () => {
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('[data-action=setup-part][data-part=workbook]').click();
@@ -590,9 +576,6 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         await visitor.locator('.ctx-tab', { hasText: 'CMS 2.20.1 Features' }).click();
         await visitor.locator('.ctx-tab.on', { hasText: 'CMS 2.20.1 Features' }).waitFor();
         await visitor.locator('.kpi', { hasText: 'executed (3 of 7)' }).waitFor();
-        await visitor.locator('.ctx-tab.auto').click();
-        await visitor.locator('td.mono', { hasText: 'workflow-assign.spec.ts' }).first().waitFor();
-        await visitor.locator('.topbar #autoCycle > .grow', { hasText: 'Latest results' }).waitFor();
         // A link whose Test Run is offline: the published reports, and a note
         const api = (path, body) => fetch(base + path.slice(1), { method: 'POST', headers: { 'X-Test-Run': '1', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((x) => x.json());
         await visitor.goto(`${hosted}#join=${'k'.repeat(32)}&server=${encodeURIComponent('http://127.0.0.1:9')}`);
@@ -677,9 +660,8 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
 
     await t.test('test case tabs are buttons under the screens, next to the test cycle', async () => {
       await page.locator('.nav [data-view=run]').click();
-      const tabs = await page.locator('.context .ctx-tab:not(.auto)').allTextContents();
+      const tabs = await page.locator('.context .ctx-tab').allTextContents();
       assert.deepEqual(tabs, [TAB, 'CMS 2.20.1 Features', 'Dashboard KPI']);
-      assert.equal(await page.locator('.context .ctx-tab.auto').count(), 0, 'Automation only shows in Summary');
       assert.equal(await page.locator('.rail #search').count(), 1, 'filters in the left column');
       assert.equal(await page.locator('.rail [data-action=tier]').count(), 0, 'no Focus filter');
       assert.equal(await page.locator('.ctx-tab.on').textContent(), TAB);

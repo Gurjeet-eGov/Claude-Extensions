@@ -371,7 +371,7 @@
   /** Test Run Extension follows what this person has open: workbook, suite, cycle and case. */
   var selSent = '';
   function shareSelection() {
-    if (!S.app || S.connect || S.reportsMode || !S.model || S.model.tab !== S.tab || S.autoMode) return;
+    if (!S.app || S.connect || S.reportsMode || !S.model || S.model.tab !== S.tab) return;
     var v = { book: book() || '', tab: S.tab || '', cycle: cycleLabel(), caseKey: S.selected || '' };
     var sig = JSON.stringify(v);
     if (sig === selSent) return;
@@ -442,19 +442,11 @@
     if (!tabs.length) return '';
     var m = S.model;
     var h = '<div class="context"><div class="context-row">';
-    var hasAuto = S.view === 'summary' && S.boot.tabs.some(function (t) { return roleOf(t) === 'automation'; }); // automation is a summary, not something to run
     h += '<span class="ctx-label" id="tabsLabel">Test suites</span><div class="ctx-tabs" role="tablist" aria-labelledby="tabsLabel">' + tabs.map(function (t) {
-      var on = t.name === S.tab && !S.autoMode;
+      var on = t.name === S.tab;
       return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="pick-tab" data-tab="' + esc(t.name) + '" title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</button>';
     }).join('') +
-      (hasAuto ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (S.autoMode ? ' on' : '') + '" role="tab" aria-selected="' + !!S.autoMode + '" data-action="pick-auto" title="Overall summary of the automated test results in this workbook">Automation</button>' : '') +
       '</div><span class="grow"></span>';
-    if (S.autoMode) {
-      var a = autoTotals();
-      if (S.autoSummary && S.autoSummary.book === book()) h += autoCycleSwitch(S.autoSummary);
-      h += '</div>' + (a ? '<div class="progress-wrap">' + TR.bar(a) + TR.legend(a) + '<span class="small muted"><b>' + a.total + '</b> automated tests</span></div>' : '');
-      return h + '</div>';
-    }
     if (m && m.cycles.length) {
       h += dropdown({
         bind: 'top:cycle', id: 'cyclePick', cls: 'top-dd cycle-dd', change: 'cycle', value: String(m.cycleIdx), prefix: '<span class="dd-prefix">Test cycle</span>',
@@ -507,7 +499,7 @@
     return null;
   }
 
-  /** What the reports view shows now: the workbook, its report, the suite (or Automation) and cycle. */
+  /** What the reports view shows now: the workbook, its report, the suite and cycle. */
   function reportPick() {
     var idx = S.reports && S.reports.index;
     if (!idx) return null;
@@ -517,20 +509,11 @@
     var out = { idx: idx, w: w, d: d };
     if (!d || d.error) return out;
     out.suites = d.suites || [];
-    out.auto = !!(val('rAuto', false) && d.automation);
     var sname = val('rSuite:' + w.slug, '');
     out.suite = out.suites.filter(function (x) { return x.tab === sname; })[0] || out.suites[0] || null;
     out.cyc = out.suite ? val('rCycle:' + w.slug + ':' + out.suite.tab, out.suite.current) : '';
     out.sum = out.suite ? (out.suite.summaries[out.cyc] || out.suite.summaries[out.suite.current]) : null;
     return out;
-  }
-
-  /** The Test cycle of Automation: results are read from each automation tab's latest status column. */
-  function autoCycleSwitch(r) {
-    var acyc = [];
-    (r && r.tabs || []).forEach(function (t) { if (t.error) return; var l = t.cycle ? 'Cycle ' + t.cycle : 'Latest results'; if (acyc.indexOf(l) < 0) acyc.push(l); });
-    if (!acyc.length) return '';
-    return dropdown({ bind: 'top:autoCycle', id: 'autoCycle', cls: 'top-dd cycle-dd', value: val('top:autoCycle', acyc[0]), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'The latest status column of the automation results', options: acyc });
   }
 
   /** The top bar of the reports view: like every screen, with the workbook picker top right. */
@@ -545,22 +528,19 @@
       });
     }
     h += '</div>';
-    if (pk && pk.d && !pk.d.error && (pk.suites.length || pk.d.automation)) {
+    if (pk && pk.d && !pk.d.error && pk.suites.length) {
       h += '<div class="context"><div class="context-row"><span class="ctx-label">Test suites</span><div class="ctx-tabs" role="tablist">' +
-        pk.suites.map(function (x) { var on = !pk.auto && pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '" title="' + esc(x.tab) + '">' + esc(TR.tabLabel(x.tab)) + '</button>'; }).join('') +
-        (pk.d.automation ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (pk.auto ? ' on' : '') + '" role="tab" aria-selected="' + pk.auto + '" data-action="r-auto">Automation</button>' : '') +
+        pk.suites.map(function (x) { var on = pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '" title="' + esc(x.tab) + '">' + esc(TR.tabLabel(x.tab)) + '</button>'; }).join('') +
         '</div><span class="grow"></span>';
-      if (!pk.auto && pk.suite && pk.suite.cycles.length) {
+      if (pk.suite && pk.suite.cycles.length) {
         h += dropdown({ bind: 'top:rCycle', id: 'rCycle', cls: 'top-dd cycle-dd', change: 'r-cycle', value: pk.cyc, prefix: '<span class="dd-prefix">Test cycle</span>',
           options: pk.suite.cycles.map(function (cl) { return { value: cl, label: cl ? 'Cycle ' + cl : 'Status' }; }) });
-      } else if (pk.auto) {
-        h += autoCycleSwitch(pk.d.automation);
       }
       h += '</div>';
-      var c = pk.auto ? autoTotals(pk.d.automation) : pk.sum ? pk.sum.summary.counts : null;
+      var c = pk.sum ? pk.sum.summary.counts : null;
       if (c && c.total) {
         var done = Math.round(((c.total - c.none) / c.total) * 100);
-        h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) + '<span class="small muted"><b>' + (pk.auto ? c.total + '</b> automated tests' : done + '%</b> done') + '</span></div>';
+        h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) + '<span class="small muted"><b>' + done + '%</b> done</span></div>';
       }
       h += '</div>';
     }
@@ -600,9 +580,8 @@
     if (pk.d.error) return h + '<div class="banner bad section">' + esc(pk.d.error) + '</div>';
     // The suite and cycle are picked above, so no title here; on paper, one line says what it is.
     var published = 'published ' + pk.idx.publishedAt + (pk.idx.by ? ' by ' + pk.idx.by : '');
-    var tools = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(pk.idx.publishedAt) + '</span><span class="grow"></span>' + (pk.w.xlsx ? '<a class="btn" href="reports/' + encodeURIComponent(pk.w.slug) + '.xlsx" download="' + esc(pk.w.title) + '.xlsx" title="The workbook as published, with a Known issues sheet">Download</a>' : '') +
+    var tools = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(pk.idx.publishedAt) + '</span><span class="grow"></span>' + (pk.w.xlsx ? '<a class="btn" href="reports/' + encodeURIComponent(pk.w.slug) + '.xlsx" download="' + esc(pk.w.title) + '.xlsx" title="The workbook as published, with a Known issues sheet"><span aria-hidden="true">⤓</span> Download</a>' : '') +
       '<button data-action="print">Print / PDF</button></div>';
-    if (pk.auto) return h + '<div class="section">' + tools + '<div class="print-only print-title">' + esc(pk.w.title) + ' · Automation · ' + esc(published) + '</div>' + automationHtml(pk.d.automation, { live: false, bare: true }) + '</div>';
     if (!pk.suite) return h + '<div class="empty card section"><p>This workbook has no test suites.</p></div>';
     if (!pk.sum) return h + '<div class="empty card section"><p>No summary for this cycle.</p></div>';
     var sum = pk.sum;
@@ -635,7 +614,6 @@
     var m = S.model;
     if (!m.configured && isOwner()) banners += '<div class="banner"><span>Columns for this tab were detected automatically.</span><span class="grow"></span><button data-action="view" data-view="setup">Check Setup</button></div>';
     if (m.missing && m.missing.length) banners += '<div class="banner bad"><span>These columns were renamed or removed in the workbook: <b>' + esc(m.missing.map(function (f) { return S.boot.labels[f]; }).join(', ')) + '</b>.</span><span class="grow"></span>' + (isOwner() ? '<button data-action="view" data-view="setup">Fix in Setup</button>' : '') + '</div>';
-    if (S.autoMode && S.view === 'summary') return banners + viewAutomation();
     switch (S.view) {
       case 'issues': return banners + viewIssues();
       case 'findings': return banners + viewFindings();
@@ -873,13 +851,6 @@
       scenarioEditor(S.addHere.draft, 'ah:' + id, '<span class="small faint grow">Added after the last case in the workbook, with the next ID.</span><button class="ghost" data-action="add-here-cancel">Cancel</button><button class="primary" data-action="add-here-save"' + dis + '>Save</button>') + '</div>';
   }
 
-  function autoPill(a) {
-    var map = { pass: ['pass', 'Auto ✓'], fail: ['fail', 'Auto ✗'], skip: ['other', 'Auto –'], partial: ['other', 'Auto ~'], unknown: ['none', 'Auto ?'] };
-    var x = map[a.state] || map.unknown;
-    var title = 'Automation: ' + a.refs.join(', ') + (a.counts && a.counts.total ? ' (' + a.counts.pass + ' pass, ' + a.counts.fail + ' fail, ' + a.counts.other + ' skipped)' : ' (no results found)');
-    return pill(x[0], x[1], title);
-  }
-
   function caseRow(c) {
     var k = clsOf(c);
     var sel = S.selected === c.key;
@@ -888,7 +859,6 @@
     if (c.retired) badges.push(pill('none', '⊘ ' + retiredLabel(c.retired), c.retired.reason || 'Struck out in the workbook'));
     if (c.tier === 0 && !c.retired) badges.push(pill('accent', S.model.release ? 'New in ' + S.model.release : 'New'));
     if (c.tier === 1) badges.push(pill('fail', 'Failed last'));
-    if (c.auto) badges.push(autoPill(c.auto));
     if (c.issues && c.issues.length) badges.push(pill('outline', c.issues.map(function (i) { return i.ref; }).join(', ')));
     return '<div class="case' + (sel ? ' sel' : '') + (c.retired ? ' retired' : '') + '" role="button" tabindex="0" data-action="select" data-key="' + esc(c.key) + '" aria-expanded="' + sel + '">' +
       TR.dot(k, S.pending[c.key]) + '<span class="sr">' + (c.retired ? retiredLabel(c.retired) + ', struck out. ' : '') + TR.CLS_LABEL[k] + '. </span>' +
@@ -917,7 +887,6 @@
     if (c.testData.trim()) f.push(field('Test data', TR.cellHtml(c.testData)));
     if (c.expected.trim()) f.push(field('Expected result', TR.cellHtml(c.expected, true)));
     c.extras.forEach(function (x) { f.push(field(x.label, TR.cellHtml(x.value))); });
-    if (c.auto) f.push(field('Automation', esc(c.auto.refs.join(', ')) + ' ' + autoPill(c.auto)));
     if (m.prevIdx >= 0 && c.statuses[m.prevIdx]) {
       var pk = TR.classify(c.statuses[m.prevIdx]);
       f.push(field('Last cycle (' + (m.cycles[m.prevIdx].label || 'previous') + ')', '<span class="sym-' + pk + '">' + TR.SYM[pk] + '</span> ' + esc(c.statuses[m.prevIdx]) + (c.comments[m.prevIdx] ? ' – <span class="ml">' + esc(TR.cellLines(c.comments[m.prevIdx]).join('\n')) + '</span>' : '')));
@@ -1407,7 +1376,7 @@
   }
 
   function tierHelp(id) {
-    return ['Release column matches the release in scope', 'Failed in the previous cycle', 'No passing automation', 'Automation passed; a quick look is enough'][id] || '';
+    return ['Release column matches the release in scope', 'Failed in the previous cycle', 'Everything else'][id] || '';
   }
 
   // ---------------------------------------------------------------------------
@@ -1774,77 +1743,9 @@
   // Summary
   // ---------------------------------------------------------------------------
 
-  /** Summary of the test suite and cycle open. (Automation has its own place in the Test suites strip.) */
+  /** Summary of the test suite and cycle open. */
   function viewSummary() {
     return viewManualSummary();
-  }
-
-  /** Pass, fail, other and not-run counts over every automation tab ({..., total}), or null before they are read. */
-  function autoTotals(given) {
-    var r = given || S.autoSummary;
-    if (!r || (!given && r.book !== book()) || r.error) return null;
-    var all = { pass: 0, fail: 0, other: 0, none: 0, total: 0 };
-    r.tabs.forEach(function (t) { if (!t.error) ['pass', 'fail', 'other', 'none', 'total'].forEach(function (k) { all[k] += t.counts[k]; }); });
-    return all;
-  }
-
-  function autoKpi(cls, value, label) {
-    return '<div class="card kpi ' + cls + '"><div class="v">' + esc(value) + '</div><div class="l">' + esc(label) + '</div></div>';
-  }
-
-  /** Automated: the latest results of each automation tab, by test file, and what is failing. */
-  function viewAutomation() {
-    var r = S.autoSummary;
-    if (!r || r.book !== book()) {
-      if (!S.autoLoading) {
-        S.autoLoading = true;
-        api('api_automationSummary').then(function (x) {
-          S.autoLoading = false;
-          S.autoSummary = x.ok ? x : { book: book(), error: x.error, tabs: [] };
-          S.autoSummary.book = x.book || book();
-          render();
-        });
-      }
-      return '<div class="loading">Reading the automation results…</div>';
-    }
-    return automationHtml(r, { live: true });
-  }
-
-  /** The automation summary (r: tr_automationSummary's result). live: in Test Run (else a published copy). */
-  function automationHtml(r, opts) {
-    var live = !!(opts && opts.live);
-    if (r.error) return '<div class="banner bad">' + esc(r.error) + '</div>';
-    var tabs = r.tabs.filter(function (t) { return !t.error; });
-    if (!r.tabs.length) {
-      return '<div class="empty card"><h3>No automation results in this workbook</h3><p>' + (live && isOwner() ? 'In <b>Setup</b>, mark the tab that holds your automated test results as <b>Automation results</b>.' : 'This workbook has no tab of automated test results.') + '</p></div>';
-    }
-    var all = autoTotals(r);
-    var ran = all.pass + all.fail;
-    var h = (opts && opts.bare ? '' : '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-        (live ? '<button data-action="auto-refresh">Refresh</button>' : '') + '<button data-action="print">Print / PDF</button></div>' +
-        '<div class="print-only print-title">Automation · ' + esc(tabs.map(function (t) { return TR.tabLabel(t.tab); }).join(', ')) + ' · updated on ' + esc(r.generatedAt) + '</div>');
-    h += '<div class="kpis">' + autoKpi('', String(all.total), 'automated tests') + autoKpi('pass', ran ? Math.round((all.pass / ran) * 100) + '%' : '–', 'pass rate (of Pass + Fail)') +
-      autoKpi('fail', String(all.fail), 'failing') + autoKpi('', String(all.other), 'skipped or other') + '</div>';
-    r.tabs.forEach(function (t) {
-      if (t.error) { h += '<div class="banner warn section"><b>' + esc(TR.tabLabel(t.tab)) + ':</b> ' + esc(t.error) + '</div>'; return; }
-      h += '<div class="section card"><div class="card-pad"><div class="row" style="margin-bottom:8px"><h2 title="' + esc(t.tab) + '">' + esc(TR.tabLabel(t.tab)) + '</h2><span class="small muted">' + esc(t.cycle ? 'status column ' + t.cycle : 'latest status column') + '</span><span class="grow"></span>' + TR.legend(t.counts) + '</div>' + TR.bar(t.counts) + '</div>';
-      h += '<div class="table-wrap"><table><thead><tr><th>Test file</th><th style="width:28%">Progress</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Other</th><th class="num">Not run</th></tr></thead><tbody>' +
-        t.files.map(function (f) {
-          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + TR.bar(f, true) + '</td><td class="num">' + f.pass + '</td><td class="num">' + f.fail + '</td><td class="num">' + f.other + '</td><td class="num">' + f.none + '</td></tr>';
-        }).join('') + '</tbody></table></div></div>';
-      h += '<div class="section card"><div class="card-pad"><h2>Failing in ' + esc(TR.tabLabel(t.tab)) + ' <span class="pill fail">' + t.failures.length + '</span></h2></div>' +
-        (t.failures.length ? '<div class="table-wrap"><table><thead><tr><th>Test file</th><th>Test</th><th>Note</th></tr></thead><tbody>' + t.failures.map(function (f) {
-          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + esc(f.test) + (f.group ? '<div class="small faint">' + esc(f.group) + '</div>' : '') + '</td><td class="ml">' + esc(f.note) + '</td></tr>';
-        }).join('') + '</tbody></table></div>' : '<div class="card-pad muted" style="padding-top:0">No failing automated tests.</div>') + '</div>';
-    });
-    if (live && S.summary && S.summary.tab === S.tab && S.summary.summary && S.summary.summary.automation) {
-      var a = S.summary.summary.automation;
-      h += '<div class="section card card-pad"><h2>Manual cases in ' + esc(S.tab) + ' linked to automation</h2><table style="margin-top:8px"><tbody>' +
-        '<tr><td>Linked to a test file</td><td class="num"><b>' + a.linked + '</b> of ' + S.summary.summary.counts.total + '</td></tr>' +
-        '<tr><td>Their automation passing</td><td class="num"><b class="sym-pass">' + a.pass + '</b></td></tr>' +
-        '<tr><td>Their automation failing</td><td class="num"><b class="sym-fail">' + a.fail + '</b></td></tr></tbody></table></div>';
-    }
-    return h;
   }
 
   function viewManualSummary() {
@@ -1864,7 +1765,7 @@
     var r = S.summary;
     // The suite and cycle are picked above; on paper, one line says what it is.
     var h = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-      downloadButton('summary', '', 'Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
+      downloadButton('summary', '', '<span aria-hidden="true">⤓</span> Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
       (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') + '</div>' +
       '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(TR.tabLabel(r.tab)) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
     return h + TR.summaryHtml(r);
@@ -2143,9 +2044,11 @@
   /** Setup, in two parts: Workbook (test suites, cycles, columns) and Sharing (you and your team). */
   function viewSetup() {
     var part = S.cfg ? val('setupPart', 'workbook') : 'workbook'; // a workbook not set up yet opens on its tabs
+    if (!S.team && isOwner()) loadTeam(); // so Sharing shows on or off from the start, not only once it has been opened
+    var shareState = S.team && S.team.team ? (S.team.team.enabled ? ' <span class="pill pass">on</span>' : ' <span class="pill fail">off</span>') : '';
     var rail = '<div class="rail-group subtabs" role="tablist" aria-label="Setup"><span class="rail-title">Setup</span>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + (S.team && S.team.team && S.team.team.enabled ? ' <span class="pill pass">on</span>' : '') + '</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + shareState + '</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
@@ -2350,12 +2253,8 @@
       h += '<section class="section card card-pad stack"><div class="row"><h2 title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
         '<span class="grow"></span>' +
         '<label for="role' + ti + '" class="sr">Role</label><select id="role' + ti + '" data-setup-tab="' + ti + '" data-key="role"' + dis + '>' +
-        opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
+        opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
-      if (t.role === 'automation') {
-        h += '<p class="small muted">Results here feed <b>Automation</b> (next to the test suites, at the top), and the <b>Auto</b> badges on manual cases. Manual cases link to a test file when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
-        return;
-      }
       h += cycleSetup(t, ti);
       var mapped = S.boot.fields.filter(function (f) { return t.columns[f]; }).length;
       var openCols = !t.saved || val('colsOpen:' + ti);
@@ -2464,7 +2363,7 @@
       return '<div class="cr-opt' + (o.on ? '' : ' off') + '"><button class="' + (o.on && primary ? 'primary' : '') + '" data-action="' + action + '"' + (o.on ? '' : ' disabled') + '>' + label + '</button><div class="small' + (o.on ? ' muted' : '') + '">' + esc(o.sub) + '</div></div>';
     };
     return head + (i.state === 'failed' ? '<div class="banner bad" style="margin-bottom:10px">' + esc(i.error) + '</div>' : '') +
-      '<div class="cr-opts">' + opt2(gen, 'Generate New', 'cr-generate', true) + opt2(dl, 'Download Existing', 'cr-download', true) + '</div>';
+      '<div class="cr-opts">' + opt2(gen, 'Generate New', 'cr-generate', true) + opt2(dl, '<span aria-hidden="true">⤓</span> Download Existing', 'cr-download', true) + '</div>';
   }
 
   var crTimer = null;
@@ -2574,7 +2473,7 @@
     TR.forget();
     if (document.activeElement) document.activeElement.blur();
     S.app = null; S.boot = null; S.model = null; S.cfg = null; S.findings = []; sideSeen = { findings: null };
-    S.issues = null; S.autoSummary = null; S.autoMode = false; S.team = null; S.selected = null; S.view = 'run';
+    S.issues = null; S.team = null; S.selected = null; S.view = 'run';
     S.connect = { code: 'SIGNED_OUT' };
     render();
   }
@@ -2627,7 +2526,6 @@
     view: function (el) {
       var from = S.view;
       S.view = el.getAttribute('data-view');
-      if (S.view !== 'summary') S.autoMode = false;
       if (S.view === 'findings') S.suites = {}; // read the other suites afresh
       if (S.view === 'setup') S.setup = null;
       if (S.view !== from) closeBlocks(); // a form left open on the page you leave closes, and what was typed in it goes
@@ -3061,13 +2959,11 @@
         if (next) { switchBook(next); return; }
         TR.state.book = null;
         TR.store.set('book', '');
-        S.boot = null; S.model = null; S.cfg = null; S.setup = null; S.findings = []; S.issues = null; S.autoSummary = null;
+        S.boot = null; S.model = null; S.cfg = null; S.setup = null; S.findings = []; S.issues = null;
         S.view = 'run';
         render();
       });
     },
-    'pick-auto': function () { S.autoMode = true; S.selected = null; S.caseTool = null; render(); window.scrollTo(0, 0); },
-    'auto-refresh': function () { S.autoSummary = null; render(); },
     'findings-suite-reset': function () { S.form.findingsSuite = ''; render(); },
     'findings-show': function (el) { S.form.findingsShow = el.getAttribute('data-show'); render(); },
     'note-toggle': function () { var open = !val('noteOpen'); closeBlocks(); S.form.noteOpen = open; render(); var t = open && $('fText'); if (t) t.focus(); },
@@ -3232,8 +3128,7 @@
       });
     },
     'publish-now': function () { publishNow(); },
-    'r-suite': function (el) { var w = currentReportSlug(); S.form['rSuite:' + w] = el.getAttribute('data-tab'); S.form.rAuto = false; render(); },
-    'r-auto': function () { S.form.rAuto = true; render(); },
+    'r-suite': function (el) { var w = currentReportSlug(); S.form['rSuite:' + w] = el.getAttribute('data-tab'); render(); },
     'publish-get': function (el) {
       askConfirm({
         title: 'Replace the workbooks here with the published ones?',
@@ -3403,8 +3298,6 @@
       TR.state.book = name;
       TR.store.set('book', name);
       S.addHere = null;
-      S.autoSummary = null;
-      S.autoMode = false;
       S.suites = {};
       S.selected = null;
       S.keep = {};
@@ -3427,8 +3320,6 @@
 
   /** Open another test case tab (a module) of this workbook. */
   function pickTab(name) {
-    if (S.autoMode && name === S.tab) { S.autoMode = false; render(); return; }
-    S.autoMode = false;
     if (!name || name === S.tab) return;
     S.tab = name;
     TR.store.set('tab:' + book(), S.tab);
@@ -3447,7 +3338,7 @@
     tab: function (el) { pickTab(el.value); },
     'findings-suite': function (el) { S.form.findingsSuite = el.value; render(); },
     'man-suite': function (el) { S.form['man:tab'] = el.value; render(); },
-    'r-book': function (el) { S.form.rBook = el.value; S.form.rAuto = false; render(); },
+    'r-book': function (el) { S.form.rBook = el.value; render(); },
     'r-cycle': function (el) {
       var w = currentReportSlug();
       var d = S.reports && S.reports.data[w];

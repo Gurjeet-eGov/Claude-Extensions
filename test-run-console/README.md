@@ -8,7 +8,7 @@ A small app for **manual test runs on your test case workbooks** (`.xlsx`). It s
 |---|---|
 | ![Run screen](docs/screenshots/run.png) | ![Summary page](docs/screenshots/summary.png) |
 
-**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [The screens](#the-screens) · [Sharing with your team](#sharing-with-your-team) · [Publishing the reports](#publishing-the-reports) · [Test Run Extension](#test-run-extension) · [With Bug Reporter](#with-bug-reporter) · [Automation results](#automation-results) · [Your workbooks and data](#your-workbooks-and-data) · [Running a cycle well](#running-a-cycle-well) · [Options](#options) · [Updating](#updating) · [Troubleshooting](#troubleshooting) · [Development](#development)
+**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [The screens](#the-screens) · [Sharing with your team](#sharing-with-your-team) · [Publishing the reports](#publishing-the-reports) · [Test Run Extension](#test-run-extension) · [With Bug Reporter](#with-bug-reporter) · [Your workbooks and data](#your-workbooks-and-data) · [Running a cycle well](#running-a-cycle-well) · [Options](#options) · [Updating](#updating) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
 ## Quick start
 
@@ -77,7 +77,6 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **Download** adds them to the workbook as a **Known issues** sheet: the issue (linked), title, priority, state, test cases and when it was added. The file in `sheets/` is not changed.
 - **Colour and symbol together.** ✓ pass, ✗ fail, – other, ○ not run, so results stay readable for colour-blind readers and on paper.
 - **Risk first.** Sections with cases that are new in this release, or failed last cycle, come first, and those cases are tagged.
-- **Automation badges.** If the workbook has the automation sign-off tab, cases whose comment names a spec (e.g. `inbox-search.spec`) show its latest result: **Auto ✓**, **Auto ✗** or **Auto ~**.
 - **Cycles.** Each cycle is a pair of columns, `Test Status` and `Comment`, as your sheets already have.
   - **Setup → Workbook → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
   - **✎** on a cycle renames it: the name changes in both its column headers (results and comments stay), and its evidence and the current-cycle setting follow. A name without a digit is written as `Test Status / name`, so it still reads as a cycle.
@@ -102,7 +101,6 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
-  - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation. Its **Test cycle** shows which status column the results come from (each automation tab's latest).
 - **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
   - **Save** keeps you on Setup, with a *Setup saved.* message.
   - **Delete**, next to **Cancel** and **Save** at the bottom of Setup → Workbook (the host only, here or with the admin link), removes the open workbook for everyone: the file in `sheets/` and its Test Run data (setup, findings, known issues). A pop-up says first that this cannot be undone. The daily backups in `sheets/.testrun/backups/` stay, and copies already published to GitHub stay until the next publish.
@@ -202,12 +200,12 @@ The host can publish the reports to the GitHub repository, so they can be read o
 - **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
 - **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
-  - `reports/`: the summary of every test suite and cycle, and the automation summary, which the Pages site shows.
+  - `reports/`: the summary of every test suite and cycle, which the Pages site shows.
 - Your local checkout is not touched (the commit is made on GitHub directly), and nothing is committed when nothing changed.
 - Teammates' results are already saved on the host's laptop, so there is one copy, and that is what is published.
 - If someone else published after you last published or got the data, Test Run says so and does not overwrite theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
 
-**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite (or **Automation**) and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
+**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
 
 ### Carrying on from a clone (hand over)
 
@@ -273,14 +271,6 @@ When Test Run is reachable, Bug Reporter's **Report Issue** form has a Test Run 
 
 Bug Reporter is a separate product with its own setup: see [its README](../bug-reporter/README.md).
 
-## Automation results
-
-Automated test results come in through the workbook today: set a tab to **Automation results** in Setup › Workbook (it needs a spec-file column and a status column per cycle; the sample workbook from `npm run demo` has one).
-- **Summary › Automation** shows the totals, results per test file and the failing tests.
-- Manual cases whose comment or *Automated by* column names a spec (e.g. `inbox-search.spec`) show its latest result in Run: **Auto ✓**, **Auto ✗** or **Auto ~**.
-
-Running automated suites from Test Run against a chosen environment, and publishing their own reports, is planned: see [automation/](../automation/README.md).
-
 ## Your workbooks and data
 
 - **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy in `test-run-console/published/`). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
@@ -312,7 +302,7 @@ What leaves the computer: GitHub issue lookups and the gist (through your `gh` l
 
 1. **Setup:** start the cycle (e.g. `v2.20.1`). If you tag cases by release, set the release in scope. Sharing? Start sharing and send the invite links.
 2. **Work path by path.** Stay on one login and reuse the same complaint while it moves through its states.
-3. **Take the Focus order:** new in this release first, then what failed last time. Glance at or skip **Auto ✓** cases.
+3. **Take the Focus order:** new in this release first, then what failed last time.
 4. **A failure:** paste the issue link with the result. Filing it with Bug Reporter? Tick *Also add this to Test Run* and pick the test case: it is marked failed with the link for you.
 5. **Unplanned failure:** file it with Bug Reporter with no test case picked (it becomes a finding), or note a finding by hand.
 6. **End of day:**

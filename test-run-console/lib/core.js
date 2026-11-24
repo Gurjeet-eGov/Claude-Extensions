@@ -58,9 +58,6 @@ var TRCore = (function () {
     testedOn: ['tested on', 'executed on', 'test date', 'date tested', 'execution date']
   };
 
-  /** Spec-file column of an automation results tab. */
-  var SPEC_ALIASES = ['test file', 'spec', 'spec file', 'file', 'test spec'];
-
   // "Test Status / v2.12", "Test Status - v2.12", or the label on its own line
   // ("Test Status\nv2.12", as Google Sheets exports wrapped headers). A label
   // after a plain space must contain a digit, so "Status of fix" is not a cycle.
@@ -130,16 +127,6 @@ var TRCore = (function () {
       if (!taken[i] && norm[i]) extras.push(i);
     }
     return { fields: fields, cycles: cycles, extras: extras };
-  }
-
-  /** Index of an automation tab's spec-file column, or -1. */
-  function detectSpecColumn(headers) {
-    var norm = headers.map(normalizeHeader);
-    for (var a = 0; a < SPEC_ALIASES.length; a++) {
-      var i = norm.indexOf(SPEC_ALIASES[a]);
-      if (i >= 0) return i;
-    }
-    return -1;
   }
 
   /** First row (0-based) among the first 10 that looks like a header row. */
@@ -491,93 +478,25 @@ var TRCore = (function () {
   }
 
   // ---------------------------------------------------------------------------
-  // Automation
-  // ---------------------------------------------------------------------------
-
-  /** Spec names mentioned in free text: "inbox-search.spec (by number)" -> ["inbox-search"]. */
-  function extractSpecRefs(text) {
-    var out = [];
-    var re = /([A-Za-z0-9_][A-Za-z0-9_.\-]*?)\.spec(?:\.[cm]?[tj]s)?(?![A-Za-z0-9_])/g;
-    var m;
-    var s = String(text == null ? '' : text);
-    while ((m = re.exec(s))) {
-      var name = m[1].toLowerCase();
-      if (out.indexOf(name) < 0) out.push(name);
-    }
-    return out;
-  }
-
-  /** Index of automation results by spec name: {spec: {pass, fail, other, total}}. */
-  function automationIndex(rows, specCol, statusCol) {
-    var idx = {};
-    if (specCol < 0 || statusCol < 0) return idx;
-    (rows || []).forEach(function (row) {
-      var refs = extractSpecRefs(cell(row, specCol));
-      if (!refs.length) {
-        var bare = cell(row, specCol).trim().toLowerCase();
-        if (bare) refs = [bare];
-      }
-      var cls = classifyStatus(cell(row, statusCol));
-      if (cls === 'none') return;
-      refs.forEach(function (r) {
-        var e = idx[r] || (idx[r] = { pass: 0, fail: 0, other: 0, total: 0 });
-        e[cls] += 1;
-        e.total += 1;
-      });
-    });
-    return idx;
-  }
-
-  /** Badge for one manual case: state pass | fail | skip | partial | unknown, or null. */
-  function automationBadge(c, index) {
-    var text = [c.automatedBy].concat(c.comments || []).join(' ');
-    var refs = extractSpecRefs(text);
-    if (c.automatedBy && !refs.length) {
-      c.automatedBy.split(/[,;\n]+/).forEach(function (s) {
-        var t = s.trim().toLowerCase();
-        if (t && refs.indexOf(t) < 0) refs.push(t);
-      });
-    }
-    if (!refs.length) return null;
-    var agg = { pass: 0, fail: 0, other: 0, total: 0 };
-    var found = [];
-    refs.forEach(function (r) {
-      var e = index && index[r];
-      if (!e) return;
-      found.push(r);
-      agg.pass += e.pass; agg.fail += e.fail; agg.other += e.other; agg.total += e.total;
-    });
-    var state;
-    if (!found.length) state = 'unknown';
-    else if (agg.fail > 0) state = 'fail';
-    else if (agg.pass > 0 && agg.other === 0) state = 'pass';
-    else if (agg.pass === 0) state = 'skip';
-    else state = 'partial';
-    return { state: state, refs: refs, found: found, counts: agg };
-  }
-
-  // ---------------------------------------------------------------------------
   // Risk order and paths
   // ---------------------------------------------------------------------------
 
   var TIERS = [
     { id: 0, key: 'new', label: 'New in release' },
     { id: 1, key: 'failedLast', label: 'Failed last cycle' },
-    { id: 2, key: 'manual', label: 'Manual only' },
-    { id: 3, key: 'autoPass', label: 'Automation passing' }
+    { id: 2, key: 'rest', label: 'Everything else' }
   ];
 
   function normRelease(s) {
     return String(s == null ? '' : s).trim().toLowerCase().replace(/^v(?=\d)/, '');
   }
 
-  /** Risk tier of a case: 0 new in release, 1 failed last cycle, 2 manual, 3 automation passing. */
+  /** Risk tier of a case: 0 new in release, 1 failed last cycle, 2 everything else. */
   function riskTier(c, ctx) {
     ctx = ctx || {};
     if (ctx.release && c.release && normRelease(c.release) === normRelease(ctx.release)) return 0;
     if (ctx.prevIdx != null && ctx.prevIdx >= 0 && classifyStatus(c.statuses[ctx.prevIdx]) === 'fail') return 1;
-    if (!c.auto || c.auto.state !== 'pass') return 2;
-    return 3;
+    return 2;
   }
 
   /** Paths built without Claude: Feature, then Sub feature, in sheet order. */
@@ -822,7 +741,6 @@ var TRCore = (function () {
     var newlyFailing = [];
     var fixed = [];
     var stillFailing = 0;
-    var auto = { linked: 0, pass: 0, fail: 0, other: 0 };
     var testers = {};
     cases.forEach(function (c) {
       if (c.retired) return; // retired cases are in no report
@@ -841,12 +759,6 @@ var TRCore = (function () {
         else if (cls === 'pass' && prev === 'fail') fixed.push({ key: c.key, id: c.id, scenario: c.scenario });
         else if (cls === 'fail' && prev === 'fail') stillFailing++;
       }
-      if (c.auto && c.auto.state !== 'unknown') {
-        auto.linked++;
-        if (c.auto.state === 'pass') auto.pass++;
-        else if (c.auto.state === 'fail') auto.fail++;
-        else auto.other++;
-      }
       if (c.testedBy && cls !== 'none') testers[c.testedBy] = (testers[c.testedBy] || 0) + 1;
     });
     groups.forEach(function (g) { var r = rates(g.counts); g.executedPct = r.executedPct; g.passRate = r.passRate; });
@@ -859,7 +771,6 @@ var TRCore = (function () {
       groups: groups,
       failures: failures,
       comparison: (pi != null && pi >= 0) ? { newlyFailing: newlyFailing, fixed: fixed, stillFailing: stillFailing } : null,
-      automation: auto,
       testers: Object.keys(testers).map(function (k) { return { name: k, count: testers[k] }; }).sort(function (a, b) { return b.count - a.count; })
     };
   }
@@ -990,7 +901,6 @@ var TRCore = (function () {
     normalizeHeader: normalizeHeader,
     detectCycles: detectCycles,
     detectColumns: detectColumns,
-    detectSpecColumn: detectSpecColumn,
     detectHeaderRow: detectHeaderRow,
     resolveColumns: resolveColumns,
     columnsByHeader: columnsByHeader,
@@ -1005,9 +915,6 @@ var TRCore = (function () {
     tidyText: tidyText,
     cellSafe: cellSafe,
     nextIds: nextIds,
-    extractSpecRefs: extractSpecRefs,
-    automationIndex: automationIndex,
-    automationBadge: automationBadge,
     normRelease: normRelease,
     riskTier: riskTier,
     autoPaths: autoPaths,
