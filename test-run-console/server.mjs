@@ -11,8 +11,8 @@
 // sheets/.testrun/. When shared (Setup › Access), teammates reach it through a
 // tunnel with their own invite key (lib/team.mjs); nothing else leaves the laptop.
 import http from 'node:http';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync, statSync, createReadStream } from 'node:fs';
-import { join, extname, basename } from 'node:path';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync, statSync, createReadStream, rmSync } from 'node:fs';
+import { join, extname, basename, dirname } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -26,16 +26,21 @@ import { startTunnel, publishAddress, findCommand } from './lib/share.mjs';
 import { githubIssue, isGithubIssue } from './lib/issues.mjs';
 import { publishFiles, readRemoteFile, readRef, dispatchWorkflow, repoFromRemote, repoInfo, ghCommand, slugFor, newPublishId } from './lib/publish.mjs';
 import { isWorkbookName } from './lib/books.mjs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { extensionIdFromKey } from './lib/extension-id.mjs';
 import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
 import { createAutomation } from './lib/automation/routes.mjs';
 import { normalizeAutomationSettings } from './lib/automation/store.mjs';
+import { previousRun, RUN_ID } from './lib/automation/results.mjs';
+import { cleanLock, newIdentity, recipientsFor, sealRuns, SealCache, isAutomationPath, FILES as SEALED_FILES } from './lib/automation/seal.mjs';
+import { publishedMeta, runDetailData, liveCaseIds } from './lib/automation/summary.mjs';
 
 const UI = join(ROOT, 'ui');
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js',
   // The Automation template: a clickable mock-up for review, removed when the real screens are built.
-  '/automation-template.html': 'automation-template.html', '/automation-template.js': 'automation-template.js' };
+  '/automation-template.html': 'automation-template.html', '/automation-template.js': 'automation-template.js',
+  // age for the browser (one file, built by scripts/build-age-vendor.mjs): the published site unlocks automated results with it
+  '/vendor/age.js': 'vendor/age.js' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8' };
 const VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 
@@ -87,6 +92,7 @@ function normalizeApp(a = {}) {
     publish: normalizePublish(a.publish),
     media: normalizeMedia(a.media),
     automation: normalizeAutomationSettings(a.automation), // { keep }: runs kept per suite and cycle, set by the host
+    lock: cleanLock(a.lock), // { identity }: the host's own age key for the published automated results (lib/automation/seal.mjs)
   };
 }
 
@@ -622,11 +628,47 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const manualTabs = (boot) => boot.tabs.filter((t) => ((t.saved && t.saved.role) || t.detected.role) === 'manual');
   const cleanReport = (r) => { const { excelOpen, reloaded, ok, ...rest } = r; return rest; };
 
+  // Locked automated results (lib/automation/seal.mjs): the kept runs attached to the workbooks
+  // being published, each locked to the people who may open it. Sealed runs are cached, so an
+  // unchanged run publishes the same bytes; one build at a time (the space meter builds too).
+  const sealCache = new SealCache(join(sheetsDir, '.testrun', 'automation', 'sealed'));
+  let sealChain = Promise.resolve();
+  /** The host's own age identity (made once, kept in app.json, which only the host can read). */
+  async function hostIdentity() {
+    if (!app.lock.identity) { app.lock = { identity: await newIdentity() }; saveApp(); }
+    return app.lock.identity;
+  }
+  /** The automation/ files of a publish. slugs: { workbook name: slug } of the workbooks it holds. */
+  function automationFiles(slugs) {
+    const job = sealChain.then(async () => {
+      const store = automation.store;
+      const index = store.index();
+      const me = { ...owner(), remember: false };
+      const caseIds = new Map(); // workbook › test suite -> its live case IDs ("Manual cases also run by automation")
+      const items = [];
+      for (const m of index) {
+        if (!slugs[m.attach.book]) continue;
+        const run = store.run(m.id);
+        if (!run) continue;
+        const k = `${m.attach.book}\n${m.attach.tab}`;
+        if (!caseIds.has(k)) caseIds.set(k, liveCaseIds(await callApi('api_loadTab', [m.attach.tab, ''], m.attach.book, me)));
+        const prevMeta = previousRun(index, m);
+        const prev = prevMeta ? store.run(prevMeta.id) : null;
+        const who = await recipientsFor(m, { team: app.team, hostIdentity: await hostIdentity() });
+        items.push({ id: m.id, slug: slugs[m.attach.book], meta: publishedMeta(store, m, run, prev, caseIds.get(k)), detail: runDetailData(store, m, run, prev), recipients: who.map((r) => r.recipient) });
+      }
+      return sealRuns(items, { cache: sealCache, prefix: DATA });
+    });
+    sealChain = job.then(() => {}, () => {});
+    return job;
+  }
+
   /** Everything one publish holds ([{ path, content }]) and its index. */
   async function buildPublish() {
     const me = { ...owner(), remember: false };
     const index = { app: 'test-run', id: newPublishId(), publishedAt: stamp(), by: app.user, workbooks: [] };
     const files = [];
+    const slugs = {};
     for (const b of lib.list()) {
       if (!app.publish.books[b.name]) continue;
       const boot = await callApi('api_bootstrap', [], b.name, me);
@@ -652,9 +694,12 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       files.push({ path: `${DATA}reports/${slug}.json`, content: Buffer.from(JSON.stringify(report)) });
       files.push({ path: `${DATA}reports/${slug}.xlsx`, content: await downloadCopy(b.name) }); // the Download on the reports page
       index.workbooks.push({ name: b.name, title, slug, suites: suites.map((x) => x.tab), xlsx: true });
+      slugs[b.name] = slug;
     }
     files.push({ path: `${DATA}reports/index.json`, content: Buffer.from(JSON.stringify(index, null, 1)) });
-    return { files, index };
+    const auto = await automationFiles(slugs); // automation/: the locked automated results
+    files.push(...auto.files);
+    return { files, index, automation: auto.index };
   }
 
   // Space on GitHub Pages: what a publish puts on the site (the data branch's reports/: a download
@@ -672,8 +717,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     return { total, limit: PAGES_LIMIT, warnAt: PAGES_WARN, warn: total > PAGES_WARN, parts };
   }
   const fileStamp = (f) => { try { const s = statSync(f); return `${s.size}:${s.mtimeMs}`; } catch { return ''; } };
-  /** Changes when what a publish would hold changes: the ticked workbooks, and their files. */
-  const spaceKey = () => JSON.stringify(lib.list().filter((b) => app.publish.books[b.name]).map((b) => [b.name, fileStamp(lib.path(b.name)), fileStamp(lib.storeFile(b.name))]));
+  /** Who may open the published automated results: changes with links, people and their access. */
+  const lockSig = () => createHash('sha256').update(JSON.stringify([app.team.admin && app.team.admin.key, app.team.people.map((p) => [p.key, p.role, p.books, p.automationSuites])])).digest('hex');
+  /** Changes when what a publish would hold changes: the ticked workbooks and their files, the kept runs, who may open them. */
+  const spaceKey = () => JSON.stringify([
+    lib.list().filter((b) => app.publish.books[b.name]).map((b) => [b.name, fileStamp(lib.path(b.name)), fileStamp(lib.storeFile(b.name))]),
+    automation.store.index().filter((m) => app.publish.books[m.attach.book]).map((m) => [m.id, m.bytes, m.attach.book, m.attach.tab, m.attach.cycle]),
+    lockSig(),
+  ]);
   async function publishSpace() {
     const key = spaceKey();
     if (pub.space && pub.space.key === key) return { ok: true, ...pub.space.value };
@@ -706,7 +757,10 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     });
   }
 
-  /** Keep the reports of the last publish on the laptop too, served at /reports/ (for visitors without a key). */
+  /**
+   * Keep the reports of the last publish on the laptop too, served at /reports/ (for visitors without a key),
+   * and its locked automated results, served at /automation/ (they open only with an invite key, as on the site).
+   */
   function writeReportsCache(files) {
     mkdirSync(reportsCache, { recursive: true });
     const keep = new Set();
@@ -717,6 +771,14 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       writeFileSync(join(reportsCache, name), f.content);
     }
     for (const f of readdirSync(reportsCache)) if (/\.(json|xlsx)$/.test(f) && !keep.has(f)) unlinkSync(join(reportsCache, f));
+    rmSync(join(reportsCache, 'automation'), { recursive: true, force: true });
+    for (const f of files) {
+      const p = f.path.slice(DATA.length);
+      if (!f.path.startsWith(DATA) || !isAutomationPath(p)) continue;
+      const out = join(reportsCache, ...p.split('/'));
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, f.content);
+    }
   }
 
   /** Start the Pages workflow on the default branch, so the site is built again from it and the data branch. Resolves '' or what went wrong. */
@@ -760,7 +822,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
           message: index.workbooks.length
             ? `Test Run: publish ${index.workbooks.map((w) => w.title).join(', ')} (${index.publishedAt}, ${index.by})`
             : `Test Run: take the published reports down (${index.publishedAt}, ${index.by})`,
-          minor: (path) => path.startsWith(`${DATA}reports/`), // reports differ by their time stamp alone
+          // reports differ by their time stamp alone; automation/index.json changes only with the sealed files it lists
+          minor: (path) => path.startsWith(`${DATA}reports/`) || path === `${DATA}automation/index.json`,
         });
         writeReportsCache(files);
         pub.space = { key: spaceKey(), value: spaceOf(files) };
@@ -814,6 +877,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       last: P.last,
       remote: remote ? { id: remote.id || '', by: remote.by || '', at: remote.publishedAt || '', workbooks: (remote.workbooks || []).map((w) => w.name) } : null,
       newer: !!(remote && remote.id && remote.id !== P.knownId),
+      // the kept automated runs of the ticked workbooks: published locked, for invited people only
+      automation: { runs: automation.store.index().filter((m) => P.books[m.attach.book]).length },
     };
   }
 
@@ -856,6 +921,20 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       for (const ext of ['json', 'xlsx']) {
         const rep = await readRemoteFile({ ...c, ref: src.ref, path: `${src.root}reports/${w.slug}.${ext}` });
         if (rep) files.push({ path: `${DATA}reports/${w.slug}.${ext}`, content: rep });
+      }
+    }
+    // the locked automated results published with them, as they are (only invited people open them)
+    const autoIndex = await readRemoteFile({ ...c, ref: src.ref, path: `${src.root}automation/index.json` });
+    if (autoIndex) {
+      files.push({ path: `${DATA}automation/index.json`, content: autoIndex });
+      let runs = [];
+      try { runs = JSON.parse(autoIndex.toString('utf8')).runs || []; } catch { runs = []; }
+      for (const r of runs) {
+        if (!RUN_ID.test(String(r && r.id))) continue;
+        for (const f of SEALED_FILES) {
+          const buf = await readRemoteFile({ ...c, ref: src.ref, path: `${src.root}automation/${r.id}/${f}` });
+          if (buf) files.push({ path: `${DATA}automation/${r.id}/${f}`, content: buf });
+        }
       }
     }
     writeReportsCache(files);
@@ -1269,6 +1348,15 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         else { const d = localData(); if (d) data = d.read(`reports/${name}`); }
         if (!data) return send(404, 'application/json; charset=utf-8', JSON.stringify({ ok: false, code: 'NOT_PUBLISHED', error: 'Nothing is published yet.' }));
         return send(200, name.endsWith('.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/json; charset=utf-8', data);
+      }
+      // The locked automated results, as published (anyone may fetch them; only invited people can open them).
+      if (req.method === 'GET' && path.startsWith('/automation/') && isAutomationPath(path.slice(1))) {
+        const rel = path.slice(1);
+        let data = null;
+        if (existsSync(join(reportsCache, 'index.json'))) { const f = join(reportsCache, ...rel.split('/')); if (existsSync(f)) data = readFileSync(f); }
+        else { const d = localData(); if (d) data = d.read(rel); }
+        if (!data) return send(404, 'application/json; charset=utf-8', JSON.stringify({ ok: false, code: 'NOT_PUBLISHED', error: 'Nothing is published yet.' }));
+        return send(200, rel.endsWith('.json') ? 'application/json; charset=utf-8' : 'application/octet-stream', data);
       }
       if (!path.startsWith('/api/')) return send(404, 'text/plain', 'Not found');
       // A custom header: plain cross-site forms and links cannot send it.

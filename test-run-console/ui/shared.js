@@ -459,6 +459,8 @@ var TR = (function () {
     cellLines: cellLines, cellItems: cellItems, cellHtml: cellHtml,
     tabLabel: tabLabel, connect: connect, reconnect: reconnect, useInvite: useInvite, forget: forget, parseInvite: parseInvite, download: download, saveBlob: saveBlob, fetchBlob: fetchBlob,
     conn: function () { return { server: conn.server, gist: conn.gist, hasKey: !!conn.token }; },
+    // The invite key kept in this browser ('' if none): the published site derives the visitor's key for locked automated results from it, in the browser only.
+    inviteKey: function () { if (!conn.token) loadConn(); return conn.token; },
     legend: legend, toast: toast, store: store
   };
 })();

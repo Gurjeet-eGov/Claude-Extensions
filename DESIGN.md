@@ -119,6 +119,8 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 - **Shapes:** `.dot` (a 20px circle with the symbol; not run is a hollow ring), `.pill` (11px, tinted), `.bar` (8px progress bar in pass, fail and other segments over `--none-bg`), `.legend` (symbol, count and word).
 - **Status buttons** show the symbol and the value: "✓ Pass". The keys are listed under **?**, not on the buttons.
 - **Change since the previous run** (`.delta`, Automation): the earlier figure after the current one, "↑ from 84%" (12px, weight 650), `--pass` when it got better and `--fail` when worse, the earlier value in its title.
+- **Automation badges** on Run's cases (`.pill` in the status colours): "Auto ✓", "Auto ✗", "Auto –", titled "Latest automated result attached to this cycle". They come from the automated runs kept for the open test suite and cycle: a case gets one when a test's title or tags name its case ID (the suite's case-ID pattern), with its result in the newest of those runs that has it.
+- **Manual | Automated** (`.seg.same`, Summary and the published site): the two buttons the same width, first in the row; Automated is disabled, with a title and a one-line note under the row, while no run is attached to that test suite and cycle.
 
 ### Fields
 

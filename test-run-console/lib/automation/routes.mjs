@@ -5,6 +5,7 @@
 //   GET  /api/automation/run?id=          one run, with the previous run, what changed, causes, history
 //   GET  /api/automation/targets?book=    a workbook's test suites and their cycles (the attach pickers)
 //   GET  /api/automation/excel?id=        the run as an .xlsx, made now and never kept
+//   GET  /api/automation/cycle?book=&tab=&cycle=   the Summary's Automated view and Run's Auto badges (summary.mjs)
 //   POST /api/automation/preview?suite=   a results upload read without keeping it (format and counts)
 //   POST /api/automation/import?suite=&book=&tab=&cycle=&branch=&env=&name=   keep an upload as a run
 //   POST /api/automation/delete {id}      POST /api/automation/reattach {id, book, tab, cycle}
@@ -15,6 +16,7 @@
 import ExcelJS from 'exceljs';
 import { AutomationStore, normalizeAutomationSettings } from './store.mjs';
 import { canSeeSuite, canAct } from './access.mjs';
+import { cycleRoute } from './summary.mjs';
 import { parseResults, buildRun, filesFromMultipart, previousRun, compareRuns, groupCauses, historyOf, lineOf, byFile, passRate, FORMAT_LABEL, RUN_ID } from './results.mjs';
 
 export const MAX_UPLOAD = 20 * 1024 * 1024;
@@ -204,6 +206,7 @@ export function createAutomation(ctx) {
         if (path === '/api/automation/run') return runDetail(String(url.searchParams.get('id') || ''), person);
         if (path === '/api/automation/targets') return await targets(String(url.searchParams.get('book') || ''), person);
         if (path === '/api/automation/excel') return await excel(String(url.searchParams.get('id') || ''), person);
+        if (path === '/api/automation/cycle') return await cycleRoute(ctx, store, url, person, keep());
         return { code: 404, json: { ok: false, code: 'NOT_FOUND', error: 'Unknown endpoint.' } };
       }
       if (method !== 'POST') return { code: 405, json: { ok: false, code: 'METHOD', error: 'Use GET or POST.' } };

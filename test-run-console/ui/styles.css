@@ -794,3 +794,11 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
   .run-actions .help-wrap { position: static; }
   .run-actions .tip { width: auto; left: 0; right: 0; }
 }
+
+/* Summary › Manual | Automated (live and on the published site): the switch first, the same size both ways */
+.report-tools { flex-wrap: wrap; }
+.report-tools .seg { flex: none; }
+.seg.same button { min-width: 112px; justify-content: center; }
+.seg button:disabled { opacity: .5; cursor: not-allowed; }
+.report-tools .run-actions { flex: none; }
+.sum-note { margin: -4px 0 12px; }
