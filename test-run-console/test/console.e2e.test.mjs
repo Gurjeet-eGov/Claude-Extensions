@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, utimesSync, statSync, chmodSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, statSync, chmodSync } from 'node:fs';
 import http from 'node:http';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
@@ -280,32 +280,60 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
         assert.equal(await mate.locator('.user-btn').count(), 0, 'still signed out after a reload');
         await mate.goto(inv.link);
         await mate.locator('.user-btn', { hasText: 'John Doe (QA)' }).waitFor();
-        // The owner copies John Doe's link again from Setup → Team: the same, working link, straight to the clipboard.
+        // The owner copies John Doe's link again from Setup › Access › Users: the same, working link, straight to the clipboard.
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.replace(/\/$/, '') });
         const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+        // A linked automated suite (Setup › Automation keeps them in suites.json), offered under Automated suites
+        mkdirSync(join(sheets, '.testrun', 'automation'), { recursive: true });
+        writeFileSync(join(sheets, '.testrun', 'automation', 'suites.json'), JSON.stringify({ suites: [{ id: 'cms', name: 'CMS Automation' }] }));
         await page.reload();
         await page.locator('.nav [data-view=setup]').click();
-        await page.locator('[data-action=setup-part][data-part=sharing]').click();
-        const johnDoeRow = page.locator('#team tr', { hasText: 'John Doe (QA)' });
-        assert.equal(await johnDoeRow.locator('[data-change=team-role] option:checked').textContent(), 'Update status');
-        assert.equal(await page.locator('#team th', { hasText: 'Access' }).count(), 1, 'the column is Access');
-        // Adding someone: their access starts blank ("Select access") and must be chosen; workbooks start at All
-        assert.equal(await page.locator('#teamRole option:checked').textContent(), 'Select access');
-        assert.equal(await page.locator('#teamBooks option:checked').textContent(), 'All workbooks');
-        assert.equal(await page.locator('#team th', { hasText: 'Workbooks' }).count(), 1);
-        assert.equal(await johnDoeRow.locator('[data-change=team-books] option:checked').textContent(), 'All workbooks');
+        await page.locator('[data-action=setup-part][data-part=access]', { hasText: 'Access' }).click();
+        await page.locator('#online h2', { hasText: 'Online access' }).waitFor();
+        assert.equal(await page.locator('#online .team-switch', { hasText: 'Share online' }).count(), 1);
+        assert.equal(await page.locator('.subtab[data-part=access] .pill.pass', { hasText: 'on' }).count(), 1, 'Access shows on');
+        const people = async () => (await fetch(base + 'api/team', { headers: { 'X-Test-Run': '1' } }).then((x) => x.json())).people;
+        const johnId = (await people()).find((p) => p.name === 'John Doe (QA)').id;
+        const johnDoeRow = page.locator('#users tr', { hasText: 'John Doe (QA)' });
+        assert.deepEqual(await page.locator('#users th').allTextContents(), ['Name', 'Access', 'Workbooks', 'Automated suites', 'Start runs', '']);
+        assert.equal(await page.locator('#users select').count(), 0, 'the console\'s own dropdowns, not the browser\'s');
+        assert.equal(await ddValue(page, `uRole-${johnId}`), 'Update status');
+        assert.equal(await ddValue(page, `uBooks-${johnId}`), 'All workbooks');
+        assert.equal(await ddValue(page, `uSuites-${johnId}`), 'All suites');
+        assert.match(await johnDoeRow.locator('td').first().textContent(), /seen today/, 'when they were last seen, under the name');
+        assert.deepEqual(await ddOptions(page, `uSuites-${johnId}`), ['All suites', 'CMS Automation', 'None']);
+        const runs = johnDoeRow.locator('[data-action=team-runs]');
+        assert.equal(await runs.isChecked(), true, 'a tester may start runs');
+        // One suite, then View only (Start runs goes, shown as –), then back to Update status
+        await ddPick(page, `uSuites-${johnId}`, 'CMS Automation');
+        await eventually(async () => JSON.stringify((await people()).find((p) => p.id === johnId).automationSuites) === '["cms"]');
+        await ddPick(page, `uRole-${johnId}`, 'View only');
+        await johnDoeRow.locator('.u-runs', { hasText: '–' }).waitFor();
+        assert.equal((await people()).find((p) => p.id === johnId).startRuns, false, 'View only never starts runs');
+        await ddPick(page, `uRole-${johnId}`, 'Update status');
+        await runs.waitFor();
+        assert.equal(await runs.isChecked(), true);
+        await runs.uncheck();
+        await eventually(async () => (await people()).find((p) => p.id === johnId).startRuns === false);
+        await runs.check();
+        await eventually(async () => (await people()).find((p) => p.id === johnId).startRuns === true);
+        assert.equal(await ddValue(page, `uSuites-${johnId}`), 'CMS Automation');
+        await ddPick(page, `uSuites-${johnId}`, 'All suites');
+        // Adding someone: their access starts blank ("Select access") and must be chosen
+        assert.equal(await ddValue(page, 'teamRole'), 'Select access');
+        assert.deepEqual(await ddOptions(page, 'teamRole'), ['Update status', 'View only']);
         await page.locator('#teamName').fill('Nobody yet');
-        await page.getByRole('button', { name: 'Add and make a link' }).click();
+        await page.getByRole('button', { name: '+ Add and Make a Link' }).click();
         await page.locator('.toast', { hasText: 'Choose their access first.' }).waitFor();
         await page.locator('#teamName').fill('');
-        await johnDoeRow.getByRole('button', { name: 'Copy link' }).click();
+        await johnDoeRow.getByRole('button', { name: 'Copy Link' }).click();
         await page.locator('.toast', { hasText: "John Doe (QA)'s invite link is copied" }).waitFor();
         assert.equal(await clipboard(), inv.link);
         assert.equal(await page.locator('#teamLink').count(), 0, 'no link box: it is on the clipboard');
-        // New link: made, copied, toast; the old link stops working
-        await johnDoeRow.getByRole('button', { name: 'New link' }).click();
+        // New Link: made, copied, toast; the old link stops working
+        await johnDoeRow.getByRole('button', { name: 'New Link' }).click();
         await page.locator('#modal h2', { hasText: 'Make a new link for John Doe (QA)?' }).waitFor();
-        await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make new link' }).click();
+        await page.locator('#modal [data-action=confirm-yes]', { hasText: 'Make New Link' }).click();
         const made = page.locator('.toast', { hasText: 'New link made' });
         await made.waitFor();
         await made.locator('.toast-x').click(); // ✕ closes a message straight away
@@ -506,16 +534,25 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await newCase.click();
     });
 
-    await t.test('Setup has Workbook and Sharing parts; cycles come before the columns', async () => {
+    await t.test('Setup has Workbook and Access parts; cycles come before the columns', async () => {
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('[data-action=setup-part][data-part=workbook]').click();
       const card = page.locator('section.card', { hasText: 'Test cycles' }).first();
       const order = await card.evaluate((el) => [...el.querySelectorAll('h3, details.columns > summary')].map((x) => x.textContent.trim().split(' ')[0]));
       assert.deepEqual(order.slice(0, 2), ['Test', 'Columns'], 'cycles first, then the folded columns');
       assert.equal(await card.locator('details.columns').evaluate((d) => d.open), false, 'columns folded once saved');
-      assert.equal(await page.locator('#team').count(), 0);
-      await page.locator('[data-action=setup-part][data-part=sharing]').click();
-      await page.locator('#team').waitFor();
+      assert.equal(await page.locator('#users').count(), 0);
+      await page.locator('[data-action=setup-part][data-part=access]').click();
+      await page.locator('#online').waitFor();
+      await page.locator('#users').waitFor();
+      assert.equal(await page.locator('.rail-note', { hasText: 'Who can use this Test Run, and how they reach this laptop.' }).count(), 1);
+      // Access was called Sharing: the old part name still opens it
+      await page.evaluate(() => { const b = document.createElement('button'); b.setAttribute('data-action', 'setup-part'); b.setAttribute('data-part', 'sharing'); b.id = 'oldPart'; document.body.appendChild(b); });
+      await page.locator('[data-action=setup-part][data-part=workbook]').click();
+      await page.locator('#oldPart').click();
+      await page.locator('.subtab[data-part=access][aria-selected=true]').waitFor();
+      await page.locator('#users').waitFor();
+      await page.evaluate(() => document.getElementById('oldPart').remove());
       await page.locator('[data-action=setup-part][data-part=workbook]').click();
       await page.locator('.nav [data-view=run]').click();
     });
