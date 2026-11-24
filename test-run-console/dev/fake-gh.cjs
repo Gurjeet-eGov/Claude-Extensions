@@ -35,8 +35,9 @@ module.exports = function fakeGh(cfg) {
     const body = input ? JSON.parse(input) : null;
     // GraphQL issue lookups (Known issues)
     if (endpoint === 'graphql') {
-      const url = fields.url || '';
-      const withProject = String(fields.query || '').includes('projectItems');
+      // -f query=… -f url=…, or a JSON body { query, variables: { url } } (POST /graphql --input -)
+      const url = fields.url || (body && body.variables && body.variables.url) || '';
+      const withProject = String(fields.query || (body && body.query) || '').includes('projectItems');
       log({ graphql: url, withProject });
       if (cfg.fail) fail(401, 'Bad credentials');
       const it = (cfg.issues || {})[url];

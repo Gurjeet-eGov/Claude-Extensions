@@ -802,3 +802,13 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 .seg button:disabled { opacity: .5; cursor: not-allowed; }
 .report-tools .run-actions { flex: none; }
 .sum-note { margin: -4px 0 12px; }
+
+/* Automation › GitHub Actions: the Running view's job and steps, runs going on a suite, Setup › Automation */
+.steps-list { display: flex; flex-direction: column; gap: 6px; }
+.steps-list > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.job-line { align-items: center; gap: 10px; }
+.job-line .grow { min-width: 0; }
+.keep-dd { width: 90px; }
+.stack > .seg { align-self: flex-start; } /* Import results: Results File | GitHub Run, as wide as its buttons */
+.run-inputs label.check { align-self: flex-start; margin-top: 4px; }
+.secrets-note { flex: 1 1 260px; }
