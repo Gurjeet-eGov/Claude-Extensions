@@ -695,6 +695,13 @@ td.no-data { text-align: center; color: var(--faint); padding: 28px 12px; }
 
 /* Setup → Publish: Save preferences, then Publish now below it */
 .publish-row { border-top: 1px solid var(--border); padding-top: 12px; }
+/* Space on GitHub Pages: a bar like the progress bar, in parts (workbooks, reports, automation results), against 1 GB */
+.space-meter { gap: 6px; }
+.space-bar { display: flex; height: 8px; border-radius: 6px; overflow: hidden; background: var(--none-bg); width: 260px; max-width: 100%; }
+.space-bar span { display: block; height: 100%; min-width: 3px; } /* a few MB of 1 GB still shows */
+.space-bar .wb { background: var(--accent); }
+.space-bar .rp { background: color-mix(in srgb, var(--accent) 50%, var(--surface)); }
+.space-bar .au { background: var(--pass); }
 
 /* Setup › Access: Online access (Online link, Your admin link), then Users */
 .team-card { gap: 14px; }
