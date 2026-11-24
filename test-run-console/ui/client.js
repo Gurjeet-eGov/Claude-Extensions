@@ -61,7 +61,13 @@
     auto: {
       data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false,
       detail: null, detailLoading: false, filter: 'failed', q: '', sel: '', open: {}, allFiles: false, moving: false,
-      file: null, busy: false, targets: {}, targetsLoading: {}
+      file: null, busy: false, targets: {}, targetsLoading: {},
+      // GitHub Actions: the runs going (and lately finished) from /api/automation/jobs, the one the
+      // Running view shows ('running'), the Run form's branches ('start'), Link a suite's GitHub steps,
+      // and Import results › GitHub run
+      jobs: null, jobsBusy: false, jobsTimer: null, jobId: '', runForm: null, starting: false,
+      gh: { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null },
+      ghRuns: null, ghRunsFor: '', ghRunsLoading: false, setupGh: null, setupGhLoading: false
     }
   };
 
@@ -420,10 +426,13 @@
       });
     }
     h += userMenu() + '</div>';
+    if (S.app && S.auto.jobs === null && !S.auto.jobsBusy) auJobsLoad(); // runs going in GitHub Actions: the count on Automation
     h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
       var n = v.id === 'findings' ? S.findings.filter(function (f) { return f.state === 'open'; }).length
-        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length : 0;
-      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count">' + n + '</span>' : '') + '</button>';
+        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length
+          : v.id === 'automation' ? auActiveJobs().length : 0;
+      var tip = v.id === 'automation' && n ? ' title="' + (n === 1 ? 'A run is going' : n + ' runs are going') + ' in GitHub Actions"' : '';
+      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count"' + tip + '>' + n + '</span>' : '') + '</button>';
     }).join('') + '</nav>';
     return h + contextBar() + '</header>';
   }
@@ -656,6 +665,7 @@
     S.form[bind] = v;
     var au = /^au:(\w+):(book|tab)$/.exec(bind); // Automation's attach pickers: a new workbook or test suite resets what follows it
     if (au) auPicked(au[1], au[2]);
+    if (bind === 'au:l:wf') auWorkflowPicked(); // Link a suite: a workflow chosen, its artifacts and options follow
   }
 
   /**
@@ -722,9 +732,11 @@
     S.covering = null; clearForm('cov:');
     S.form.noteOpen = false; ['fText', 'fIssue', 'fArea', 'fDetails', 'fTab'].forEach(function (k) { delete S.form[k]; });
     clearForm('ai'); // Add issue: aiOpen, aiUrl, aiCases, aiSuite, aiFail
-    if (S.auto.screen === 'import' || S.auto.screen === 'link') S.auto.screen = 'runs'; // Automation's Import results, Link a suite, Change cycle
+    if (S.auto.screen === 'import' || S.auto.screen === 'link' || S.auto.screen === 'start') S.auto.screen = 'runs'; // Automation's Import results, Link a suite, Run, Change cycle
     S.auto.file = null; S.auto.moving = false; S.auto.editing = false;
-    clearForm('au:l:'); clearForm('au:im:'); clearForm('au:mv:'); delete S.form['au:branch']; delete S.form['au:env'];
+    S.auto.gh = auGhFresh();
+    clearForm('au:l:'); clearForm('au:im:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
+    delete S.form['au:branch']; delete S.form['au:env'];
     S.ddOpen = null; S.ddQ = '';
   }
 
@@ -1791,9 +1803,9 @@
 
   // ---------------------------------------------------------------------------
   // Automation: automated suites, their runs, and each run's results
-  // (lib/automation/ on the server). Screens: suite and runs, run results, import results,
-  // link a suite. Starting runs on GitHub, the Summary's Automated view and the published
-  // site come later; their places are marked "later:".
+  // (lib/automation/ on the server). Screens: suite and runs, run results, import results (a file
+  // or a GitHub run), link a suite (with its GitHub workflow), Run (start one in GitHub Actions)
+  // and Running (follow it until its results come in).
   // ---------------------------------------------------------------------------
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2008,6 +2020,12 @@
         : '<p>Your test lead has not linked an automated suite yet, or not shared one with you.</p>') + '</div>');
     }
     if (A.screen === 'import' && A.data.canAct) return withRail(auRail(s.id), auImport(s));
+    if (A.screen === 'start' && A.data.canAct && s.workflowId) return withRail(auRail(s.id), auStart(s));
+    if (A.screen === 'running') {
+      var job = auJob(A.jobId);
+      if (job) return withRail(auRail(job.suiteId), auRunning(job, auSuite(job.suiteId)));
+      A.screen = 'runs';
+    }
     return withRail(auRail(s.id), auRunsList(s));
   }
 
@@ -2043,8 +2061,12 @@
     if (s.workflow) meta.push('workflow ' + esc(s.workflow));
     meta.push(s.format ? 'results: ' + esc(d.formats[s.format] || s.format) + (s.artifact ? ' in artifact <span class="mono">' + esc(s.artifact) + '</span>' : '') : 'no results imported yet');
     if (s.casePattern) meta.push('case IDs <span class="mono">' + esc(s.casePattern) + '</span>');
-    // later: ▶ Run (GitHub Actions) joins these as the primary button, and Import Results becomes a default one
-    if (actions == null) actions = d.canAct ? '<button data-action="au-edit">✎ Edit</button><button class="primary" data-action="au-import">⤒ Import Results</button>' : '';
+    // ▶ Run (GitHub Actions) is the primary button once the suite is linked to its workflow; until then ⤒ Import Results is
+    if (actions == null) {
+      actions = !d.canAct ? '' : '<button data-action="au-edit">✎ Edit</button>' + (s.workflowId
+        ? '<button data-action="au-import">⤒ Import Results</button><button class="primary" data-action="au-run">▶ Run</button>'
+        : '<button class="primary" data-action="au-import">⤒ Import Results</button>');
+    }
     return '<section class="card card-pad"><div class="auto-head"><div class="grow"><h2>' + esc(s.name) + '</h2><p class="small muted">' + meta.join(' · ') + '</p></div>' +
       (actions ? '<div class="row">' + actions + '</div>' : '') + '</div></section>';
   }
@@ -2054,7 +2076,7 @@
     var d = S.auto.data;
     var all = auRunsOf(s.id);
     var rows = auShownRuns(s.id);
-    var h = auHead(s) + '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs</h2><p class="small muted">' + auKeepText(d.keep) + ' for each test suite and cycle.</p></div>' +
+    var h = auHead(s) + auJobsCard(s) + '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs</h2><p class="small muted">' + auKeepText(d.keep) + ' for each test suite and cycle.</p></div>' +
       '<div class="table-wrap"><table><thead><tr><th>When</th><th>What ran</th><th>Result</th><th class="num">Pass rate</th><th>Attached to</th><th><span class="sr">Open</span></th></tr></thead><tbody>';
     if (!rows.length) h += '<tr><td colspan="6" class="no-data">' + (all.length ? 'No runs match the filters' : 'No runs yet' + (d.canAct ? '. Bring one in with ⤒ Import Results.' : '')) + '</td></tr>';
     rows.forEach(function (r) {
@@ -2224,6 +2246,17 @@
     var A = S.auto, f = A.file;
     var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
     h += '<section class="card card-pad stack"><div><h2>Import results</h2><p class="small muted">For a run done outside Test Run: on a laptop, another CI, or a GitHub run started there. JUnit XML or CTRF JSON; several files, or a .zip of them, make one run.</p></div>';
+    var fromGh = !!s.workflowId && val('au:im:src', 'file') === 'github';
+    if (s.workflowId) {
+      h += '<span class="seg" role="group" aria-label="Where the results come from"><button data-action="au-im-src" data-src="file" aria-pressed="' + !fromGh + '">Results File</button>' +
+        '<button data-action="au-im-src" data-src="github" aria-pressed="' + fromGh + '">GitHub Run</button></span>';
+    }
+    if (fromGh) {
+      var ready2 = auAttachChosen('im') && val('au:gh:run', '') && !A.busy;
+      h += auGhRunPicker(s) + auAttachPickers('im', true) + auFullWarning('im', s.id, '') +
+        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-gh-import"' + (ready2 ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+      return '<div class="stack">' + h + '</div>';
+    }
     if (f) {
       var p = f.preview;
       h += '<div class="item row"><span class="file-chosen grow">' + (p ? '<span class="sym-pass" aria-hidden="true">✓</span>' : f.error ? '<span class="sym-fail" aria-hidden="true">✗</span>' : '') +
@@ -2245,22 +2278,352 @@
     return '<div class="stack">' + h + '</div>';
   }
 
-  /** Screen 6: Link a suite (or change one). The GitHub steps (check, workflow, artifact, try it) come with the GitHub link. */
+  /** Screen 6: Link a suite (or change one): the repository checked on GitHub, its workflow, results artifact and environment option, then a try. */
   function auLinkForm() {
-    var A = S.auto, s = A.editing ? auSuite() : null;
+    var A = S.auto, s = A.editing ? auSuite() : null, G = A.gh;
     var v = function (k, dflt) { return val('au:l:' + k, dflt == null ? '' : dflt); };
-    var h = '<section class="card card-pad stack"><div><h2>' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact.</p></div>';
+    var h = '<section class="card card-pad stack"><div><h2>' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact. <a href="' + AU_GUIDE + '" target="_blank" rel="noopener">How, for each framework ↗</a></p></div>';
+    // 1 · Repository, checked on GitHub
+    var c = G.check;
     h += '<div class="subsection"><div class="step-title"><span class="step-n">1</span>Repository</div><div class="row"><label class="sr" for="auRepo">Repository link</label>' +
-      '<input id="auRepo" type="url" style="flex:1 1 360px" data-bind="au:l:repo" placeholder="https://github.com/owner/repo" value="' + esc(v('repo', s ? (s.repo ? 'https://github.com/' + s.repo : '') : '')) + '"></div>' +
-      '<div class="small muted">Where the suite lives on GitHub. Until Test Run connects to GitHub, its results come in with ⤒ Import Results.</div></div>';
-    // later: Check, then Workflow, Results artifact and Environment option, read from GitHub
-    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>Name</div><div class="form-grid narrow">' +
-      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">') + '</div></div>';
+      '<input id="auRepo" type="url" style="flex:1 1 360px" data-bind="au:l:repo" placeholder="https://github.com/owner/repo" value="' + esc(v('repo', s ? (s.repo ? 'https://github.com/' + s.repo : '') : '')) + '">' +
+      '<button data-action="au-gh-check"' + (G.checking ? ' disabled' : '') + '>' + (G.checking ? 'Checking…' : 'Check') + '</button></div>' +
+      (G.checkError ? '<div class="check-line bad">' + esc(G.checkError) + '</div>'
+        : c ? '<div class="check-line ok">✓ ' + esc(c.repo.fullName) + ' · ' + (c.repo.private ? 'private' : 'public') + ' · ' + plural(c.counts.total, 'workflow') + ', ' + c.counts.dispatch + ' you can start by hand</div>'
+          : '<div class="small muted">Any repository Test Run\'s GitHub access can read. Check it to pick its workflow, so ▶ Run can start it; without that, results come in with ⤒ Import Results.</div>') + '</div>';
+    // 2 · Name, workflow and results
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>' + (c ? 'Workflow and results' : 'Name') + '</div><div class="form-grid' + (c ? '' : ' narrow') + '">' +
+      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">');
+    var wf = c ? auLinkWorkflow() : null;
+    if (c) {
+      var can = c.workflows.filter(function (w) { return w.dispatch && w.active; });
+      h += auField('au_l_wf', 'Workflow', dropdown({ bind: 'au:l:wf', id: 'au_l_wf', value: v('wf', ''), title: 'Workflow', placeholder: can.length ? 'Select' : 'None can be started by hand',
+        disabled: !can.length, options: can.map(function (w) { return { value: String(w.id), label: w.name, hint: w.path.split('/').pop() }; }) }), 'Its Run workflow options become the run form');
+      var arts = G.arts && G.artsFor === v('wf', '') ? G.arts : null;
+      var artOpts = arts ? arts.artifacts.map(function (a) { return { value: a.name, label: a.name, hint: a.results ? a.results.formatLabel + ' · ' + plural(a.results.tests, 'test') : a.note }; }) : [];
+      var artHint = !wf ? 'Choose the workflow first' : G.artsLoading ? 'Looking inside the latest run’s artifacts…' : G.artsError ? '' : arts && arts.run ? 'From the latest run (' + auDate(arts.run.createdAt, false) + '), or type the name it will have' : 'No finished run yet: type the artifact’s name (test-results by default)';
+      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf, placeholder: G.artsLoading ? 'Loading…' : 'Select', options: artOpts }),
+        G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : artHint);
+      var envOpts = [{ value: '', label: 'None' }].concat(wf ? wf.inputs.map(function (x) { return { value: x.name, label: x.name, hint: x.description }; }) : []);
+      h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), 'Runs are grouped by it, and the run form names its GitHub environment');
+      var no = c.workflows.length - can.length;
+      if (no) h += '<p class="small muted wide">' + plural(no, 'workflow') + ' can\'t be started by hand (no <span class="mono">workflow_dispatch</span>): ' + esc(c.workflows.filter(function (w) { return !(w.dispatch && w.active); }).map(function (w) { return w.name; }).join(', ')) + '.</p>';
+    }
+    h += '</div></div>';
+    // 3 · Extras
     h += '<div class="subsection"><div class="step-title"><span class="step-n">3</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
       auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') +
       auField('auMask', 'Extra masking', '<textarea id="auMask" class="mono" rows="2" data-bind="au:l:mask" placeholder="e.g. otp=\\d{6}">' + esc(v('mask', s ? s.masking.join('\n') : '')) + '</textarea>', 'One per line: a text, or a /pattern/. Tokens, passwords and Authorization headers are always masked.') + '</div></div>';
+    // 4 · Try it: saves the suite and brings the latest run in
+    if (wf) {
+      var im = G.imported;
+      h += '<div class="subsection"><div class="step-title"><span class="step-n">4</span>Try it</div>' + auAttachPickers('lk', true) +
+        '<div class="row"><button data-action="au-gh-import-latest"' + (G.importing || !auAttachChosen('lk') ? ' disabled' : '') + '>' + (G.importing ? 'Importing…' : 'Import Latest Run') + '</button>' +
+        (im ? '<span class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</span>' : '<span class="small muted">Saves the suite, then brings in the latest finished run.</span>') + '</div></div>';
+    }
     h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
       '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  function auGhFresh() { return { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null }; }
+  var AU_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/automation.md';
+  /** The workflow chosen on Link a suite (from the check), or null. */
+  function auLinkWorkflow() {
+    var c = S.auto.gh.check, id = val('au:l:wf', '');
+    return c && id ? c.workflows.filter(function (w) { return String(w.id) === id; })[0] || null : null;
+  }
+  function auRepoTyped() {
+    var s = S.auto.editing ? auSuite() : null;
+    return String(val('au:l:repo', s && s.repo ? 'https://github.com/' + s.repo : '')).trim();
+  }
+  /** Check: the repository and its workflows, read from GitHub. */
+  function auGhCheck() {
+    var A = S.auto, G = A.gh, s = A.editing ? auSuite() : null;
+    var repo = auRepoTyped();
+    if (!repo) { toast('Paste the suite\'s GitHub repository link first.', 'bad'); return; }
+    G.checking = true; G.checkError = ''; G.check = null; G.arts = null; G.artsFor = ''; G.imported = null;
+    render();
+    TR.http('POST', '/api/automation/github/check', { repo: repo, id: s ? s.id : '' }).then(function (r) {
+      G.checking = false;
+      if (!r.ok) { G.checkError = r.error; render(); return; }
+      G.check = r;
+      var can = r.workflows.filter(function (w) { return w.dispatch && w.active; });
+      var keepWf = val('au:l:wf', s && s.workflowId ? String(s.workflowId) : '');
+      if (!can.some(function (w) { return String(w.id) === keepWf; })) keepWf = can.length === 1 ? String(can[0].id) : '';
+      if (S.form['au:l:art'] == null && s && s.artifact) S.form['au:l:art'] = s.artifact;
+      if (S.form['au:l:env'] == null && s) S.form['au:l:env'] = s.envInput || '';
+      S.form['au:l:wf'] = keepWf;
+      if (keepWf) auWorkflowPicked(); else render();
+    });
+  }
+  /** A workflow chosen: its options for the environment, and the latest run's artifacts (which hold results). */
+  function auWorkflowPicked() {
+    var A = S.auto, G = A.gh, wf = auLinkWorkflow(), s = A.editing ? auSuite() : null;
+    if (!wf) return;
+    if (val('au:l:env', '') && !wf.inputs.some(function (x) { return x.name === val('au:l:env', ''); })) S.form['au:l:env'] = '';
+    if (!S.form['au:l:env'] && S.form['au:l:env'] !== '' ) {
+      var guess = wf.inputs.filter(function (x) { return x.type === 'environment' || /^(env|environment|target|stage)$/i.test(x.name); })[0];
+      S.form['au:l:env'] = guess ? guess.name : '';
+    }
+    var id = String(wf.id);
+    if (G.artsFor === id && (G.arts || G.artsLoading)) return;
+    G.artsFor = id; G.arts = null; G.artsError = ''; G.artsLoading = true;
+    if (!S.form['au:lk:book']) {
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:lk:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:lk:book'], function () { auDefaults('lk'); });
+    }
+    TR.http('POST', '/api/automation/github/artifacts', { repo: auRepoTyped(), workflowId: wf.id, id: s ? s.id : '' }).then(function (r) {
+      if (G.artsFor !== id) return;
+      G.artsLoading = false;
+      if (!r.ok) { G.artsError = r.error; render(); return; }
+      G.arts = r;
+      if (!val('au:l:art', '')) {
+        var hit = r.artifacts.filter(function (a) { return a.results; })[0];
+        S.form['au:l:art'] = hit ? hit.name : r.artifacts.some(function (a) { return a.name === 'test-results'; }) || !r.artifacts.length ? 'test-results' : '';
+      }
+      render();
+    });
+    render();
+  }
+  /** What Link a suite sends: its fields, and (once checked) its workflow. */
+  function auLinkBody() {
+    var s = S.auto.editing ? auSuite() : null, wf = S.auto.gh.check ? auLinkWorkflow() : null;
+    return {
+      id: s ? s.id : '',
+      name: String(val('au:l:name', s ? s.name : '')).trim(),
+      repo: auRepoTyped(),
+      casePattern: String(val('au:l:pattern', s ? s.casePattern : '')).trim(),
+      masking: String(val('au:l:mask', s ? s.masking.join('\n') : '')),
+      workflowId: wf ? wf.id : 0,
+      artifact: String(val('au:l:art', '')).trim(),
+      envInput: val('au:l:env', '')
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automation › GitHub Actions: runs going, the Run form, the Running view
+  // ---------------------------------------------------------------------------
+
+  var AU_ACTIVE = { waiting: true, queued: true, in_progress: true, importing: true };
+  function auActiveJobs() { return (S.auto.jobs || []).filter(function (j) { return AU_ACTIVE[j.state]; }); }
+  function auJob(id) { return (S.auto.jobs || []).filter(function (j) { return j.id === id; })[0] || null; }
+
+  /** The runs going (and those finished lately) this person may see; read again every few seconds while one is going. */
+  function auJobsLoad() {
+    var A = S.auto;
+    if (A.jobsBusy || S.connect || S.reportsMode) return;
+    A.jobsBusy = true;
+    TR.http('GET', '/api/automation/jobs').then(function (r) {
+      A.jobsBusy = false;
+      var before = A.jobs || [];
+      if (!r.ok) { if (A.jobs === null) A.jobs = []; return; }
+      var same = JSON.stringify(before) === JSON.stringify(r.jobs);
+      A.jobs = r.jobs;
+      auJobsFinished(before, r.jobs);
+      clearTimeout(A.jobsTimer);
+      if (auActiveJobs().length) A.jobsTimer = setTimeout(auJobsLoad, 3000);
+      if (!same) render();
+    });
+  }
+
+  /** Runs that finished since the last look: the Running view moves on to the results; whoever started one hears of it. */
+  function auJobsFinished(before, after) {
+    var A = S.auto, was = {};
+    before.forEach(function (j) { was[j.id] = j.state; });
+    after.forEach(function (j) {
+      if (!AU_ACTIVE[was[j.id]] || AU_ACTIVE[j.state]) return;
+      var here = S.view === 'automation' && A.screen === 'running' && A.jobId === j.id;
+      var where = j.attach.tab + ' › ' + cycleText(j.attach.cycle);
+      if (j.state === 'imported') {
+        var n = j.totals ? plural(j.totals.total, 'test') : 'the results';
+        if (here) { A.screen = 'run'; A.runId = j.importedRunId; A.detail = null; window.scrollTo(0, 0); }
+        if (here || j.by === me().name) toast('Imported ' + n + ' into ' + where + ' from GitHub Actions.' + auRemovedText(j.removed, A.data ? A.data.keep : 2));
+      } else if (!here && j.by === me().name) {
+        toast('The run of “' + j.suiteName + '” ended without results. Open it in Automation to see why.', 'bad');
+      }
+      if (S.view === 'automation') auLoad();
+    });
+  }
+
+  /** On a suite's page: its runs going in GitHub Actions, and finished ones that brought nothing in. */
+  function auJobsCard(s) {
+    var list = (S.auto.jobs || []).filter(function (j) { return j.suiteId === s.id && j.state !== 'imported'; });
+    if (!list.length) return '';
+    return '<section class="card card-pad stack"><h2>In GitHub Actions</h2>' + list.map(function (j) {
+      var active = AU_ACTIVE[j.state];
+      return '<div class="item row job-line">' + auJobDot(j) + '<span class="grow"><b>' + esc(auJobTitle(j)) + '</b><div class="small muted">' + esc(auJobMeta(j)) + '</div>' +
+        (!active && j.message ? '<div class="small bad-text">' + esc(j.message) + '</div>' : '') + '</span>' +
+        (active ? '<button class="small-btn" data-action="au-job-open" data-id="' + esc(j.id) + '">Open</button>'
+          : (j.runUrl ? '<button class="small-btn" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '') + '<button class="small-btn" data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button>') + '</div>';
+    }).join('') + '</section>';
+  }
+
+  function auJobTitle(j) {
+    return { waiting: 'Starting in GitHub Actions', queued: 'Queued in GitHub Actions', in_progress: 'Running in GitHub Actions', importing: 'Bringing the results in',
+      imported: 'Results imported', no_results: 'Finished without results', cancelled: 'Cancelled', failed: 'The results did not come in' }[j.state] || 'In GitHub Actions';
+  }
+  function auJobDot(j) {
+    if (AU_ACTIVE[j.state]) return TR.dot('none', true) + '<span class="sr">Going.</span>';
+    var c = j.state === 'imported' ? 'pass' : j.state === 'cancelled' ? 'other' : 'fail';
+    return TR.dot(c) + '<span class="sr">' + TR.CLS_LABEL[c] + '.</span>';
+  }
+  /** "master @ 9629653 · net_two · smoke · started by Gurjeet from Test Run at 10:23" */
+  function auJobMeta(j) {
+    var d = new Date(j.dispatchedAt);
+    var opts = Object.keys(j.inputs || {}).filter(function (k) { return k !== auEnvInput(j.suiteId) && j.inputs[k] && j.inputs[k] !== 'false'; })
+      .map(function (k) { return j.inputs[k] === 'true' ? k : j.inputs[k]; });
+    return [j.branch + (j.sha ? ' @ ' + j.sha.slice(0, 7) : ''), j.env].concat(opts).filter(Boolean).join(' · ') +
+      ' · started by ' + j.by + ' from Test Run at ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + (j.runNumber ? ' · run #' + j.runNumber : '');
+  }
+  function auEnvInput(suiteId) { var s = auSuite(suiteId); return s ? s.envInput : ''; }
+  /** "06:42", "1:02:05" */
+  function auClock(ms) {
+    var t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return (h ? h + ':' + pad2(m) : pad2(m)) + ':' + pad2(sec);
+  }
+  function auStepDot(x) {
+    if (x.status === 'completed') return TR.dot(x.conclusion === 'success' ? 'pass' : x.conclusion === 'failure' || x.conclusion === 'timed_out' ? 'fail' : 'other');
+    if (x.status === 'in_progress') return TR.dot('none', true);
+    return TR.dot('none');
+  }
+
+  /** Screen 3: a run going in GitHub Actions (and how it ended, when it brought nothing in). */
+  function auRunning(j, s) {
+    var A = S.auto, active = AU_ACTIVE[j.state];
+    var can = A.data.canAct;
+    var since = Date.parse(j.startedAt) || j.dispatchedAt;
+    var head = s ? auHead(s, '<button class="ghost" data-action="au-back">Back</button>' + (j.runUrl ? '<button class="ghost" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '')) : '';
+    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + auJobDot(j) + ' ' + esc(auJobTitle(j)) + '</h2>' +
+      '<p class="small muted">' + esc(auJobMeta(j)) + (active ? ' · <b id="auElapsed" data-since="' + since + '">' + auClock(Date.now() - since) + '</b> so far' : '') + '</p>' +
+      '<span class="small">' + esc(attachText(j.attach)) + '</span></div>' +
+      (active && can && j.state !== 'importing' ? '<div class="row"><button class="danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling…' : 'Cancel Run') + '</button></div>' : '') + '</div>';
+    if (j.lastError && active) h += '<div class="note warn">' + esc(j.lastError) + ' Trying again.</div>';
+    if (!active && j.message) h += '<div class="banner ' + (j.state === 'cancelled' ? 'warn' : 'bad') + '"><span>' + esc(j.message) + '</span></div>';
+    if (j.jobs && j.jobs.length) {
+      h += j.jobs.map(function (x) {
+        return '<div class="stack-s"><span class="small muted">Job <b>' + esc(x.name) + '</b>' + (x.status === 'queued' ? ', waiting for a GitHub machine' : '') + '</span><div class="steps-list">' +
+          (x.steps.length ? x.steps.map(function (st) { return '<div>' + auStepDot(st) + '<span' + (st.status === 'queued' || st.status === 'pending' ? ' class="muted"' : '') + '>' + esc(st.name) + '</span></div>'; }).join('') : '<div class="small muted">No steps yet.</div>') +
+          '</div></div>';
+      }).join('');
+    } else if (active) {
+      h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up…' : 'Asking GitHub for the new run…') + '</p>';
+    }
+    h += active ? '<p class="small muted">The results are imported by themselves when the run ends. Leaving this page doesn\'t stop the run; the full log is on GitHub.</p>'
+      : '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Back</button><button data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button></div>';
+    return '<div class="stack">' + head + h + '</section></div>';
+  }
+
+  /** The Run form's branches (and the repository's environments), read once per form. */
+  function auRunFormLoad(s) {
+    var A = S.auto;
+    A.runForm = { suite: s.id, loading: true };
+    TR.http('GET', '/api/automation/github/branches?suite=' + enc(s.id)).then(function (r) {
+      if (!A.runForm || A.runForm.suite !== s.id) return;
+      if (!r.ok) { A.runForm = { suite: s.id, error: r.error }; render(); return; }
+      A.runForm = { suite: s.id, branches: r.branches, environments: r.environments || [], defaultBranch: r.defaultBranch };
+      if (!S.form['au:rn:branch']) S.form['au:rn:branch'] = r.defaultBranch || (r.branches[0] && r.branches[0].name) || '';
+      render();
+    });
+  }
+  /** An input's value on the Run form: what was typed or picked, else its default. */
+  function auInputVal(d) {
+    var k = 'au:in:' + d.name;
+    if (d.type === 'boolean') return Object.prototype.hasOwnProperty.call(S.form, k) ? !!S.form[k] : d.default === 'true';
+    return String(val(k, d.default));
+  }
+
+  /** Screen 2: Start a run: branch, the workflow's own options, and where its results attach. */
+  function auStart(s) {
+    var A = S.auto, rf = A.runForm && A.runForm.suite === s.id ? A.runForm : null;
+    var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
+    h += '<section class="card card-pad stack"><div><h2>Start a run</h2><p class="small muted">Runs the workflow <b>' + esc(s.workflow || 'workflow') + '</b> in GitHub Actions, in ' + esc(s.repo) + '. The options below come from that workflow.</p></div>';
+    if (rf && rf.error) h += '<div class="note bad">' + esc(rf.error) + '</div>';
+    var branches = rf && rf.branches ? rf.branches : null;
+    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: val('au:rn:branch', ''), title: 'Branch', disabled: !branches,
+      placeholder: rf && rf.loading ? 'Loading…' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
+    (s.inputs || []).forEach(function (d) {
+      var id = 'au_in_' + d.name.replace(/\W/g, '_'), bind = 'au:in:' + d.name, hint = esc(d.description);
+      var opt = !d.required && (d.type === 'string' || d.type === 'number') ? ' <span class="faint">(optional)</span>' : '';
+      if (d.type === 'boolean') {
+        h += '<div><label class="note-label" for="' + id + '">' + esc(d.name) + '</label><label class="check"><input type="checkbox" id="' + id + '" data-bind="' + esc(bind) + '"' + (auInputVal(d) ? ' checked' : '') + '> ' + (hint || 'On') + '</label></div>';
+        return;
+      }
+      var envs = d.type === 'environment' && rf && rf.environments ? rf.environments : [];
+      var control = d.type === 'choice' || envs.length
+        ? dropdown({ bind: bind, id: id, value: auInputVal(d), title: d.name, options: d.type === 'choice' ? d.options : envs })
+        : '<input id="' + id + '" data-bind="' + esc(bind) + '"' + (d.type === 'number' ? ' inputmode="decimal"' : '') + ' value="' + esc(auInputVal(d)) + '">';
+      h += auField(id, esc(d.name) + opt, control, hint);
+    });
+    h += '</div>' + auAttachPickers('rn', true) + auFullWarning('rn', s.id, '');
+    var envName = s.envInput ? auInputVal((s.inputs || []).filter(function (x) { return x.name === s.envInput; })[0] || { name: s.envInput, default: '' }) : '';
+    if (!envName) { var e = (s.inputs || []).filter(function (x) { return x.type === 'environment'; })[0]; if (e) envName = auInputVal(e); }
+    var ready = val('au:rn:branch', '') && auAttachChosen('rn') && !A.starting;
+    h += '<div class="row"><span class="small muted secrets-note">' + (envName ? 'Secrets come from the repository\'s GitHub environment <span class="mono">' + esc(envName) + '</span>; nothing to upload.' : 'Secrets come from the repository\'s GitHub settings; nothing to upload.') + '</span>' +
+      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-run-start"' + (ready ? '' : ' disabled') + '>' + (A.starting ? 'Starting…' : 'Start Run') + '</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  /** Import results › GitHub run: a finished run of the suite's workflow, picked from the latest ones. */
+  function auGhRunPicker(s) {
+    var A = S.auto;
+    if (A.ghRunsFor !== s.id && !A.ghRunsLoading) {
+      A.ghRunsLoading = true; A.ghRunsFor = s.id; A.ghRuns = null;
+      TR.http('GET', '/api/automation/github/runs?suite=' + enc(s.id)).then(function (r) {
+        A.ghRunsLoading = false;
+        A.ghRuns = r.ok ? r.runs : { error: r.error };
+        if (r.ok && !val('au:gh:run', '')) { var first = r.runs.filter(function (x) { return !x.kept; })[0]; if (first) S.form['au:gh:run'] = String(first.id); }
+        render();
+      });
+    }
+    var list = A.ghRuns;
+    if (list && list.error) return '<div class="note bad">' + esc(list.error) + '</div>';
+    var word = { success: 'passed', failure: 'failed', cancelled: 'cancelled', timed_out: 'timed out', skipped: 'skipped' };
+    return auField('au_gh_run', 'GitHub run', dropdown({ bind: 'au:gh:run', id: 'au_gh_run', cls: 'cover-dd', value: val('au:gh:run', ''), title: 'GitHub run', disabled: !list || !list.length,
+      placeholder: !list ? 'Loading…' : list.length ? 'Select' : 'No finished runs yet',
+      options: (list || []).map(function (x) {
+        return { value: String(x.id), label: '#' + x.number + ' · ' + x.branch + ' · ' + auDate(x.createdAt) + ' · ' + (x.event === 'workflow_dispatch' ? 'started by hand' : x.event),
+          hint: (word[x.conclusion] || x.conclusion || '') + (x.kept ? ' · already in Test Run' : '') };
+      }) }), 'Finished runs of “' + esc(s.workflow) + '”, newest first. Its results artifact is read from GitHub.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Setup › Automation (the host only)
+  // ---------------------------------------------------------------------------
+
+  function auSetupCard() {
+    var A = S.auto;
+    if (!A.data) { if (!A.loading && !A.error) auLoad(); return A.error ? '<div class="banner bad">' + esc(A.error) + '</div>' : '<div class="loading">Loading the automation settings…</div>'; }
+    if (!A.setupGh && !A.setupGhLoading) {
+      A.setupGhLoading = true;
+      TR.http('GET', '/api/automation/github/status').then(function (r) { A.setupGhLoading = false; A.setupGh = r; render(); });
+    }
+    var g = A.setupGh;
+    var via = g && (g.transport === 'gh' ? 'gh' : g.transport === 'fetch' ? 'a GitHub token' : g.transport === 'fake' ? 'a pretend GitHub (demo)' : 'GitHub');
+    var access = !g ? '<span class="small muted">Checking…</span>'
+      : g.ok ? '<span class="check-line ok" style="margin:0">✓ ' + esc(via) + ', signed in as ' + esc(g.login || 'unknown') + '</span>'
+        : '<span class="check-line bad" style="margin:0">' + esc(g.error) + '</span>';
+    var keep = A.data.keep;
+    var keeps = ['1', '2', '3', '5'];
+    if (keeps.indexOf(String(keep)) < 0) keeps.push(String(keep));
+    var suites = A.data.suites;
+    var masks = suites.filter(function (s) { return s.masking.length; });
+    var h = '<section class="card card-pad stack"><div><h2>Automation</h2><p class="small muted">Suites run in their own repositories\' GitHub Actions. Test Run keeps their results; GitHub keeps the full reports. Who can see and run them is in <button class="linkish" data-action="setup-part" data-part="access">Access › Users</button>.</p></div><div class="kv-grid">' +
+      '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this laptop, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
+      '<label class="kv-k" for="auKeep">Runs kept</label><span class="row">' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) +
+      '<span class="small muted">for each test suite and cycle; the oldest goes when a new one comes in</span></span>' +
+      '<span class="kv-k">Masking</span><span class="stack-s"><span class="small">Always: tokens, passwords, Authorization headers, JWTs</span><span class="small muted">Extra rules are set on each suite, in its ✎ Edit' +
+      (masks.length ? ': ' + esc(masks.map(function (s) { return s.name + ' (' + plural(s.masking.length, 'rule') + ')'; }).join(', ')) : '; none yet') + '.</span></span>' +
+      '<span class="kv-k">Space on GitHub Pages</span><span class="small">Shown in <button class="linkish" data-action="setup-part" data-part="publish">Setup › Publish</button>, automation results included.</span>' +
+      '</div></section>';
+    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Linked suites</h2></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
+      (suites.length ? suites.map(function (s) {
+        var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
+        return '<tr><td>' + esc(s.name) + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
+          '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
+          '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
+      }).join('') : '<tr><td colspan="5" class="no-data">No data available</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
 
@@ -2576,7 +2939,7 @@
     });
   }
 
-  /** Setup, in parts: Workbook (test suites, cycles, columns), Access (you, online access and users), Publish, Media. */
+  /** Setup, in parts: Workbook (test suites, cycles, columns), Access (you, online access and users), Publish, Media, Automation. */
   function viewSetup() {
     var part = S.cfg ? val('setupPart', 'workbook') : 'workbook'; // a workbook not set up yet opens on its tabs
     if (part === 'sharing') part = 'access'; // Access was called Sharing: older links and state still open it
@@ -2586,12 +2949,14 @@
       '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="access" aria-selected="' + (part === 'access') + '">Access' + shareState + '</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button></div>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="automation" aria-selected="' + (part === 'automation') + '">Automation</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
         : part === 'access' ? '<p class="small muted rail-note">Who can use this Test Run, and how they reach this laptop. Applies to all workbooks.</p>'
           : part === 'media' ? '<p class="small muted rail-note">Media is for everyone using Test Run Extension: their screenshots and recordings follow these limits.</p>'
+            : part === 'automation' ? '<p class="small muted rail-note">Automation is for all workbooks. Only the host sees this.</p>'
             : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
-    return withRail(rail, part === 'access' ? youCard() + onlineCard() + usersCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : setupWorkbook());
+    return withRail(rail, part === 'access' ? youCard() + onlineCard() + usersCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : part === 'automation' ? auSetupCard() : setupWorkbook());
   }
 
   function fmtBytes(n) {
@@ -3405,7 +3770,11 @@
         loadTab(cycleLabel(), true);
       });
     },
-    'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
+    'setup-part': function (el) {
+      S.form.setupPart = el.getAttribute('data-part');
+      if (S.form.setupPart === 'automation') { S.auto.setupGh = null; S.auto.data = null; S.auto.error = ''; } // GitHub access and the suites, read afresh
+      render(); window.scrollTo(0, 0);
+    },
     'book-delete': function () { deleteBookModal(); },
     'dl-menu': function (el) { var w = el.getAttribute('data-where'); S.dlMenu = S.dlMenu === w ? null : w; render(); },
     'complete-report': function () { S.dlMenu = null; render(); openCompleteReport(); },
@@ -3869,8 +4238,145 @@
       render();
       window.scrollTo(0, 0);
     },
-    'au-link': function () { S.auto.screen = 'link'; S.auto.editing = false; S.auto.runId = ''; clearForm('au:l:'); render(); window.scrollTo(0, 0); },
-    'au-edit': function () { S.auto.screen = 'link'; S.auto.editing = true; clearForm('au:l:'); render(); window.scrollTo(0, 0); },
+    'au-link': function () {
+      S.auto.screen = 'link'; S.auto.editing = false; S.auto.runId = ''; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh();
+      render(); window.scrollTo(0, 0);
+    },
+    'au-edit': function () {
+      S.auto.screen = 'link'; S.auto.editing = true; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh();
+      render(); window.scrollTo(0, 0);
+      var s = auSuite();
+      if (s && s.workflowId) auGhCheck(); // a linked suite: its workflows are read again, so they can be changed
+    },
+    'au-gh-check': function () { auGhCheck(); },
+    'au-gh-import-latest': function () {
+      var A = S.auto, G = A.gh, body = auLinkBody(), a = auAttachChosen('lk');
+      if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n0 = $('auName'); if (n0) n0.focus(); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      G.importing = true; G.imported = null;
+      render();
+      TR.http('POST', '/api/automation/github/link', body).then(function (r) {
+        if (!r.ok) { G.importing = false; G.imported = { ok: false, text: r.error }; render(); return; }
+        A.editing = true; A.suite = r.suite.id; // saved: Save Suite now changes it
+        TR.http('POST', '/api/automation/github/import', { suite: r.suite.id, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (x) {
+          G.importing = false;
+          if (!x.ok) { G.imported = { ok: false, text: x.error }; auLoad(); return; }
+          var t = x.run.totals;
+          G.imported = { ok: true, text: '✓ Read ' + plural(t.total, 'test') + ' from run #' + x.githubRun.number + ' (' + auDate(x.run.startedAt, false) + '): ✓ ' + t.passed + ' ✗ ' + t.failed + ' – ' + t.skipped };
+          toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '” and imported its latest run into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+          auLoad();
+        });
+      });
+    },
+    'au-run': function () {
+      var A = S.auto, s = auSuite();
+      if (!s) return;
+      A.screen = 'start'; A.starting = false; A.targets = {};
+      clearForm('au:rn:'); clearForm('au:in:');
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:rn:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:rn:book'], function () { auDefaults('rn'); });
+      auRunFormLoad(s);
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-run-start': function () {
+      var A = S.auto, s = auSuite(), a = auAttachChosen('rn');
+      if (!s) return;
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      var inputs = {};
+      var missing = '';
+      (s.inputs || []).forEach(function (d) {
+        var v = auInputVal(d);
+        inputs[d.name] = d.type === 'boolean' ? !!v : String(v).trim();
+        if (d.required && d.type !== 'boolean' && !inputs[d.name] && !missing) missing = d.name;
+      });
+      if (missing) { toast('Fill in ' + missing + ': the workflow needs it.', 'bad'); return; }
+      A.starting = true;
+      render();
+      TR.http('POST', '/api/automation/github/run', { suite: s.id, branch: val('au:rn:branch', ''), inputs: inputs, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (r) {
+        A.starting = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.jobs = (A.jobs || []).filter(function (j) { return j.id !== r.job.id; }).concat([r.job]);
+        A.screen = 'running'; A.jobId = r.job.id; A.runForm = null;
+        clearForm('au:rn:'); clearForm('au:in:');
+        clearTimeout(A.jobsTimer);
+        A.jobsTimer = setTimeout(auJobsLoad, 2000);
+        render();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-job-open': function (el) { var A = S.auto; A.screen = 'running'; A.jobId = el.getAttribute('data-id'); render(); window.scrollTo(0, 0); },
+    'au-gh-log': function (el) {
+      var j = auJob(el.getAttribute('data-id') || S.auto.jobId);
+      if (j && j.runUrl) window.open(j.runUrl, '_blank', 'noopener');
+    },
+    'au-job-cancel': function (el) {
+      var j = auJob(el.getAttribute('data-id'));
+      if (!j) return;
+      askConfirm({
+        title: 'Cancel the run of “' + esc(j.suiteName) + '”?',
+        banner: 'You can start it again, but it begins from the start.', bannerKind: 'warn',
+        items: ['GitHub stops the run (' + esc(j.branch) + (j.env ? ' · ' + esc(j.env) : '') + ').', 'Results it uploads before stopping are still brought in; without them, nothing is added to ' + esc(attachText(j.attach)) + '.'],
+        yes: 'Cancel Run', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/job/cancel', { id: j.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          S.auto.jobs = (S.auto.jobs || []).map(function (x) { return x.id === r.job.id ? r.job : x; });
+          toast('Asked GitHub to cancel the run.');
+          render();
+          auJobsLoad();
+        });
+      });
+    },
+    'au-job-dismiss': function (el) {
+      var id = el.getAttribute('data-id');
+      TR.http('POST', '/api/automation/job/dismiss', { id: id }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        var A = S.auto;
+        A.jobs = (A.jobs || []).filter(function (j) { return j.id !== id; });
+        if (A.jobId === id) { A.jobId = ''; A.screen = 'runs'; }
+        render();
+      });
+    },
+    'au-im-src': function (el) { S.form['au:im:src'] = el.getAttribute('data-src'); S.auto.ghRunsFor = ''; render(); },
+    'au-gh-import': function () {
+      var A = S.auto, a = auAttachChosen('im'), runId = val('au:gh:run', '');
+      if (!runId) { toast('Choose the GitHub run to bring in.', 'bad'); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      A.busy = true;
+      render();
+      TR.http('POST', '/api/automation/github/import', { suite: A.suite, runId: Number(runId), book: a.book, tab: a.tab, cycle: a.cycle }).then(function (r) {
+        A.busy = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.screen = 'runs'; A.ghRunsFor = '';
+        clearForm('au:im:'); clearForm('au:gh:'); clearForm('au:f:');
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' from run #' + r.githubRun.number + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        auLoad();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-setup-remove': function (el) {
+      var A = S.auto, s = A.data && A.data.suites.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
+      if (!s) return;
+      var n = auRunsOf(s.id).length;
+      askConfirm({
+        title: 'Remove “' + esc(s.name) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
+        yes: 'Remove Suite', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          toast('Removed “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          if (A.suite === s.id) A.suite = '';
+          auLoad();
+        });
+      });
+    },
+
     'au-import': function () {
       var A = S.auto;
       A.screen = 'import'; A.file = null; A.busy = false; A.targets = {};
@@ -3883,8 +4389,9 @@
     },
     'au-back': function () {
       var A = S.auto;
-      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false;
-      clearForm('au:l:'); clearForm('au:mv:');
+      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false; A.jobId = ''; A.runForm = null;
+      A.gh = auGhFresh();
+      clearForm('au:l:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
       render();
       window.scrollTo(0, 0);
     },
@@ -3948,16 +4455,11 @@
       });
     },
     'au-link-save': function () {
-      var A = S.auto, s = A.editing ? auSuite() : null;
-      var body = {
-        id: s ? s.id : '',
-        name: String(val('au:l:name', s ? s.name : '')).trim(),
-        repo: String(val('au:l:repo', s && s.repo ? 'https://github.com/' + s.repo : '')).trim(),
-        casePattern: String(val('au:l:pattern', s ? s.casePattern : '')).trim(),
-        masking: String(val('au:l:mask', s ? s.masking.join('\n') : ''))
-      };
+      var A = S.auto;
+      var body = auLinkBody();
       if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n = $('auName'); if (n) n.focus(); return; }
-      TR.http('POST', '/api/automation/suites', body).then(function (r) {
+      // checked on GitHub with a workflow chosen: saved with its workflow; else as a suite whose results are imported
+      TR.http('POST', body.workflowId ? '/api/automation/github/link' : '/api/automation/suites', body).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }
         clearForm('au:l:');
         A.screen = 'runs'; A.editing = false; A.suite = r.suite.id;
@@ -4034,6 +4536,11 @@
       });
     }
   };
+
+  setInterval(function () {
+    var el = document.getElementById('auElapsed');
+    if (el) el.textContent = auClock(Date.now() - Number(el.getAttribute('data-since')));
+  }, 1000);
 
   function refreshBoot(goRun, cycle) {
     api('api_bootstrap').then(function (b) {
@@ -4115,6 +4622,15 @@
     },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCases; render(); },
     'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
+    // Setup › Automation: runs kept per test suite and cycle
+    'au-keep': function (el) {
+      TR.http('POST', '/api/automation/settings', { keep: Number(el.value) }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        if (S.auto.data) S.auto.data.keep = r.keep;
+        toast('Saved. Test Run keeps the last ' + (r.keep === 1 ? 'run' : r.keep + ' runs') + ' for each test suite and cycle, from the next run that comes in.');
+        render();
+      });
+    },
     // Setup › Access › Users: a row's dropdowns (their bind is u:<what>:<person id>)
     'team-role': function (el) { teamCall('/api/team/people/update', { id: personOf(el), role: el.value }); },
     'team-books': function (el) { teamCall('/api/team/people/update', { id: personOf(el), books: el.value && el.value !== 'all' ? [el.value] : 'all' }); },

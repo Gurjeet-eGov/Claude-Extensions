@@ -1,5 +1,8 @@
 // Where automation results live on the laptop: sheets/.testrun/automation/
-//   suites.json          { suites: [{ id, name, repo, workflow, artifact, envInput, casePattern, masking[], format, linkedBy, linkedAt }] }
+//   suites.json          { suites: [{ id, name, repo, workflow, artifact, envInput, casePattern, masking[], format, linkedBy, linkedAt,
+//                                     workflowId, workflowPath, inputs[], defaultBranch }] }
+//                        (workflow is the GitHub workflow's name; workflowId, workflowPath and inputs, its Run
+//                         workflow form, come with the GitHub link: lib/automation/github-runs.mjs)
 //   index.json           { version: 1, runs: [run without its tests, plus bytes] }
 //   runs/<id>.json.gz    one run, tests and all (gzip)
 // Every file is written to a temporary name and renamed over the old one. Only the last N runs
@@ -32,8 +35,36 @@ export function cleanRepo(v) {
   return `${m[1]}/${m[2]}`;
 }
 
+export const INPUT_TYPES = ['string', 'choice', 'boolean', 'environment', 'number'];
+
+/**
+ * A workflow's Run workflow inputs, as kept: [{ name, type, description, required, default, options }].
+ * Values are text, as GitHub's dispatch API takes them ('true' / 'false' for a boolean).
+ */
+export function normalizeInputs(list) {
+  const out = [];
+  const seen = new Set();
+  for (const x of Array.isArray(list) ? list : []) {
+    if (!x || typeof x !== 'object') continue;
+    const name = clip(x.name, 100);
+    if (!name || seen.has(name) || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name)) continue;
+    seen.add(name);
+    const type = INPUT_TYPES.includes(x.type) ? x.type : 'string';
+    const options = type === 'choice' ? (Array.isArray(x.options) ? x.options : []).map((o) => clip(o, 200)).filter((o) => o !== '').slice(0, 100) : [];
+    let dflt = x.default == null ? '' : typeof x.default === 'boolean' ? String(x.default) : clip(x.default, 500);
+    if (type === 'boolean') dflt = dflt === 'true' ? 'true' : 'false';
+    out.push({ name, type, description: clip(x.description, 300), required: x.required === true, default: dflt, options });
+    if (out.length >= 25) break;
+  }
+  return out;
+}
+
+/** What the GitHub link adds to a suite (empty when it has none). */
+const NO_GITHUB = { workflow: '', workflowId: 0, workflowPath: '', inputs: [], artifact: '', envInput: '', defaultBranch: '' };
+
 function normalizeSuite(s) {
   if (!s || typeof s !== 'object' || !SUITE_ID.test(String(s.id || ''))) return null;
+  const workflowId = Math.round(Number(s.workflowId));
   return {
     id: String(s.id),
     name: clip(s.name, 80) || 'Automated suite',
@@ -46,6 +77,10 @@ function normalizeSuite(s) {
     format: ['junit', 'ctrf', 'mixed'].includes(s.format) ? s.format : '',
     linkedBy: clip(s.linkedBy, 80),
     linkedAt: clip(s.linkedAt, 40),
+    workflowId: workflowId > 0 ? workflowId : 0,
+    workflowPath: clip(s.workflowPath, 300),
+    inputs: normalizeInputs(s.inputs),
+    defaultBranch: clip(s.defaultBranch, 250),
   };
 }
 
@@ -110,11 +145,31 @@ export class AutomationStore {
     let id = was ? was.id : slug(name);
     while (!was && list.some((s) => s.id === id)) id = `${slug(name)}-${randomBytes(2).toString('hex')}`;
     const suite = normalizeSuite({
-      ...(was || { workflow: '', artifact: '', envInput: '', format: '', linkedBy: by, linkedAt: now.toISOString() }),
+      ...(was || { ...NO_GITHUB, format: '', linkedBy: by, linkedAt: now.toISOString() }),
+      ...(was && was.repo !== repo ? NO_GITHUB : {}), // another repository: its workflow link no longer fits
       id, name, repo, casePattern, masking,
     });
     this.writeSuites(was ? list.map((s) => (s === was ? suite : s)) : list.concat([suite]));
     return suite;
+  }
+
+  /**
+   * Link a suite to its GitHub workflow (or unlink it: link null). link: { workflowId, workflowPath,
+   * workflow (its name), inputs, artifact, envInput, defaultBranch }. Returns the suite as saved, or null.
+   */
+  setGithub(id, link) {
+    const list = this.suites();
+    const i = list.findIndex((x) => x.id === id);
+    if (i < 0) return null;
+    const l = link || NO_GITHUB;
+    const next = normalizeSuite({
+      ...list[i],
+      workflow: l.workflow, workflowId: l.workflowId, workflowPath: l.workflowPath, inputs: l.inputs,
+      artifact: l.artifact, envInput: l.envInput, defaultBranch: l.defaultBranch,
+    });
+    list[i] = next;
+    this.writeSuites(list);
+    return next;
   }
 
   /** Note the results format a suite's imports use (shown on its page). */

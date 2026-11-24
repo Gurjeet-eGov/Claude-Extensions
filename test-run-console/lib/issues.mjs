@@ -1,10 +1,10 @@
 // Filling in a GitHub issue's title, state and priority for the Known issues list,
-// with the owner's own `gh` login (the same one that keeps the gist up to date).
+// with the owner's own `gh` login (the same one that keeps the gist up to date),
+// through the GitHub client (lib/github.mjs: POST /graphql).
 //
 // Priority comes from the issue's project board ("Priority" field, when the gh
 // token may read projects), else from a label such as "P1" or "priority: high".
-import { execFile } from 'node:child_process';
-import { findCommand } from './share.mjs';
+import { findCommand, createGithub } from './github.mjs';
 
 const FIELDS = 'title state labels(first: 20) { nodes { name } }';
 const PROJECT = 'projectItems(first: 10) { nodes { fieldValueByName(name: "Priority") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } }';
@@ -29,28 +29,28 @@ export function priorityOf(board, labels = []) {
   return '';
 }
 
-function gh(cmd, args, timeoutMs) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-      let body = null;
-      try { body = JSON.parse(stdout || 'null'); } catch { body = null; }
-      resolve({ ok: !err, body, error: String(stderr || (err && err.message) || '').trim().split('\n').slice(-1)[0] });
-    });
-  });
+/** One GraphQL question: { body (GitHub's answer, or null), error (why it failed, '' when it didn't) }. Never throws. */
+async function ask(gh, q, url, timeoutMs) {
+  try {
+    const body = await gh.graphql(q, { url }, { timeoutMs });
+    return { body, error: '' };
+  } catch (e) {
+    return { body: null, error: String((e && e.message) || e || '').trim().split('\n').slice(-1)[0] };
+  }
 }
 
 /**
  * { title, state: 'open'|'closed', labels, priority } for a GitHub issue link.
  * Throws a readable error (gh missing, not signed in, no access, not found).
  */
-export async function githubIssue(url, { ghPath, timeoutMs = 15000 } = {}) {
-  const cmd = findCommand('gh', ghPath);
-  if (!cmd) throw Object.assign(new Error('The GitHub CLI (gh) is not installed, so titles cannot be filled in. Type them here, or install gh and run: gh auth login'), { code: 'NO_GH' });
-  let r = await gh(cmd, ['api', 'graphql', '-f', `query=${query(true)}`, '-f', `url=${url}`], timeoutMs);
+export async function githubIssue(url, { ghPath, github, timeoutMs = 15000 } = {}) {
+  if (!github && !findCommand('gh', ghPath)) throw Object.assign(new Error('The GitHub CLI (gh) is not installed, so titles cannot be filled in. Type them here, or install gh and run: gh auth login'), { code: 'NO_GH' });
+  const gh = github || createGithub({ ghPath });
+  let r = await ask(gh, query(true), url, timeoutMs);
   let res = r.body && r.body.data && r.body.data.resource;
   if (!res) {
     // Reading project boards needs the read:project scope; ask again without them.
-    r = await gh(cmd, ['api', 'graphql', '-f', `query=${query(false)}`, '-f', `url=${url}`], timeoutMs);
+    r = await ask(gh, query(false), url, timeoutMs);
     res = r.body && r.body.data && r.body.data.resource;
   }
   if (!res || !res.title) {

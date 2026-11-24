@@ -4,7 +4,7 @@
 //   npm start                  -> http://127.0.0.1:5178, opens the browser
 //   npm run share              -> same, and shares it with your team through a quick tunnel
 //   npm run demo               -> on a temporary copy of a sample workbook
-//   node server.mjs --port 6000 --sheets /path/to/folder --no-open [--share]
+//   node server.mjs --port 6000 --sheets /path/to/folder --no-open [--share] [--fake-github]
 //
 // It only listens on 127.0.0.1. Workbooks are the .xlsx files in sheets/
 // (git-ignored); console data for each workbook is kept beside it in
@@ -30,6 +30,7 @@ import { randomBytes } from 'node:crypto';
 import { extensionIdFromKey } from './lib/extension-id.mjs';
 import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
 import { createAutomation } from './lib/automation/routes.mjs';
+import { createGithub } from './lib/github.mjs';
 import { normalizeAutomationSettings } from './lib/automation/store.mjs';
 
 const UI = join(ROOT, 'ui');
@@ -151,7 +152,7 @@ function tailscaleUrl(bin) {
 // site. publishPrefix and publishedDir are where published data was kept before that branch (the
 // default branch's test-run-console/published/, and this checkout's copy of it), read until the
 // branch exists. cloneDir is the clone whose copy of the data branch "Start from the published data" reads.
-export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], publishedDir = join(ROOT, 'published'), repo: repoOverride, publishPrefix, dataBranch = 'test-run-data', dataPrefix = '', pagesWorkflow = 'test-run-pages.yml', cloneDir = ROOT, log = () => {} } = {}) {
+export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], publishedDir = join(ROOT, 'published'), repo: repoOverride, publishPrefix, dataBranch = 'test-run-data', dataPrefix = '', pagesWorkflow = 'test-run-pages.yml', cloneDir = ROOT, log = () => {}, github, automationPollMs } = {}) {
   const INSTANCE = randomBytes(8).toString('hex'); // tells "this Test Run" apart when checking an address
   mkdirSync(sheetsDir, { recursive: true });
   const lib = new Library(sheetsDir);
@@ -192,7 +193,12 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const mayOpen = (person, name) => isOwnerPerson(person) || !person || !Array.isArray(person.books) || person.books.includes(name);
   const booksFor = (person) => lib.list().filter((b) => mayOpen(person, b.name));
   // Automated results (lib/automation/): suites, runs and their results, at /api/automation/*.
-  const automation = createAutomation({ sheetsDir, lib, callApi, mayOpen, isOwner: isOwnerPerson, keep: () => app.automation.keep, readBody });
+  // GitHub (starting and following runs) through the one client, lib/github.mjs: gh api today.
+  const automation = createAutomation({
+    sheetsDir, lib, callApi, mayOpen, isOwner: isOwnerPerson, keep: () => app.automation.keep, readBody,
+    github: github || createGithub({ ghPath }), log, pollMs: automationPollMs,
+    setKeep: (n) => { app.automation = normalizeAutomationSettings({ ...app.automation, keep: n }); saveApp(); return app.automation.keep; },
+  });
 
   async function openBook(name, person) {
     if (name && !mayOpen(person, name) && lib.list().some((b) => b.name === name)) throw err('FORBIDDEN', 'This workbook is not shared with you. Ask your test lead.');
@@ -1463,7 +1469,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       for (const t of pub.timers) if (t.unref) t.unref();
     },
   };
-  server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); clearInterval(reportTimer); });
+  server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); clearInterval(reportTimer); automation.stop(); });
   server.evidence = evidence;
   server.automation = automation;
   server.reports = { info: reportInfo, start: startReport, expire: expireReports, wait: () => reportChain };
@@ -1502,7 +1508,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const port = Number(arg('--port') || process.env.PORT || 5178);
   // TEST_RUN_GH: another gh to use (development: dev/fake-gh.cjs, so previews publish nothing for real)
-  const server = createServer({ sheetsDir, ghPath: process.env.TEST_RUN_GH || undefined, log: (e) => console.error(e && e.stack ? e.stack : e) });
+  // --fake-github: Automation talks to a pretend GitHub (dev/fake-github.mjs) with one suite repository, demo-org/cms-automation
+  const github = args.includes('--fake-github') ? (await import('./dev/fake-github.mjs')).demoGithub().github : undefined;
+  const server = createServer({ sheetsDir, ghPath: process.env.TEST_RUN_GH || undefined, github, log: (e) => console.error(e && e.stack ? e.stack : e) });
   let quitting = false;
   const quit = async () => {
     if (quitting) process.exit(0); // Ctrl+C again: stop now

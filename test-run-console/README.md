@@ -228,6 +228,14 @@ The host can publish the reports to the GitHub repository, so they can be read o
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
 
+## Automation
+
+The **Automation** screen keeps the results of automated suites, whatever the framework, next to the manual runs. A suite runs in its own repository's **GitHub Actions**; Test Run starts it (**▶ Run**, with the workflow's own options), follows it, and brings in its results file (JUnit XML or CTRF JSON, uploaded as an artifact) by itself when it ends. Runs done elsewhere come in with **⤒ Import Results** (a file, or a GitHub run). Every run is attached to a workbook › test suite › test cycle, and the host sets how many are kept in **Setup → Automation**.
+
+Test Run talks to GitHub with the host's own `gh` login (`gh auth login`), through one client (`lib/github.mjs`) that only uses GitHub's REST API, so a token can replace `gh` later.
+
+**Making a suite Test Run-ready and linking it:** [docs/automation.md](docs/automation.md), with copy-paste snippets for Playwright, Cypress, Jest, pytest, Maven/JUnit, TestNG, Robot Framework, Karate, Newman and Go.
+
 ## Test Run Extension
 
 [Test Run Extension](extension/) is a Chrome extension for marking cases while you test, with a screenshot or a screen recording as evidence. It works with this Test Run, on the laptop or through an access link. To install it, see [its README](extension/README.md).
@@ -332,6 +340,7 @@ What leaves the computer: GitHub issue lookups and the gist (through your `gh` l
 | `--share` | | Start sharing straight away (`npm run share`). |
 | `--demo` | | Use a throwaway copy of the sample workbook (`npm run demo`). |
 | | `TEST_RUN_GH` | Use another `gh` (development: `dev/fake-gh.cjs`, so nothing is published for real). |
+| `--fake-github` | | Automation talks to a pretend GitHub (`dev/fake-github.mjs`) with one suite repository, `demo-org/cms-automation`, whose runs take about 20 seconds (development and demos). |
 
 ## Updating
 

@@ -10,12 +10,15 @@
 //   POST /api/automation/delete {id}      POST /api/automation/reattach {id, book, tab, cycle}
 //   POST /api/automation/suites {id?, name, repo, casePattern, masking}
 //   POST /api/automation/suites/remove {id}   (the host only; the suite's runs go with it)
+//   /api/automation/github/*, /api/automation/job(s), /api/automation/settings: GitHub Actions runs
+//   and Setup › Automation, in ./github-runs.mjs
 // Uploads are a raw body (one JSON, XML or .zip file, its name in ?name=) or multipart/form-data
 // with several files; either way at most 20 MB.
 import ExcelJS from 'exceljs';
 import { AutomationStore, normalizeAutomationSettings } from './store.mjs';
 import { canSeeSuite, canAct } from './access.mjs';
 import { parseResults, buildRun, filesFromMultipart, previousRun, compareRuns, groupCauses, historyOf, lineOf, byFile, passRate, FORMAT_LABEL, RUN_ID } from './results.mjs';
+import { createGithubRuns } from './github-runs.mjs';
 
 export const MAX_UPLOAD = 20 * 1024 * 1024;
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
@@ -24,7 +27,8 @@ const localStamp = (iso) => { const d = new Date(iso); return Number.isNaN(d.get
 
 /**
  * ctx: { sheetsDir, lib (the Library), callApi(fn, args, book, person), mayOpen(person, book),
- *        isOwner(person), keep() (runs kept per suite and cycle), readBody(req, max) }
+ *        isOwner(person), keep() (runs kept per suite and cycle), readBody(req, max),
+ *        github (lib/github.mjs client), setKeep(n), log, pollMs }
  */
 export function createAutomation(ctx) {
   const { sheetsDir, lib, callApi, mayOpen, isOwner, readBody } = ctx;
@@ -144,6 +148,9 @@ export function createAutomation(ctx) {
     };
   }
 
+  // GitHub Actions: link a suite to its workflow, start and follow runs, import them
+  const github = createGithubRuns({ ...ctx, store, checkAttach, keep, jsonBody });
+
   async function post(path, url, req, person) {
     if (path === '/api/automation/suites/remove') {
       if (!isOwner(person)) return forbid('Only the host unlinks a suite.');
@@ -199,6 +206,8 @@ export function createAutomation(ctx) {
   async function handle(method, path, url, req, person) {
     if (path !== '/api/automation' && !path.startsWith('/api/automation/')) return null;
     try {
+      const g = await github.handle(method, path, url, req, person);
+      if (g) return g;
       if (method === 'GET') {
         if (path === '/api/automation') return list(person);
         if (path === '/api/automation/run') return runDetail(String(url.searchParams.get('id') || ''), person);
@@ -218,6 +227,8 @@ export function createAutomation(ctx) {
   return {
     handle,
     store,
+    github,
+    stop: () => github.stop(),
     /** A workbook was deleted: its runs go with it. */
     removeBook(name) {
       const gone = store.index().filter((m) => m.attach.book === name);
