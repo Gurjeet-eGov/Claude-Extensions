@@ -35,11 +35,11 @@ env:
   DATA_BRANCH: test-run-data # where Test Run publishes (the server's dataBranch)
 
 jobs:
-  deploy:
+  # Two jobs, as GitHub's own Pages workflow does: deploy starts only once the
+  # uploaded site is registered (in one job, deploy-pages could look too soon
+  # and find no artifact).
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}test-run/
     steps:
       - uses: actions/checkout@v4
       - name: Look for the published data branch
@@ -76,5 +76,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}test-run/
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
