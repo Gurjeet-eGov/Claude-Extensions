@@ -49,8 +49,8 @@
     issuesDue: true, // opening Known issues gets the latest from GitHub once
     ddOpen: null, // the dropdown that is open (its bind), and what is typed in its search box
     ddQ: '',
-    teamLink: null, // { name, link } just made in Setup → Team, shown once
-    team: null, // Setup → Team, for the owner
+    teamLink: null, // { name, link } just made in Setup › Access, shown once
+    team: null, // Setup › Access, for the owner
     summary: null,
     setup: null,
     writes: 0,
@@ -650,7 +650,8 @@
    *      value (single choice) | values (multiple choice), change (single: a CHANGES handler to call
    *      with the value, instead of keeping it in S.form), free (single: a value typed in the search box
    *      may be used), prefix (HTML before the value, e.g. "Workbook"), cls (on the wrapper),
-   *      placeholder ('Select'), tagLabel(v), tagTitle(v), title, disabled }
+   *      placeholder ('Select'), tagLabel(v), tagTitle(v), title, disabled,
+   *      label (its name when no <label for> can carry it, e.g. in a table row: read out before the value) }
    * The search box shows from 9 options up, and always where a new value may be typed (free).
    */
   function dropdown(o) {
@@ -663,7 +664,8 @@
     var dd = esc(o.bind);
     var h = '<div class="multi' + (o.cls ? ' ' + o.cls : '') + '" data-dd="' + dd + '">' +
       '<button type="button" class="multi-btn"' + (o.id ? ' id="' + esc(o.id) + '"' : '') + ' data-action="dd-open" data-dd="' + dd + '" aria-haspopup="true" aria-expanded="' + open + '"' +
-      (o.title || text ? ' title="' + esc(o.title || text) + '"' : '') + (o.disabled ? ' disabled' : '') + '>' + (o.prefix || '') +
+      (o.title || text ? ' title="' + esc(o.title || text) + '"' : '') + (o.label ? ' aria-label="' + esc(o.label + ': ' + (text || o.placeholder || 'Select')) + '"' : '') +
+      (o.disabled ? ' disabled' : '') + '>' + (o.prefix || '') +
       '<span class="grow' + (text ? '' : ' dd-ph') + '">' + esc(text || o.placeholder || 'Select') + '</span>' + CHEVRON + '</button>';
     if (open) {
       var search = !!o.free || opts.length > 8; // a list that takes new values always has it: that's where a new one is typed
@@ -1840,7 +1842,7 @@
         toast((lead || '') + name + '\'s invite link is copied. Send it to them privately.' + (warn ? ' ' + warn : ''), warn ? 'long' : '');
       } else {
         S.teamLink = { name: name, link: link, warn: warn };
-        toast('Copying was blocked: copy the link shown under People.', 'bad');
+        toast('Copying was blocked: copy the link shown under Users.', 'bad');
       }
       render();
       if (!ok) { var t = $('teamLink'); if (t) t.select(); }
@@ -1857,7 +1859,7 @@
   function copyAdminLink(r) {
     copyText(r.link).then(function (ok) {
       if (ok) { S.teamLink = null; toast('Your admin link is copied. Open it on the other computer; keep it to yourself.' + (r.linkWarning ? ' ' + r.linkWarning : ''), 'long'); }
-      else { S.teamLink = { name: 'your admin link', link: r.link, warn: r.linkWarning }; toast('Copying was blocked: copy the link shown under People.', 'bad'); }
+      else { S.teamLink = { name: 'your admin link', link: r.link, warn: r.linkWarning }; toast('Copying was blocked: copy the link shown under Users.', 'bad'); }
       render();
     });
   }
@@ -1867,14 +1869,14 @@
     return '<div class="check-line ' + (c.ok ? 'ok' : 'bad') + '">' + (c.ok ? '✓ ' + esc(okText || c.message) : '✗ ' + esc(c.message)) + ' <span class="faint">(' + esc(c.at) + ')</span></div>';
   }
 
-  /** Setup → Team: who may use this Test Run, and how they reach this laptop. */
-  function teamCard() {
+  /** Setup › Access › Online access: whether the team can reach this laptop, and how. */
+  function onlineCard() {
     if (!isOwner()) return '';
     var r = S.team;
-    var h = '<section class="section card card-pad stack team-card" id="team">';
+    var h = '<section class="section card card-pad stack team-card" id="online">';
     var head = function (on) {
-      return '<div class="row team-head"><div class="grow"><h2>Team</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
-        (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share with my team</label>') + '</div>';
+      return '<div class="row team-head"><div class="grow"><h2>Online access</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
+        (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share online</label>') + '</div>';
     };
     if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading…</div></section>'; }
     var t = r.team;
@@ -1882,8 +1884,8 @@
     h += head(t.enabled);
     if (!t.enabled) return h + '<p class="small faint">Off: only this computer can open Test Run.</p></section>';
 
-    // Connection: how the team reaches this laptop
-    h += '<div class="team-block"><h3>Connection</h3>';
+    // Online link: how the team reaches this laptop
+    h += '<div class="team-block"><h3>Online link</h3>';
     h += '<div class="way-choice" role="radiogroup" aria-label="Way in">' +
       '<label class="way' + (t.mode === 'quick' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="quick"' + (t.mode === 'quick' ? ' checked' : '') + '><span><b>Quick tunnel</b><span class="small muted">Free, no account. A new address each time it starts.</span></span></label>' +
       '<label class="way' + (t.mode === 'fixed' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="fixed"' + (t.mode === 'fixed' ? ' checked' : '') + '><span><b>Fixed address</b> <span class="pill accent">best for a team</span><span class="small muted">Never changes. A one-time setup (Tailscale or Cloudflare).</span></span></label></div>';
@@ -1891,9 +1893,9 @@
     if (t.mode === 'quick') {
       if (a.tunnel.running || a.tunnel.reconnectIn != null) {
         h += '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
-          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop sharing</button></div>';
+          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop Sharing</button></div>';
       } else if (a.tunnel.available) {
-        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start sharing over the internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
+        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start Sharing Over the Internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
       } else {
         h += '<div class="note info">Install <span class="mono">cloudflared</span> first: <span class="mono">brew install cloudflared</span>. Then press Start here, or run <span class="mono">npm run share</span>.</div>';
       }
@@ -1925,8 +1927,8 @@
         '<div class="row"><span class="grow"></span><button data-action="team-save">Save</button></div>';
       if (t.tunnelName) {
         h += a.tunnel.running || a.tunnel.reconnectIn != null
-          ? '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono grow">' + esc(t.tunnelName) + '</span><button data-action="team-share" data-on="0">Stop the tunnel</button></div>'
-          : '<div class="row"><button class="primary" data-action="team-share" data-on="1"' + (a.tunnel.available ? '' : ' disabled') + '>Start tunnel ' + esc(t.tunnelName) + '</button></div>';
+          ? '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono grow">' + esc(t.tunnelName) + '</span><button data-action="team-share" data-on="0">Stop the Tunnel</button></div>'
+          : '<div class="row"><button class="primary" data-action="team-share" data-on="1"' + (a.tunnel.available ? '' : ' disabled') + '>Start Tunnel ' + esc(t.tunnelName) + '</button></div>';
         if (a.tunnel.error) h += '<div class="note ' + (a.tunnel.reconnectIn != null ? 'info' : 'bad') + '">' + esc(a.tunnel.error) + '</div>';
       }
       h += '<div class="small muted">Reached at: ' + (a.effective ? '<span class="mono">' + esc(a.effective) + '</span>' : '<b>no address yet</b>') + '</div>';
@@ -1944,47 +1946,89 @@
     h += '<div class="team-block"><div class="row"><h3>Your admin link</h3><span class="small muted grow">Full control from another computer or network. Keep it to yourself, like a password.</span></div>' +
       (me().admin ? '<div class="note info">You are using your admin link now. Stopping sharing or making a new admin link disconnects this browser.</div>' : '') +
       '<div class="row">' + (ad.exists
-        ? '<button data-action="admin-copy"' + (ad.canCopy ? aoff : ' disabled') + '>Copy admin link</button><button class="ghost" data-action="admin-new"' + aoff + ' title="Make a new admin link; the old one stops working">New admin link</button><button class="ghost danger" data-action="admin-remove">Remove</button>' +
+        ? '<button data-action="admin-copy"' + (ad.canCopy ? aoff : ' disabled') + '>Copy Link</button><button class="ghost" data-action="admin-new"' + aoff + ' title="Make a new admin link; the old one stops working">New Link</button><button class="ghost danger" data-action="admin-remove">Remove</button>' +
           '<span class="small faint">' + (ad.lastSeen ? 'Last used ' + esc(ad.lastSeen) : 'Not used yet') + '</span>'
-        : '<button data-action="admin-new"' + aoff + '>Make my admin link</button>') + '</div>' +
+        : '<button data-action="admin-new"' + aoff + '>Make My Admin Link</button>') + '</div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
 
-    // People: each with their access and the workbooks they can open
-    var books = (S.app && S.app.books || []).map(function (b) { return b.name; });
-    var bookPick = function (attrs, current) {
-      var cur = current && current.length ? current[0] : '';
-      return '<select ' + attrs + '>' + opt('', 'All workbooks', !cur) + books.map(function (n) { return opt(n, n.replace(/\.xlsx$/i, ''), n === cur); }).join('') +
-        (cur && books.indexOf(cur) < 0 ? opt(cur, cur.replace(/\.xlsx$/i, '') + ' (deleted)', true) : '') + '</select>';
-    };
-    h += '<div class="team-block"><h3>People</h3>';
+    return h + '</section>';
+  }
+
+  var ROLE_OPTIONS = [{ value: 'tester', label: 'Update status' }, { value: 'viewer', label: 'View only' }];
+
+  /** "today", "yesterday" or "20 Nov" (with the year when it isn't this one), from "2026-11-24 10:23". */
+  function seenWhen(stamp) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(stamp || ''));
+    if (!m) return '';
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var days = Math.round((today - d) / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    return d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + (d.getFullYear() === today.getFullYear() ? '' : ' ' + d.getFullYear());
+  }
+
+  /** A person's Automated suites as one choice: 'all', 'none', 's:<id>', or 'multi' (several, set elsewhere). Suites unlinked since are left out. */
+  function suitesChoice(p, names) {
+    var s = p.automationSuites;
+    if (s === 'none') return { value: 'none', ids: [] };
+    if (!Array.isArray(s)) return { value: 'all', ids: [] };
+    var ids = s.filter(function (id) { return names[id] != null; });
+    return { value: !ids.length ? 'none' : ids.length === 1 ? 's:' + ids[0] : 'multi', ids: ids };
+  }
+
+  /** Setup › Access › Users: each person's invite link, what they can open, and what they can do with automation. */
+  function usersCard() {
+    if (!isOwner() || !S.team) return '';
+    var r = S.team;
+    var t = r.team;
+    var canAdd = t.enabled && r.canInvite;
+    var why = !t.enabled ? 'Turn on Share online above to make links.' : 'Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.');
+    var h = '<section class="section card card-pad stack" id="users"><div><h2>Users</h2><p class="small muted">Each person\'s invite link, what they can open, and what they can do with automation.</p></div>';
+    if (!t.enabled && r.people.length) h += '<div class="note info">Share online is off, so these links do not open Test Run until it is on again.</div>';
     if (S.teamLink) {
       h += '<div class="note info stack-s"><span>This browser did not let Test Run copy the link for <b>' + esc(S.teamLink.name) + '</b>. Copy it from here and send it to them privately.</span>' +
         '<div class="row"><input id="teamLink" readonly value="' + esc(S.teamLink.link) + '" class="grow mono"><button class="primary" data-action="copy-link">Copy</button><button class="ghost" data-action="hide-link">Done</button></div>' +
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
+    var books = (S.app && S.app.books || []).map(function (b) { return b.name; });
+    var suites = r.suites || [];
+    var names = {};
+    suites.forEach(function (x) { names[x.id] = x.name; });
     if (r.people.length) {
-      h += '<div class="table-wrap"><table class="people"><thead><tr><th>Name</th><th>Access</th><th>Workbooks</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
-        return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="Access for ' + esc(p.name) + '" data-change="team-role" data-id="' + esc(p.id) + '">' +
-          opt('tester', 'Update status', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
-          '<td>' + bookPick('aria-label="Workbooks ' + esc(p.name) + ' can open" data-change="team-books" data-id="' + esc(p.id) + '"', p.books) + '</td>' +
-          '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
+      h += '<div class="table-wrap"><table class="people"><thead><tr><th>Name</th><th>Access</th><th>Workbooks</th><th>Automated suites</th><th>Start runs</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
+        var viewer = p.role === 'viewer';
+        var book = p.books && p.books.length ? p.books[0] : '';
+        var bookOpts = [{ value: 'all', label: 'All workbooks' }].concat(books.map(function (n) { return { value: n, label: n.replace(/\.xlsx$/i, '') }; }),
+          book && books.indexOf(book) < 0 ? [{ value: book, label: book.replace(/\.xlsx$/i, '') + ' (deleted)' }] : []);
+        var sc = suitesChoice(p, names);
+        var suiteOpts = [{ value: 'all', label: 'All suites' }].concat(
+          sc.value === 'multi' ? [{ value: 'multi', label: sc.ids.map(function (id) { return names[id]; }).join(', ') }] : [],
+          suites.map(function (x) { return { value: 's:' + x.id, label: x.name }; }),
+          [{ value: 'none', label: 'None', hint: 'no automated results' }]);
+        var copyTip = !p.canCopy ? 'This link was made before links could be copied again: use New Link once' : !canAdd ? why : 'Copy ' + p.name + '\'s link again (it keeps working)';
+        return '<tr><td>' + esc(p.name) + '<div class="small muted"' + (p.lastSeen ? ' title="Last seen ' + esc(p.lastSeen) + '"' : '') + '>' + (p.lastSeen ? 'seen ' + esc(seenWhen(p.lastSeen) || p.lastSeen) : 'not seen yet') + '</div></td>' +
+          '<td class="u-role">' + dropdown({ bind: 'u:role:' + p.id, id: 'uRole-' + p.id, change: 'team-role', value: p.role, options: ROLE_OPTIONS, label: 'Access for ' + p.name }) + '</td>' +
+          '<td class="u-books">' + dropdown({ bind: 'u:books:' + p.id, id: 'uBooks-' + p.id, change: 'team-books', value: book || 'all', options: bookOpts, label: 'Workbooks ' + p.name + ' can open' }) + '</td>' +
+          '<td class="u-suites">' + dropdown({ bind: 'u:suites:' + p.id, id: 'uSuites-' + p.id, change: 'team-suites', value: sc.value, options: suiteOpts, label: 'Automated suites ' + p.name + ' sees' }) + '</td>' +
+          '<td class="u-runs">' + (viewer ? '<span class="faint" title="View only can read results but not start runs">–<span class="sr">View only never starts runs</span></span>'
+            : '<input type="checkbox" data-action="team-runs" data-id="' + esc(p.id) + '" aria-label="' + esc(p.name) + ' can start runs and import results"' + (p.startRuns ? ' checked' : '') + '>') + '</td>' +
           '<td class="num"><div class="row" style="justify-content:flex-end">' +
-          '<button class="ghost" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && r.canInvite ? '' : ' disabled') +
-          ' title="' + (!p.canCopy ? 'This link was made before links could be copied again: use New link once' : !r.canInvite ? 'Links need an address first' : 'Copy ' + esc(p.name) + '\'s link again (it keeps working)') + '">Copy link</button>' +
-          '<button class="ghost" data-action="team-rotate" data-id="' + esc(p.id) + '" title="Make a new link; the old one stops working">New link</button>' +
-          '<button class="ghost danger" data-action="team-remove" data-id="' + esc(p.id) + '">Remove</button></div></td></tr>';
+          '<button class="small-btn" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && canAdd ? '' : ' disabled') + ' title="' + esc(copyTip) + '">Copy Link</button>' +
+          '<button class="small-btn" data-action="team-rotate" data-id="' + esc(p.id) + '"' + (canAdd ? '' : ' disabled') + ' title="' + esc(canAdd ? 'Make a new link; the old one stops working' : why) + '">New Link</button>' +
+          '<button class="small-btn danger" data-action="team-remove" data-id="' + esc(p.id) + '">Remove</button></div></td></tr>';
       }).join('') + '</tbody></table></div>';
     } else {
       h += '<p class="small faint">Nobody yet.</p>';
     }
-    var off = r.canInvite ? '' : ' disabled';
+    var off = canAdd ? '' : ' disabled';
     h += '<div class="row add-person"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. John Doe (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
       // No access chosen for them until you choose one
-      '<label class="sr" for="teamRole">Access</label><select id="teamRole" class="choose" data-bind="team:role"' + off + '>' +
-      '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Select access</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
-      '<label class="sr" for="teamBooks">Workbooks</label>' + bookPick('id="teamBooks" data-bind="team:books"' + off, val('team:books') ? [val('team:books')] : null) +
-      '<button data-action="team-add"' + off + '>Add and make a link</button></div>' +
-      (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
+      '<label class="sr" for="teamRole">Access</label>' + dropdown({ bind: 'team:role', id: 'teamRole', cls: 'u-new', value: val('team:role'), placeholder: 'Select access', options: ROLE_OPTIONS, disabled: !canAdd }) +
+      '<button class="small-btn" data-action="team-add"' + off + '>+ Add and Make a Link</button></div>' +
+      (canAdd ? '' : '<p class="small faint">' + esc(why) + '</p>') +
+      '<ul class="bullets small muted"><li><span><b>Automated suites:</b> whose results they see, in Automation, Summary and the published site (still only for workbooks they can open).</span></li>' +
+      '<li><span><b>Start runs:</b> can press ▶ Run and ⤒ Import Results for those suites. View only never can.</span></li></ul>';
     return h + '</section>';
   }
 
@@ -2041,21 +2085,22 @@
     });
   }
 
-  /** Setup, in two parts: Workbook (test suites, cycles, columns) and Sharing (you and your team). */
+  /** Setup, in parts: Workbook (test suites, cycles, columns), Access (you, online access and users), Publish, Media. */
   function viewSetup() {
     var part = S.cfg ? val('setupPart', 'workbook') : 'workbook'; // a workbook not set up yet opens on its tabs
-    if (!S.team && isOwner()) loadTeam(); // so Sharing shows on or off from the start, not only once it has been opened
+    if (part === 'sharing') part = 'access'; // Access was called Sharing: older links and state still open it
+    if (!S.team && isOwner()) loadTeam(); // so Access shows on or off from the start, not only once it has been opened
     var shareState = S.team && S.team.team ? (S.team.team.enabled ? ' <span class="pill pass">on</span>' : ' <span class="pill fail">off</span>') : '';
     var rail = '<div class="rail-group subtabs" role="tablist" aria-label="Setup"><span class="rail-title">Setup</span>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + shareState + '</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="access" aria-selected="' + (part === 'access') + '">Access' + shareState + '</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
-        : part === 'sharing' ? '<p class="small muted rail-note">Sharing is for all workbooks: your team can switch between them at the top right.</p>'
+        : part === 'access' ? '<p class="small muted rail-note">Who can use this Test Run, and how they reach this laptop. Applies to all workbooks.</p>'
           : part === 'media' ? '<p class="small muted rail-note">Media is for everyone using Test Run Extension: their screenshots and recordings follow these limits.</p>'
             : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
-    return withRail(rail, part === 'sharing' ? youCard() + teamCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : setupWorkbook());
+    return withRail(rail, part === 'access' ? youCard() + onlineCard() + usersCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : setupWorkbook());
   }
 
   function fmtBytes(n) {
@@ -2587,7 +2632,7 @@
       var to = el.getAttribute('data-change-to');
       S.ddOpen = null;
       S.ddQ = '';
-      if (to) { CHANGES[to]({ value: el.getAttribute('data-value') }); render(); return; } // e.g. switch the workbook
+      if (to) { CHANGES[to]({ value: el.getAttribute('data-value'), bind: el.getAttribute('data-dd') }); render(); return; } // e.g. switch the workbook
       ddSet(el.getAttribute('data-dd'), el.getAttribute('data-value'));
       render();
     },
@@ -3049,7 +3094,7 @@
     },
     'user-rename': function () {
       if (document.activeElement) document.activeElement.blur();
-      S.view = 'setup'; S.form.setupPart = 'sharing';
+      S.view = 'setup'; S.form.setupPart = 'access';
       render();
       window.scrollTo(0, 0);
       var n = $('appUser');
@@ -3061,7 +3106,7 @@
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
           items: ['Someone has to turn it back on at the laptop.'],
-          yes: 'Stop sharing', danger: true
+          yes: 'Stop Sharing', danger: true
         }, function () { teamCall('/api/team', { enabled: false }); }, function () { el.checked = true; });
         return;
       }
@@ -3108,7 +3153,7 @@
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
           items: ['It has to be started again at the laptop.'],
-          yes: 'Stop sharing', danger: true
+          yes: 'Stop Sharing', danger: true
         }, go);
         return;
       }
@@ -3120,10 +3165,9 @@
       if (!name) { toast('Type their name first.'); var n = $('teamName'); if (n) n.focus(); return; }
       var role = val('team:role');
       if (role !== 'tester' && role !== 'viewer') { toast('Choose their access first.'); var sel = $('teamRole'); if (sel) sel.focus(); return; }
-      teamCall('/api/team/people', { name: name, role: role, books: val('team:books') ? [val('team:books')] : 'all' }, function (r) {
+      teamCall('/api/team/people', { name: name, role: role }, function (r) {
         clearForm('team:name');
         clearForm('team:role');
-        clearForm('team:books');
         deliverLink(name, r.link, r.linkWarning, 'Added. ');
       });
     },
@@ -3192,16 +3236,17 @@
       askConfirm({
         title: 'Make a new admin link?',
         banner: 'The old one stops working' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
-        yes: 'Make new link', danger: true
+        yes: 'Make New Link', danger: true
       }, go);
     },
     'admin-remove': function () {
       askConfirm({
         title: 'Remove your admin link?',
         banner: 'It stops working at once' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
-        yes: 'Remove admin link', danger: true
+        yes: 'Remove Admin Link', danger: true
       }, function () { teamCall('/api/team/admin', { action: 'remove' }, function () { toast('Admin link removed.'); }); });
     },
+    'team-runs': function (el) { teamCall('/api/team/people/automation', { id: el.getAttribute('data-id'), startRuns: el.checked }); },
     'team-copy': function (el) {
       var id = el.getAttribute('data-id');
       var p = S.team.people.filter(function (x) { return x.id === id; })[0];
@@ -3220,7 +3265,7 @@
         title: 'Make a new link for ' + esc(p.name) + '?',
         banner: 'Their current link stops working.', bannerKind: 'bad',
         items: ['The new link goes to your clipboard, to send to them.'],
-        yes: 'Make new link', danger: true
+        yes: 'Make New Link', danger: true
       }, function () {
         teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { deliverLink(p.name, r.link, r.linkWarning, 'New link made; the old one no longer works. '); });
       });
@@ -3358,9 +3403,15 @@
     },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCases; render(); },
     'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
-    'team-role': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), role: el.value }); },
-    'team-books': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), books: el.value ? [el.value] : 'all' }); }
+    // Setup › Access › Users: a row's dropdowns (their bind is u:<what>:<person id>)
+    'team-role': function (el) { teamCall('/api/team/people/update', { id: personOf(el), role: el.value }); },
+    'team-books': function (el) { teamCall('/api/team/people/update', { id: personOf(el), books: el.value && el.value !== 'all' ? [el.value] : 'all' }); },
+    'team-suites': function (el) {
+      if (el.value === 'multi') return; // several suites, set elsewhere: kept as they are
+      teamCall('/api/team/people/automation', { id: personOf(el), automationSuites: el.value === 'all' || el.value === 'none' ? el.value : [el.value.replace(/^s:/, '')] });
+    }
   };
+  function personOf(el) { return String(el.bind || '').split(':').slice(2).join(':'); }
 
   document.addEventListener('click', function (e) {
     var modal = $('modal');

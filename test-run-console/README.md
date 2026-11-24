@@ -101,7 +101,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
-- **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
+- **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Access** (your name, online access and users), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
   - **Save** keeps you on Setup, with a *Setup saved.* message.
   - **Delete**, next to **Cancel** and **Save** at the bottom of Setup → Workbook (the host only, here or with the admin link), removes the open workbook for everyone: the file in `sheets/` and its Test Run data (setup, findings, known issues). A pop-up says first that this cannot be undone. The daily backups in `sheets/.testrun/backups/` stay, and copies already published to GitHub stay until the next publish.
 - **Cells on several lines.** Legacy sheets often have several lines in one cell. The console reads them the way a person would:
@@ -114,50 +114,57 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 
 ## Sharing with your team
 
-Test Run runs on one laptop, yours. To share it, turn on **Share with my team** in **Setup → Sharing → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
+Test Run runs on one laptop, yours. To share it, turn on **Share online** in **Setup → Access → Online access**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
 
-The Team card has three parts: **Connection** (how the team reaches your laptop, with the hosted page and gist under **Link settings**), **Your admin link**, and **People**.
+**Setup → Access** has two cards:
+- **Online access:** **Online link** (how the team reaches your laptop, with the hosted page and gist under **Link settings**) and **Your admin link**.
+- **Users:** each person, what they can open and what they can do with automation.
 
 ### 1. How your team reaches your laptop
 
-Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Sharing → Team** offers two ways:
+Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Access → Online access** offers two ways:
 
 | | Quick tunnel | Fixed address |
 |---|---|---|
-| Setup | `brew install cloudflared`, then **Start sharing** | Once: Tailscale Funnel, or a Cloudflare named tunnel |
+| Setup | `brew install cloudflared`, then **Start Sharing** | Once: Tailscale Funnel, or a Cloudflare named tunnel |
 | Address | New on every start, e.g. `https://words.trycloudflare.com` | Always the same, e.g. `https://my-mac.tail1234.ts.net` |
 | Invite links | Last only with the hosted page and gist (below) | Always last |
 | Best for | Trying it out | A team, every day |
 
-**Quick tunnel.** `npm run share` (or **Start sharing**) opens a free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/), with no account.
+**Quick tunnel.** `npm run share` (or **Start Sharing**) opens a free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/), with no account.
 
 - If it drops (sleep, a Wi-Fi change), Test Run opens it again by itself and says so in Setup.
-- Sharing also starts again when you restart Test Run (`npm start`), until you press **Stop sharing**.
+- Sharing also starts again when you restart Test Run (`npm start`), until you press **Stop Sharing**.
 - Each start gets a new address. For invite links to survive that, you need both:
   - **Hosted page:** this console on GitHub Pages, `https://<owner>.github.io/<repo>/test-run/`. Invite links open there. It holds no data; it only talks to your laptop. To put it there, once:
     1. In the repository on GitHub: **Settings → Pages → Source: GitHub Actions**.
     2. Merge into `master`. The workflow [`.github/workflows/test-run-pages.yml`](../.github/workflows/test-run-pages.yml) publishes the console.
-    3. In **Setup → Sharing → Team**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
+    3. In **Setup → Access → Online access**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
   - **Keep the current address in a secret gist:** Test Run writes its address to a gist with your `gh` login, and the hosted page looks it up there.
-- Until the hosted page is live, invite links name the current tunnel address. They stop working when it changes, and you make new ones (**New link**).
+- Until the hosted page is live, invite links name the current tunnel address. They stop working when it changes, and you make new ones (**New Link**).
 
 **Fixed address.** An address that never changes, so links always work and no hosted page or gist is needed.
 
 - **[Tailscale Funnel](https://tailscale.com/kb/1223/funnel)** (free, no domain needed):
   1. Install Tailscale on your Mac (`brew install --cask tailscale`, or the App Store) and sign in.
   2. Run `tailscale funnel --bg 5178`. The first time, it gives you a link to allow Funnel for your account. It keeps running after restarts.
-  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Sharing → Team → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
+  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Access → Online access → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
 - **Cloudflare named tunnel** (needs a domain you manage in Cloudflare):
   1. `cloudflared tunnel login`
   2. `cloudflared tunnel create test-run`
   3. `cloudflared tunnel route dns test-run testrun.your-domain.org`
-  4. In **Setup → Sharing → Team**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start tunnel**. Test Run runs it while sharing and starts it again if it drops.
+  4. In **Setup → Access → Online access**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start Tunnel**. Test Run runs it while sharing and starts it again if it drops.
 
 **Check** fetches the address and confirms it reaches this Test Run (not another laptop's).
 
 ### 2. Invite people
 
-In **Setup → Sharing → Team → People**, add each person, choose their **Access** (it starts blank, on *Select access*) and the **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused. Change either one at any time in their row.
+In **Setup → Access → Users**, type each person's name and choose their **Access** (it starts blank, on *Select access*), then **+ Add and Make a Link**. Then, in their row, at any time:
+- **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused.
+- **Automated suites:** whose automated results they see: **All suites** (the default), one linked suite, or **None**. Still only for workbooks they can open.
+- **Start runs:** whether they may start automated runs and import results for those suites. On by default for Update status; View only never can (it shows –).
+
+Under each row's name: when they were last seen.
 
 | Access | Who | What they can do |
 |---|---|---|
@@ -165,10 +172,10 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 | View only | managers | Run, Known issues and Summary, read-only. |
 
 - Each person gets their own invite link. Send it to them privately.
-- **Add and make a link**, **Copy link** and **New link** put the link on your clipboard (a message confirms it). Paste it to the person.
-- **Copy link** gives you the same link again if they lose it, with the current address. **New link** replaces it; the old one stops working. (People added before Copy link existed need one **New link** first.)
+- **+ Add and Make a Link**, **Copy Link** and **New Link** put the link on your clipboard (a message confirms it). Paste it to the person.
+- **Copy Link** gives you the same link again if they lose it, with the current address. **New Link** replaces it; the old one stops working. (People added before Copy Link existed need one **New Link** first.)
 - Opening the link signs them in. Their browser keeps it, so they bookmark the page.
-- **Remove** someone, or make them a **New link**: the old link stops working at once.
+- **Remove** someone, or make them a **New Link**: the old link stops working at once.
 - Setup, cycles, workbooks and the team stay with you, at the laptop.
 
 **While sharing:** your laptop must stay on and awake, and Test Run running. Everyone works on the same workbook. Marks are saved one at a time, and a mark that collides with someone else's is refused, with what they marked. Each page picks up others' changes every 10 seconds.
@@ -181,10 +188,10 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 
 ### 3. Your admin link
 
-**Setup → Sharing → Team → Your admin link** gives you, the host, everything the laptop can do (testing, Setup, Sharing, Import, Publish) from another computer or network, through the same address as your team, while the laptop runs Test Run.
+**Setup → Access → Online access → Your admin link** gives you, the host, everything the laptop can do (testing, Setup, Access, Import, Publish) from another computer or network, through the same address as your team, while the laptop runs Test Run.
 
-- **Make my admin link** copies it; open it on the other computer. Bug Reporter takes it like any invite link.
-- It works like a password: keep it to yourself. **New admin link** replaces it; **Remove** turns it off.
+- **Make My Admin Link** copies it; open it on the other computer. Bug Reporter takes it like any invite link.
+- It works like a password: keep it to yourself. **New Link** replaces it; **Remove** turns it off.
 - From the other computer, stopping sharing or changing the way in cuts that browser off, so Test Run asks first.
 - Laptop paths (the sheets folder) and the export files on disk stay on the laptop.
 
@@ -212,7 +219,7 @@ The host can publish the reports to the GitHub repository, so they can be read o
 1. The current host publishes (or it happens at 17:00).
 2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`.
 3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied into `sheets/`.
-4. They turn on **Setup → Sharing** and add people (invite links belong to each host's laptop), and publish from then on.
+4. They turn on **Share online** in **Setup → Access** and add people (invite links belong to each host's laptop), and publish from then on.
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
 
@@ -340,7 +347,7 @@ Then stop Test Run (Ctrl+C) and start it again. Testers reload Test Run Extensio
 | "This workbook is open in Excel." | Close it in Excel; results can't be saved while Excel has it. |
 | Known issues have no titles or states | Sign in to `gh` (`gh auth login`) on the host's computer, then **Refresh from GitHub**. |
 | Invite links stopped working after a restart | With a quick tunnel the address changes. Set up the hosted page and gist, or a fixed address: see [Sharing with your team](#sharing-with-your-team). |
-| An invite link was shared by mistake | In Setup › Sharing › Team, **New link** for that person (the old one stops working at once), or **Remove** them. |
+| An invite link was shared by mistake | In Setup › Access › Users, **New Link** for that person (the old one stops working at once), or **Remove** them. |
 | Publishing fails | Publishing commits to the repository in this clone's `origin`, through `gh`. You need push rights there, or publish from your own fork. |
 | Test Run Extension can't reach Test Run | Is Test Run running? On the host's computer the extension uses `http://127.0.0.1:5178`; through an invite link, the host must be sharing. |
 

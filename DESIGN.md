@@ -271,7 +271,7 @@ Places where the code doesn't follow this guide yet. Don't copy them; fix them w
 | Where | Gap |
 |---|---|
 | Console | Sentence-case buttons from before the Title Case rule: "Restore to the run", "Start new cycle", "Refresh from GitHub" and others |
-| Console | Selects that are still the browser's own instead of `dropdown()`: Setup (a tab's role, Columns, Media, Team) |
+| Console | Selects that are still the browser's own instead of `dropdown()`: Setup (a tab's role, Columns, Media) |
 | Console | Import sits in Setup › Workbook for now (it left the top bar); its place is still to be decided |
 | Console | No `prefers-reduced-motion` rule for the pulsing dot |
 | Test Run Extension, Bug Reporter | See [docs/design-alignment.md](docs/design-alignment.md) |

@@ -8,7 +8,7 @@
 //
 // It only listens on 127.0.0.1. Workbooks are the .xlsx files in sheets/
 // (git-ignored); console data for each workbook is kept beside it in
-// sheets/.testrun/. When shared (Setup → Team), teammates reach it through a
+// sheets/.testrun/. When shared (Setup › Access), teammates reach it through a
 // tunnel with their own invite key (lib/team.mjs); nothing else leaves the laptop.
 import http from 'node:http';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, mkdtempSync, readdirSync, copyFileSync, unlinkSync, statSync, createReadStream } from 'node:fs';
@@ -21,7 +21,7 @@ import { createRuntime, ROOT } from './lib/runtime.mjs';
 import { XSheetsApi, XBook } from './lib/xlsx-book.mjs';
 import { Library } from './lib/books.mjs';
 import { createMemoryStore } from './lib/store.mjs';
-import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, newAdminKey, publicAdmin, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, cleanBooks, ROLES, MODES } from './lib/team.mjs';
+import { normalizeTeam, personForKey, addPerson, rotateKey, publicPeople, newAdminKey, publicAdmin, inviteLink, isLocalRequest, bearer, mayCall, cleanUrl, cleanTunnelName, pagesUrlFromRemote, cleanBooks, cleanSuites, setRole, MODES } from './lib/team.mjs';
 import { startTunnel, publishAddress, findCommand } from './lib/share.mjs';
 import { githubIssue, isGithubIssue } from './lib/issues.mjs';
 import { publishFiles, readRemoteFile, repoFromRemote, repoInfo, ghCommand, slugFor, newPublishId } from './lib/publish.mjs';
@@ -265,6 +265,16 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   const hostedLive = () => !!(checks.hosted && checks.hosted.url === app.team.hostedUrl && checks.hosted.ok);
   const linkFor = (key) => inviteLink(app.team, address(), key, { hostedLive: hostedLive() });
 
+  /** The linked automated suites, [{ id, name }], from sheets/.testrun/automation/suites.json ([] until one is linked). */
+  function linkedSuites() {
+    let data = null;
+    try { data = JSON.parse(readFileSync(join(sheetsDir, '.testrun', 'automation', 'suites.json'), 'utf8')); } catch { return []; }
+    const seen = new Set();
+    return (data && Array.isArray(data.suites) ? data.suites : [])
+      .filter((x) => x && typeof x.id === 'string' && x.id.trim() && !seen.has(x.id) && seen.add(x.id))
+      .map((x) => ({ id: x.id, name: String(x.name || x.id) }));
+  }
+
   function teamInfo(extra = {}) {
     const t = app.team;
     const fresh = (c, url) => (c && c.url === url ? c : null);
@@ -280,6 +290,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       canInvite: !!linkFor('k').link,
       admin: publicAdmin(t),
       people: publicPeople(t),
+      suites: linkedSuites(), // for each person's Automated suites
       ...extra,
     };
   }
@@ -475,7 +486,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const p = t.people.find((x) => x.id === body.id);
     if (!p) return { ok: false, code: 'GONE', error: 'That person is not in the team any more.' };
     if (path === '/api/team/people/update') {
-      if (body.role != null) p.role = ROLES.includes(body.role) ? body.role : p.role;
+      if (body.role != null) setRole(p, body.role); // View only turns Start runs off
       if (body.books !== undefined) {
         const books = cleanBooks(body.books);
         if (books && !books.some((n) => lib.list().some((b) => b.name === n))) return { ok: false, code: 'BAD_INPUT', error: 'Choose a workbook, or All workbooks.' };
@@ -489,6 +500,22 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       }
       saveApp();
       return teamInfo(extra);
+    }
+    if (path === '/api/team/people/automation') {
+      // What a person may do with automated suites: whose results they see, and whether they start runs.
+      const { automationSuites: suites, startRuns } = body;
+      if (suites === undefined && startRuns === undefined) return { ok: false, code: 'BAD_INPUT', error: 'Choose their automated suites, or whether they start runs.' };
+      if (suites !== undefined) {
+        const known = new Set(linkedSuites().map((x) => x.id));
+        const ok = suites === 'all' || suites === 'none' || (Array.isArray(suites) && suites.every((id) => typeof id === 'string' && known.has(id)));
+        if (!ok) return { ok: false, code: 'BAD_INPUT', error: 'Choose a linked suite, All suites or None.' };
+      }
+      if (startRuns !== undefined && typeof startRuns !== 'boolean') return { ok: false, code: 'BAD_INPUT', error: 'Start runs is on or off.' };
+      if (startRuns === true && p.role === 'viewer') return { ok: false, code: 'BAD_INPUT', error: `${p.name} has View only, which never starts runs. Give them Update status first.` };
+      if (suites !== undefined) p.automationSuites = cleanSuites(suites);
+      if (startRuns !== undefined) p.startRuns = startRuns;
+      saveApp();
+      return teamInfo();
     }
     if (path === '/api/team/people/link') {
       // The person's link again, as it is now (current address, hosted page, gist)
@@ -1386,7 +1413,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
         if (t.address.effective && !t.address.tunnel.error) {
           console.log(`Your team reaches Test Run at ${t.address.effective}`);
           if (t.team.publish && t.team.gist) console.log(`The address is kept in your gist (${t.team.gist}), so invite links keep working.`);
-          console.log('Add people and copy their invite links in Setup → Team.');
+          console.log('Add people and copy their invite links in Setup › Access › Users.');
         } else {
           console.log(`Could not share: ${t.address.tunnel.error}`);
         }

@@ -62,7 +62,7 @@ No API keys are needed anywhere. Claude drafts use your Claude subscription thro
 **Leaves the computer:**
 - **Issues you file** with Bug Reporter go to GitHub, with the API calls you tick **unredacted** (DIGIT requests carry a live `authToken`): be careful with public repositories.
 - **Claude drafts** send a summary of the bug (plus the ticked calls in *Detailed* mode, and the screenshot if you tick it) to Claude through your Claude Code login.
-- **While Test Run is shared**, it's reachable from the internet through the tunnel. The page is public; everything else needs an invite key. If a link leaks, make that person a **New link** (or **Remove** them) in Setup › Sharing; the old link stops working at once.
+- **While Test Run is shared**, it's reachable from the internet through the tunnel. The page is public; everything else needs an invite key. If a link leaks, make that person a **New Link** (or **Remove** them) in Setup › Access › Users; the old link stops working at once.
 - **The Complete Report** zip holds every screenshot and recording. Only the host can download it.
 
 > **What's published is public.** `test-run-console/published/` in this repository, and the GitHub Pages site built from it, can be read by anyone: the published workbooks (test cases, results, comments, findings, tester names, issue links) and their reports. It stays in the repository's history even after it's unpublished. Screenshots, recordings, invite keys and settings are never published.
