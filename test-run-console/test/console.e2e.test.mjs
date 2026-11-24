@@ -33,7 +33,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
     'https://github.com/org/repo/issues/812': { title: 'Pincode labels missing', priority: 'P1' },
     'https://github.com/org/repo/issues/930': { title: 'Reject reasons list is empty', labels: ['P2'] },
   } });
-  const server = createServer({ sheetsDir: sheets, ghPath: gh.bin, repo: { owner: 'org', repo: 'tools' }, publishPrefix: 'test-run-console/', publishedDir: join(sheets, 'no-published-data') });
+  const server = createServer({ sheetsDir: sheets, ghPath: gh.bin, repo: { owner: 'org', repo: 'tools' }, publishPrefix: 'test-run-console/', dataBranch: 'test-run-data', publishedDir: join(sheets, 'no-published-data'), cloneDir: join(sheets, 'no-clone') });
   const base = await server.listenOn(0);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
@@ -544,7 +544,12 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.modal-box').getByRole('button', { name: 'Save and update the site' }).click();
       await page.locator('.toast', { hasText: 'Published to GitHub' }).waitFor();
       assert.equal(await save.isDisabled(), true, 'saved');
-      assert.ok(gh.readRepo().files['test-run-console/published/reports/index.json'], 'the reports are in the repository');
+      assert.ok(gh.readRepo('test-run-data').files['reports/index.json'], 'the reports are on the data branch');
+      // Space on GitHub Pages, measured from what was published
+      await page.locator('#publish .space-meter .space-bar[role=img]').waitFor();
+      await page.locator('#publish .space-meter', { hasText: /\d+ (KB|MB) of 1 GB · workbooks \d+ (KB|MB) · reports \d+ (KB|MB)/ }).waitFor();
+      assert.equal(await page.locator('#publish .space-meter .note.warn').count(), 0, 'far below the limit');
+      await page.locator('#publish', { hasText: 'one commit, replaced at each publish' }).waitFor();
       // The hosted page (another origin), serving the published reports like GitHub Pages
       const ui = new URL('../ui/', import.meta.url).pathname;
       const reportsDir = join(sheets, '.testrun', 'published');
@@ -620,7 +625,7 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.modal-box', { hasText: 'Every published report is taken off the site.' }).waitFor();
       await page.locator('.modal-box').getByRole('button', { name: 'Save and update the site' }).click();
       await page.locator('.toast', { hasText: 'taken off GitHub' }).waitFor();
-      assert.deepEqual(Object.keys(gh.readRepo().files).filter((f) => f.startsWith('test-run-console/published/')), ['test-run-console/published/reports/index.json']);
+      assert.deepEqual(Object.keys(gh.readRepo('test-run-data').files), ['reports/index.json']);
       const preview = await browser.newPage();
       await preview.goto(`${base}?reports=1`);
       await preview.locator('.report-tools .updated', { hasText: 'Updated on: –' }).waitFor();

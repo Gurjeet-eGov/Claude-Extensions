@@ -1,7 +1,7 @@
 // Stand-ins for `cloudflared` and `gh`, for the tests: small Node scripts that
 // behave like the real commands as far as Test Run uses them, and log what
 // they were asked to do.
-import { writeFileSync, chmodSync, existsSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -48,13 +48,18 @@ process.on('SIGTERM', () => process.exit(0));`);
 /**
  * gh whose `gh api` answers like GitHub for what Test Run asks (dev/fake-gh.cjs): gists,
  * GraphQL issue lookups ({ url: { title, state, labels, priority } }), and a repository kept
- * in a JSON file (files: its first commit; raceOnce: someone else pushes just before the first
- * publish). Logs every call. readRepo() gives the files on the default branch now.
+ * in a JSON file (files: its first commit, on the default branch; raceOnce: someone else
+ * pushes on top just before the first fast-forward move; raceReplaceOnce: a branch name that
+ * someone else replaces while the first commit is being made; failDispatch: starting a
+ * workflow is refused). Logs every call. readRepo(branch) gives the files on a branch now (the
+ * default branch unless named; null when there is no such branch); dispatches() the workflows
+ * started, as [{ dispatch, body }].
  */
-export function makeFakeGh(dir, { id = '0123456789abcdef0123456789abcdef', fail = false, issues = {}, files, raceOnce = false, log = join(dir, 'gh.log') } = {}) {
+export function makeFakeGh(dir, { id = '0123456789abcdef0123456789abcdef', fail = false, issues = {}, files, raceOnce = false, raceReplaceOnce = '', failDispatch = false, log = join(dir, 'gh.log') } = {}) {
   const repo = join(dir, 'fake-repo.json');
   if (!existsSync(repo)) writeFileSync(repo, JSON.stringify(fakeGh.initialState(files)));
-  const cfg = { id, fail, issues, log, repo, raceOnce };
+  const cfg = { id, fail, issues, log, repo, raceOnce, raceReplaceOnce, failDispatch };
   const bin = script(dir, 'gh', `require(${JSON.stringify(FAKE_GH)})(${JSON.stringify(cfg)});`);
-  return { bin, id, log, repo, readRepo: () => fakeGh.readFiles(repo) };
+  const dispatches = () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.dispatch) : []);
+  return { bin, id, log, repo, readRepo: (branch) => fakeGh.readFiles(repo, branch), dispatches };
 }

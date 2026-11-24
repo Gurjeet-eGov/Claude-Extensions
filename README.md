@@ -25,7 +25,7 @@ flowchart LR
   BR["Bug Reporter<br/>(anyone's Chrome + helper)"]
   B["Testers and managers<br/>(browser, invite link)"]
   GH["GitHub<br/>issues and boards"]
-  REPO["This repository<br/>test-run-console/published/"]
+  REPO["This repository<br/>branch test-run-data"]
   PAGES["GitHub Pages<br/>public reports"]
 
   B -- "tunnel" --> TR
@@ -65,7 +65,7 @@ No API keys are needed anywhere. Claude drafts use your Claude subscription thro
 - **While Test Run is shared**, it's reachable from the internet through the tunnel. The page is public; everything else needs an invite key. If a link leaks, make that person a **New link** (or **Remove** them) in Setup › Sharing; the old link stops working at once.
 - **The Complete Report** zip holds every screenshot and recording. Only the host can download it.
 
-> **What's published is public.** `test-run-console/published/` in this repository, and the GitHub Pages site built from it, can be read by anyone: the published workbooks (test cases, results, comments, findings, tester names, issue links) and their reports. It stays in the repository's history even after it's unpublished. Screenshots, recordings, invite keys and settings are never published.
+> **What's published is public.** The `test-run-data` branch of this repository, and the GitHub Pages site built from it, can be read by anyone: the published workbooks (test cases, results, comments, findings, tester names, issue links) and their reports. Each publish replaces that branch with one commit, so what's unpublished leaves it, but anyone may have kept a copy. Screenshots, recordings, invite keys and settings are never published.
 
 ## What's in this repository
 
@@ -76,7 +76,7 @@ docs/
   design-alignment.md   plan to bring both extensions in line with DESIGN.md
 test-run-console/       Test Run: the console (Node app, server + web UI)
   extension/            Test Run Extension (Chrome)
-  published/            what the host published: public, served by GitHub Pages
+  published/            what the host published before the test-run-data branch (read until it exists)
 bug-reporter/           Bug Reporter: extension/ (Chrome) + host/ (local helper) + docs/
 .github/workflows/      publishes the Test Run page and reports to GitHub Pages
 ```
@@ -120,8 +120,8 @@ The console's browser tests (which also drive both extensions) need Playwright: 
 ## Working on this repository
 
 - **Design:** every UI follows [DESIGN.md](DESIGN.md). New screens reuse its tokens, components and writing rules.
-- **Branches:** `master` is what's live. GitHub Pages redeploys the Test Run page when `test-run-console/ui/` or the published reports change on `master`.
-- **Publishing commits:** commits titled `Test Run: publish …` are made by Test Run itself when the host publishes. Don't edit `test-run-console/published/` by hand: the next publish replaces it.
+- **Branches:** `master` is what's live. GitHub Pages redeploys the Test Run page when `test-run-console/ui/` changes on `master`, and Test Run starts it after each publish.
+- **Publishing commits:** the `test-run-data` branch is Test Run's own: each publish replaces it with one commit titled `Test Run: publish …`. Don't commit to it by hand: the next publish replaces it.
 - **Before a change:** run the tests of the product you touched.
 
 ## What's next

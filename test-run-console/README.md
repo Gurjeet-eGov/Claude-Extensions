@@ -192,26 +192,31 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 
 The host can publish the reports to the GitHub repository, so they can be read on the GitHub Pages site by anyone, even when no Test Run is running, and so someone else can carry on from a clone.
 
-> **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site. It stays in the repository's history even if you stop publishing it. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
+> **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site, and anyone may keep a copy. Each publish replaces the last one, so what you take off leaves the repository, though GitHub can keep old versions reachable by their link for a while. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
 
 **Setup → Publish** (the host only; testers and viewers cannot publish):
-- **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site (the commit removes them; earlier versions stay in the history).
+- **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site.
+- **Space on GitHub Pages:** how much of the site's 1 GB a publish takes, for example *5.2 MB of 1 GB · workbooks 4.6 MB · reports 0.6 MB* (workbooks are the download copies on the site). It warns above 800 MB: untick workbooks nobody needs there any more.
 - **When:** every day at **17:00** (change the time there) while Test Run runs. It starts after your first publish. **Publish** on Summary publishes too. Stopping Test Run (Ctrl+C) does not publish.
 - **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
-- **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
+- **What a publish is:** the branch `test-run-data`, replaced by **one commit with no history**, made through your `gh` login. At its root:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
-  - `reports/`: the summary of every test suite and cycle, which the Pages site shows.
+  - `reports/`: the summary of every test suite and cycle, and a download copy of each workbook, which the Pages site shows.
+- So the repository does not grow with every publish, a workbook you untick really leaves the branch (and so GitHub's copy, once GitHub cleans up), and the code history on `master` stays clean.
+- Then Test Run starts the **Test Run page** workflow, which builds the Pages site from `master` (the page) and `test-run-data` (the data). If GitHub refuses to start it, the publish still counts, and Setup → Publish says so: publish again, or run the workflow from the repository's Actions tab.
 - Your local checkout is not touched (the commit is made on GitHub directly), and nothing is committed when nothing changed.
 - Teammates' results are already saved on the host's laptop, so there is one copy, and that is what is published.
-- If someone else published after you last published or got the data, Test Run says so and does not overwrite theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
+- If someone else published after you last published or got the data (or publishes while you are publishing), Test Run says so and does not replace theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
+- **Before `test-run-data` existed**, publishing went to `test-run-console/published/` on `master`. Until the first publish creates the branch, **Get it** and the Pages site read that folder; the first publish then creates the branch. The old folder is left as it was.
+- **What the `gh` login needs** (the `repo` scope that `gh auth login` gives covers it): to write to this repository (create and force-move `test-run-data`) and to start its workflows. A ruleset or branch protection that blocks force pushes or branch creation on `test-run-data` stops publishing.
 
 **The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
 
 ### Carrying on from a clone (hand over)
 
 1. The current host publishes (or it happens at 17:00).
-2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`.
-3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied into `sheets/`.
+2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`. A clone brings `test-run-data` along (as `origin/test-run-data`); in an older clone, `git fetch` first.
+3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied from the clone's `test-run-data` into `sheets/` (from `test-run-console/published/` in a clone made before that branch existed).
 4. They turn on **Setup → Sharing** and add people (invite links belong to each host's laptop), and publish from then on.
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
@@ -273,7 +278,7 @@ Bug Reporter is a separate product with its own setup: see [its README](../bug-r
 
 ## Your workbooks and data
 
-- **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy in `test-run-console/published/`). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
+- **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy on the `test-run-data` branch). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
@@ -358,13 +363,13 @@ lib/
   team.mjs       invite keys, roles, local vs tunnelled requests, invite links
   share.mjs      the Cloudflare tunnel (quick or named), and the gist that keeps its address
   issues.mjs     GitHub issue titles, states and priorities, through gh
-  publish.mjs    publishing to the repository: one commit through gh (Git Data API)
+  publish.mjs    publishing to the repository: the test-run-data branch replaced by one commit through gh api (Git Data API), then the Pages workflow started
   evidence.mjs   Test Run Extension's evidence (kept on the laptop), the media limits, the Complete Report zip
   prompts.js     prompts from the Claude drafting there was (off for now; kept for later)
   runtime.mjs    loads the logic for the server and the tests
 ui/            the console and summary pages (also what GitHub Pages serves)
 extension/     Test Run Extension (Chrome, Manifest V3, no build step): see extension/README.md
-published/     what the host published (workbooks, sidecar files, reports); written by publishing, not by hand
+published/     what the host published before the test-run-data branch (workbooks, sidecar files, reports); read until that branch exists, no longer written
 dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh (fake-gh.cjs: a small fake GitHub)
 test/          unit tests, HTTP and team tests, and browser tests (console; Test Run Extension; Bug Reporter + Test Run)
 skill/, prompts/  parked with Claude drafting, which is switched off: kept for when it comes back

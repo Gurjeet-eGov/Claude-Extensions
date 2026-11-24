@@ -2116,6 +2116,33 @@
     });
   }
 
+  /** How much of GitHub Pages' 1 GB a publish takes (measured on the server from what it would publish). */
+  function loadPublishSpace() {
+    if (S.publishSpaceLoading) return;
+    S.publishSpaceLoading = true;
+    TR.http('GET', '/api/publish/space').then(function (r) {
+      S.publishSpaceLoading = false;
+      S.publishSpace = r.ok ? r : { error: r.error || 'Could not measure it.' };
+      render();
+    });
+  }
+
+  /** Space on GitHub Pages: a bar in parts (workbooks, reports, automation results) and their sizes. */
+  function spaceMeter() {
+    var sp = S.publishSpace;
+    if (!sp) { loadPublishSpace(); return '<span class="small muted">Measuring…</span>'; }
+    if (sp.error) return '<span class="small bad-text">' + esc(sp.error) + '</span>';
+    var parts = [['wb', 'workbooks', sp.parts.workbooks], ['rp', 'reports', sp.parts.reports], ['au', 'automation results', sp.parts.automation]];
+    var size = function (n) { return n ? fmtBytes(n) : '0 KB'; };
+    var limit = fmtBytes(sp.limit).replace('.0 ', ' '); // "1 GB"
+    var used = size(sp.total) + ' of ' + limit;
+    return (sp.warn ? '<div class="note warn">The site is close to GitHub Pages’ ' + limit + ' limit. Untick workbooks nobody needs on the site any more; above the limit, GitHub may stop updating it.</div>' : '') +
+      '<span class="space-bar" role="img" aria-label="' + esc(used) + ' used">' + parts.map(function (p) {
+        return p[2] ? '<span class="' + p[0] + '" style="width:' + Math.min(100, p[2] / sp.limit * 100).toFixed(2) + '%"></span>' : '';
+      }).join('') + '</span>' +
+      '<span class="small muted">' + esc(used) + parts.filter(function (p, i) { return p[2] || i < 2; }).map(function (p) { return ' · ' + p[1] + ' ' + size(p[2]); }).join('') + '</span>';
+  }
+
   /** Publish now: asks once that it is public, and before replacing a newer publish by someone else. */
   function publishNow(extra) {
     if (S.publishBusy) return;
@@ -2125,11 +2152,12 @@
     TR.http('POST', '/api/publish/now', extra || {}).then(function (r) {
       S.publishBusy = false;
       if (r.repo != null) S.publish = r;
+      if (r.ok) S.publishSpace = null; // measured again from what was published
       render();
       if (r.code === 'CONFIRM_PUBLIC') {
         askConfirm({
           title: 'Publish to the public repository?',
-          banner: 'Anyone can read what you publish, and it stays in the repository’s history.', bannerKind: 'warn',
+          banner: 'Anyone can read what you publish, and keep a copy of it.', bannerKind: 'warn',
           items: ['The ticked workbooks, their findings and their reports go to the public repository.', 'Screenshots and recordings are never published.'],
           yes: 'Publish now'
         }, function () { publishNow(Object.assign({}, extra, { confirmPublic: true })); });
@@ -2148,7 +2176,9 @@
       }
       if (!r.ok) { toast(r.error || 'Could not publish.', 'bad'); return; }
       var down = r.books && !r.books.some(function (b) { return b.on; });
-      toast(!(r.result && r.result.committed) ? 'Nothing changed since the last publish.' : down ? 'The published reports are taken off GitHub. The site updates in about a minute.' : 'Published to GitHub. The site updates in about a minute.', 'long');
+      var res = r.result || {};
+      if (res.pagesError) { toast((res.committed ? 'Published to GitHub, but the site was not updated.' : 'Nothing changed, and the site still was not updated.') + ' Setup › Publish says why.', 'bad'); return; }
+      toast(!res.committed ? 'Nothing changed since the last publish.' : down ? 'The published reports are taken off GitHub. The site updates in about a minute.' : 'Published to GitHub. The site updates in about a minute.', 'long');
     });
   }
 
@@ -2183,6 +2213,7 @@
       if (!r.ok) { toast(r.error, 'bad'); return; }
       S.publish = r;
       S.pubDraft = null;
+      S.publishSpace = null; // the ticked workbooks may have changed
       closeModal();
       render();
       if (publishAfter) publishNow({ confirmPublic: true });
@@ -2202,7 +2233,7 @@
       '<ul class="modal-list">' +
       (on ? '<li><b>The workbooks you ticked are published</b>, for anyone to read.</li>' : '') +
       (none ? '<li><b>Every published report is taken off the site.</b></li>' : off ? '<li><b>The workbooks you unticked are taken off the site.</b></li>' : '') +
-      '<li>Earlier versions stay in the public repository\'s history.</li></ul>' +
+      '<li>Each publish replaces the last one, so what comes off leaves the repository. Anyone may already have a copy.</li></ul>' +
       '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="publish-cancel-books">Cancel</button>' +
       '<button class="primary" data-action="publish-confirm">Save and update the site</button></div>');
   }
@@ -2212,9 +2243,14 @@
     var h = '<section class="card card-pad stack" id="publish"><h2>Publish to GitHub</h2>';
     if (!r) { loadPublish(); return h + '<div class="loading">Loading…</div></section>'; }
     if (r.error && r.repo == null) return h + '<div class="note bad">' + esc(r.error) + '</div></section>';
-    h += '<div class="note warn"><b>Published workbooks are public.</b> Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links. They stay in the repository\'s history even if you stop publishing them. Invite keys and team settings are never published.</div>';
+    h += '<div class="note warn"><b>Published workbooks are public.</b> Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links, and anyone may keep a copy. Invite keys and team settings are never published.</div>';
     if (r.problem) h += '<div class="note bad">' + esc(r.problem) + '</div>';
-    else h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '/tree/' + esc(r.branch) + '/' + esc(r.folder) + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>, branch <span class="mono">' + esc(r.branch) + '</span>, folder <span class="mono">' + esc(r.folder) + '</span>' + (r.isPrivate === false ? ' (a public repository)' : '') + '.</div>';
+    else {
+      h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '/tree/' + esc(r.dataBranch) + (r.folder ? '/' + esc(r.folder) : '') + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>' + (r.isPrivate === false ? ' (a public repository)' : '') +
+        ', branch <span class="mono">' + esc(r.dataBranch) + '</span>' + (r.folder ? ', folder <span class="mono">' + esc(r.folder) + '</span>' : '') +
+        ': one commit, replaced at each publish, so what you take off leaves the branch. The site is built from <span class="mono">' + esc(r.branch) + '</span> and that branch.</div>';
+      if (r.dataBranchExists === false) h += '<div class="small muted">The first publish creates <span class="mono">' + esc(r.dataBranch) + '</span>. Until then, <b>Get it</b> reads the data published before, in <span class="mono">' + esc(r.oldFolder) + '</span> on <span class="mono">' + esc(r.branch) + '</span>.</div>';
+    }
     if (r.newer && r.remote) {
       h += '<div class="note info row"><span class="grow"><b>' + esc(r.remote.by || 'Someone') + '</b> published at ' + esc(r.remote.at) + ', after this laptop last published or got the data.</span><button data-action="publish-get">Get it</button></div>';
     }
@@ -2224,6 +2260,8 @@
       return '<label class="check"><input type="checkbox" data-action="publish-book" data-name="' + esc(b.name) + '"' + (d.books[b.name] ? ' checked' : '') + '> ' + esc(b.name.replace(/\.xlsx$/i, '')) + '</label>';
     }).join('') : '<p class="small faint">No workbooks yet.</p>') +
       (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') + '</div>';
+    h += '<div class="subsection space-meter"><h3>Space on GitHub Pages</h3>' + spaceMeter() +
+      '<span class="small faint">What Publish now puts on the site: a download copy of each published workbook, and its reports.</span></div>';
     h += '<div class="subsection"><h3>When</h3>' +
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
       (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
@@ -2235,7 +2273,8 @@
       '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this laptop yet.') + '</span>' +
       '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this laptop">Preview here</a>' +
       '</div>' +
-      (l.error ? '<div class="note bad">' + esc(l.error) + '</div>' : '');
+      (l.error ? '<div class="note bad">' + esc(l.error) + '</div>' : '') +
+      (!l.error && l.pagesError ? '<div class="note warn">' + esc(l.pagesError) + '</div>' : '');
     return h + '</section>';
   }
 
@@ -3140,6 +3179,7 @@
         TR.http('POST', '/api/publish/get-latest', {}).then(function (r) {
           if (r.repo != null) S.publish = r;
           if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+          S.publishSpace = null; // other workbooks now
           toast('Got the data published by ' + (r.result.by || 'someone') + ' at ' + r.result.at + '.', 'long');
           if (S.app) S.app.publishNotice = null;
           refreshApp().then(function () { boot(S.tab, cycleLabel()); });
