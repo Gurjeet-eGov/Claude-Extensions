@@ -1,12 +1,20 @@
 // Publishing to the repository on GitHub, so the reports can be read when no
 // Test Run is running, and someone else can carry on from a clone.
 //
-// One publish is one commit on the repository's default branch, holding
-// published/workbooks/ (the workbooks and their sidecar files) and
-// published/reports/ (the summaries the GitHub Pages site shows). It is made
-// with `gh api` (GitHub's Git Data API: blobs, a tree, a commit, then the
-// branch moved forward), so the local checkout, and any uncommitted work in it,
-// is never touched. Only the host publishes, with their own gh login.
+// Everything Test Run publishes lives on its own branch, test-run-data, with no
+// history: each publish replaces the branch with ONE commit that has no parent
+// (the "replace" mode of publishFiles), holding workbooks/ (the workbooks and
+// their sidecar files) and reports/ (the summaries the GitHub Pages site shows).
+// So the repository stops growing, whatever is taken down really leaves the
+// branch, and the code history on the default branch stays clean. Then the
+// Pages workflow is started, and builds the site from the default branch (the
+// page) plus that branch (the data).
+//
+// Only `gh api <REST path>` is used (GitHub's Git Data API: blobs, a tree, a
+// commit, then the branch moved), never gh's own commands, so moving to plain
+// REST calls later changes only ghApi(). The local checkout, and any
+// uncommitted work in it, is never touched. Only the host publishes, with their
+// own gh login.
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { findCommand } from './share.mjs';
@@ -63,14 +71,40 @@ export async function repoInfo({ cmd, owner, repo }) {
   return { defaultBranch: r.default_branch || 'master', private: !!r.private, url: r.html_url || `https://github.com/${owner}/${repo}` };
 }
 
+/** The commit a branch points at (GET /git/ref/heads/{branch}, an exact match), or null when there is no such branch. */
+export async function readRef({ cmd, owner, repo, branch }) {
+  try {
+    const ref = await ghApi(cmd, [`repos/${owner}/${repo}/git/ref/heads/${enc(branch)}`]);
+    return (ref && ref.object && ref.object.sha) || null;
+  } catch (e) {
+    if (e.status === 404) return null;
+    throw e;
+  }
+}
+
+/** Someone else published to the branch while this was being built: refuse, as with a newer publish. */
+const newerRemote = (branch) => Object.assign(new Error(`Someone else published to ${branch} while this laptop was publishing.`), { code: 'NEWER_REMOTE' });
+
 /**
- * Commit files under prefix in one commit on branch: [{ path, content }]. Files already
- * there unchanged are not uploaded; anything else under prefix is removed. Nothing is
- * committed when only "minor" files changed (minor(path) true, e.g. reports that only
- * differ by their time stamp). If someone moved the branch meanwhile, it tries once more.
- * Resolves { commit, url, changed: [paths], removed: [paths] } (commit null: nothing to do).
+ * Commit files ([{ path, content }]) in one commit on branch.
+ *
+ * Default mode: the commit goes on top of the branch. Files already there unchanged are
+ * not uploaded; anything else under prefix is removed. If someone moved the branch
+ * meanwhile, it tries once more on the new tip.
+ *
+ * replace: true: the branch becomes exactly these files, in one commit with no parent,
+ * and the branch is force-moved to it (or created: POST /git/refs). Blobs of files that
+ * are on the branch already, unchanged, are reused rather than uploaded again. Anything
+ * not in files leaves the branch (prefix is not used). It refuses (code NEWER_REMOTE)
+ * when the branch is not at expectHead (the tip the caller last read; null: no branch;
+ * undefined: no expectation), or when it moves while the commit is being built.
+ *
+ * Either way nothing is committed when only "minor" files changed (minor(path) true, e.g.
+ * reports that only differ by their time stamp) and nothing was removed.
+ * Resolves { commit, url, changed: [paths], removed: [paths], created } (commit null: nothing to do).
  */
-export async function publishFiles({ cmd, owner, repo, branch, prefix, files, message, minor = () => false }) {
+export async function publishFiles({ cmd, owner, repo, branch, prefix, files, message, minor = () => false, replace = false, expectHead }) {
+  if (replace) return replaceBranch({ cmd, owner, repo, branch, files, message, minor, expectHead });
   const base = `repos/${owner}/${repo}`;
   for (let attempt = 0; attempt < 2; attempt++) {
     const ref = await ghApi(cmd, [`${base}/git/ref/heads/${enc(branch)}`]);
@@ -101,10 +135,56 @@ export async function publishFiles({ cmd, owner, repo, branch, prefix, files, me
   throw new Error('The branch kept moving while publishing. Try again.');
 }
 
-/** A file from the repository on GitHub (raw bytes), or null if it is not there. */
-export async function readRemoteFile({ cmd, owner, repo, branch, path }) {
+async function replaceBranch({ cmd, owner, repo, branch, files, message, minor, expectHead }) {
+  const base = `repos/${owner}/${repo}`;
+  if (!files.length) throw new Error('There is nothing to publish.');
+  const head = await readRef({ cmd, owner, repo, branch });
+  if (expectHead !== undefined && head !== expectHead) throw newerRemote(branch);
+  // What the branch holds now (path -> blob id): to reuse unchanged blobs, and to tell what leaves
+  const existing = {};
+  let truncated = false;
+  if (head) {
+    const commit = await ghApi(cmd, [`${base}/git/commits/${head}`]);
+    const tree = await ghApi(cmd, [`${base}/git/trees/${commit.tree.sha}?recursive=1`]);
+    truncated = !!tree.truncated; // too big to list: upload everything
+    for (const e of tree.tree || []) if (e.type === 'blob') existing[e.path] = e.sha;
+  }
+  const changed = files.filter((f) => truncated || existing[f.path] !== blobSha(f.content));
+  const removed = Object.keys(existing).filter((p) => !files.some((f) => f.path === p));
+  if (head && !changed.some((f) => !minor(f.path)) && !removed.length) return { commit: null, changed: [], removed: [] };
+  const fresh = new Set(changed.map((f) => f.path));
+  const entries = [];
+  for (const f of files) {
+    let sha = fresh.has(f.path) ? '' : existing[f.path];
+    if (!sha) sha = (await ghApi(cmd, ['-X', 'POST', `${base}/git/blobs`, '--input', '-'], { input: { content: Buffer.from(f.content).toString('base64'), encoding: 'base64' } })).sha;
+    entries.push({ path: f.path, mode: '100644', type: 'blob', sha });
+  }
+  const newTree = await ghApi(cmd, ['-X', 'POST', `${base}/git/trees`, '--input', '-'], { input: { tree: entries } }); // no base_tree: these files only
+  const newCommit = await ghApi(cmd, ['-X', 'POST', `${base}/git/commits`, '--input', '-'], { input: { message, tree: newTree.sha, parents: [] } });
+  // A forced move does not check the tip it replaces, so look again just before it
+  if ((await readRef({ cmd, owner, repo, branch })) !== head) throw newerRemote(branch);
+  if (head) {
+    await ghApi(cmd, ['-X', 'PATCH', `${base}/git/refs/heads/${enc(branch)}`, '--input', '-'], { input: { sha: newCommit.sha, force: true } });
+  } else {
+    try {
+      await ghApi(cmd, ['-X', 'POST', `${base}/git/refs`, '--input', '-'], { input: { ref: `refs/heads/${branch}`, sha: newCommit.sha } });
+    } catch (e) {
+      if (e.status === 422) throw newerRemote(branch); // someone else created it meanwhile
+      throw e;
+    }
+  }
+  return { commit: newCommit.sha, url: `https://github.com/${owner}/${repo}/commit/${newCommit.sha}`, changed: changed.map((f) => f.path), removed, created: !head };
+}
+
+/** Start a workflow, as its Run workflow button does: POST /actions/workflows/{file}/dispatches, on ref. */
+export async function dispatchWorkflow({ cmd, owner, repo, workflow, ref, inputs }) {
+  await ghApi(cmd, ['-X', 'POST', `repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, '--input', '-'], { input: inputs ? { ref, inputs } : { ref } });
+}
+
+/** A file from the repository on GitHub (raw bytes), or null if it is not there. ref: a branch, or a commit id. */
+export async function readRemoteFile({ cmd, owner, repo, branch, ref = branch, path }) {
   try {
-    return await ghApi(cmd, ['-H', 'Accept: application/vnd.github.raw', `repos/${owner}/${repo}/contents/${enc(path)}?ref=${encodeURIComponent(branch)}`], { raw: true });
+    return await ghApi(cmd, ['-H', 'Accept: application/vnd.github.raw', `repos/${owner}/${repo}/contents/${enc(path)}?ref=${encodeURIComponent(ref)}`], { raw: true });
   } catch (e) {
     if (e.status === 404) return null;
     throw e;

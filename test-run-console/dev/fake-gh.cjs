@@ -1,7 +1,9 @@
 // A stand-in for the GitHub CLI (`gh api ...`), for the tests and local previews:
 // gists (Test Run's address), GraphQL issue lookups, and a small repository held
-// in a JSON file (refs, commits, trees, blobs, file contents), enough for
-// Test Run's publishing. Nothing goes to GitHub. Every call is logged.
+// in a JSON file (refs, commits with or without parents, trees, blobs, file
+// contents by branch or commit, ref creation and forced moves, and starting a
+// workflow), enough for Test Run's publishing. Nothing goes to GitHub. Every call
+// is logged.
 const fs = require('fs');
 const crypto = require('crypto');
 
@@ -33,8 +35,9 @@ module.exports = function fakeGh(cfg) {
     const body = input ? JSON.parse(input) : null;
     // GraphQL issue lookups (Known issues)
     if (endpoint === 'graphql') {
-      const url = fields.url || '';
-      const withProject = String(fields.query || '').includes('projectItems');
+      // -f query=… -f url=…, or a JSON body { query, variables: { url } } (POST /graphql --input -)
+      const url = fields.url || (body && body.variables && body.variables.url) || '';
+      const withProject = String(fields.query || (body && body.query) || '').includes('projectItems');
       log({ graphql: url, withProject });
       if (cfg.fail) fail(401, 'Bad credentials');
       const it = (cfg.issues || {})[url];
@@ -91,12 +94,45 @@ module.exports = function fakeGh(cfg) {
     }
     if (rest === '/git/commits' && method === 'POST') {
       const sha = sha1(JSON.stringify(body) + Math.random());
-      state.commits[sha] = { tree: body.tree, parents: body.parents, message: body.message };
+      state.commits[sha] = { tree: body.tree, parents: body.parents || [], message: body.message };
+      if (cfg.raceReplaceOnce && !state.raced) {
+        // another Test Run replaces the branch while this commit is being made
+        state.raced = true;
+        const index = Buffer.from(JSON.stringify({ app: 'test-run', id: 'someone-else', publishedAt: '2026-11-24 09:00', by: 'Someone Else', workbooks: [] }));
+        state.blobs[blobSha(index)] = index.toString('base64');
+        const t = { 'reports/index.json': blobSha(index) };
+        const tsha = sha1(JSON.stringify(t));
+        state.trees[tsha] = t;
+        const csha = sha1('race-replace' + Math.random());
+        state.commits[csha] = { tree: tsha, parents: [], message: 'Someone else published' };
+        state.refs[cfg.raceReplaceOnce] = csha;
+      }
       save();
       out({ sha });
     }
+    if (rest === '/git/refs' && method === 'POST') {
+      const branch = String(body.ref || '').replace(/^refs\/heads\//, '');
+      if (state.refs[branch]) fail(422, 'Reference already exists');
+      if (!state.commits[body.sha]) fail(422, 'Object does not exist');
+      state.refs[branch] = body.sha;
+      save();
+      out({ ref: body.ref, object: { sha: body.sha, type: 'commit' } });
+    }
+    if ((r = /^\/actions\/workflows\/([^/]+)\/dispatches$/.exec(rest)) && method === 'POST') {
+      log({ dispatch: decodeURIComponent(r[1]), body });
+      if (cfg.failDispatch) fail(403, 'Resource not accessible by integration');
+      out(''); // 204 No Content
+    }
     if ((r = /^\/git\/refs\/heads\/(.+)$/.exec(rest)) && method === 'PATCH') {
       const branch = decodeURIComponent(r[1]);
+      if (body.force) {
+        // a forced move: any commit, the old tip need not be its parent
+        if (!state.refs[branch]) fail(422, 'Reference does not exist');
+        if (!state.commits[body.sha]) fail(422, 'Object does not exist');
+        state.refs[branch] = body.sha;
+        save();
+        out({ object: { sha: body.sha } });
+      }
       if (cfg.raceOnce && !state.raced) {
         // someone else pushed just before us
         state.raced = true;
@@ -118,7 +154,8 @@ module.exports = function fakeGh(cfg) {
     }
     if ((r = /^\/contents\/([^?]+)(?:\?ref=(.*))?$/.exec(rest)) && method === 'GET') {
       const path = r[1].split('/').map(decodeURIComponent).join('/');
-      const tip = state.refs[decodeURIComponent(r[2] || state.branch)];
+      const ref = decodeURIComponent(r[2] || state.branch);
+      const tip = state.refs[ref] || (state.commits[ref] ? ref : null); // a branch, or a commit id
       const sha = tip && state.trees[state.commits[tip].tree][path];
       if (!sha) fail(404, 'Not Found');
       const buf = Buffer.from(state.blobs[sha], 'base64');
@@ -152,12 +189,20 @@ module.exports.initialState = function initialState(files = { 'README.md': '# Re
   return { branch, refs: { [branch]: csha }, commits: { [csha]: { tree: tsha, parents: [], message: 'Initial commit' } }, trees: { [tsha]: tree }, blobs };
 };
 
-/** The files on the default branch now: { path: Buffer }. */
-module.exports.readFiles = function readFiles(stateFile) {
+/**
+ * The files on a branch now (the default branch unless named): { files: { path: Buffer }, commits
+ * (all commits in the repository), history (the commits reachable from the branch), sha, parents,
+ * message }, or null when there is no such branch.
+ */
+module.exports.readFiles = function readFiles(stateFile, branch) {
   const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  const tip = state.refs[state.branch];
+  const tip = state.refs[branch || state.branch];
+  if (!tip) return null;
   const t = state.trees[state.commits[tip].tree];
   const out = {};
   for (const [path, sha] of Object.entries(t)) out[path] = Buffer.from(state.blobs[sha], 'base64');
-  return { files: out, commits: Object.keys(state.commits).length, message: state.commits[tip].message };
+  const seen = new Set();
+  const walk = [tip];
+  while (walk.length) { const c = walk.pop(); if (seen.has(c) || !state.commits[c]) continue; seen.add(c); walk.push(...state.commits[c].parents); }
+  return { files: out, commits: Object.keys(state.commits).length, history: seen.size, sha: tip, parents: state.commits[tip].parents, message: state.commits[tip].message };
 };

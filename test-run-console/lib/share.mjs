@@ -7,25 +7,13 @@
 // fixed address on the owner's own domain.
 //
 // publishAddress(): writes the current address to a secret GitHub gist with
-// the owner's `gh` login. The hosted page (GitHub Pages) reads that gist, so
-// invite links keep working when the tunnel address changes.
-import { spawn, execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+// the owner's `gh` login, through the GitHub client (lib/github.mjs: POST or
+// PATCH /gists). The hosted page (GitHub Pages) reads that gist, so invite
+// links keep working when the tunnel address changes.
+import { spawn } from 'node:child_process';
+import { findCommand, createGithub } from './github.mjs';
 
-const EXTRA_PATH = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
-
-/** Full path of a command, looking in PATH and the usual Homebrew folders; null if missing. */
-export function findCommand(name, explicit) {
-  if (explicit) return existsSync(explicit) ? explicit : null;
-  const dirs = String(process.env.PATH || '').split(delimiter).concat(EXTRA_PATH);
-  for (const d of dirs) {
-    if (!d) continue;
-    const f = join(d, name);
-    if (existsSync(f)) return f;
-  }
-  return null;
-}
+export { findCommand }; // where it always was, for lib/publish.mjs and the server
 
 const URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 
@@ -70,31 +58,21 @@ export function startTunnel({ port, bin, name = '', url: fixed = '', timeoutMs =
   });
 }
 
-function gh(cmd, args, input) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(cmd, args, { timeout: 20000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(String(stderr || err.message).trim().split('\n').slice(-1)[0] || 'gh failed'));
-      else resolve(stdout);
-    });
-    if (input != null) { child.stdin.end(input); }
-  });
-}
-
 /**
  * Write { app, url, updatedAt } to the gist (created on first use, secret).
  * Resolves the gist id. Needs `gh auth login` (its default scopes include gist).
  */
-export async function publishAddress({ gist, url, ghPath, now = new Date().toISOString() }) {
-  const cmd = findCommand('gh', ghPath);
-  if (!cmd) throw Object.assign(new Error('The GitHub CLI (gh) is not installed, so the address cannot be kept in a gist. Install it and run: gh auth login'), { code: 'NO_GH' });
+export async function publishAddress({ gist, url, ghPath, github, now = new Date().toISOString() }) {
+  if (!github && !findCommand('gh', ghPath)) throw Object.assign(new Error('The GitHub CLI (gh) is not installed, so the address cannot be kept in a gist. Install it and run: gh auth login'), { code: 'NO_GH' });
+  const gh = github || createGithub({ ghPath });
   const content = JSON.stringify({ app: 'test-run', url, updatedAt: now }, null, 2);
   const files = { 'test-run.json': { content } };
   if (gist) {
-    await gh(cmd, ['api', '-X', 'PATCH', `gists/${gist}`, '--input', '-'], JSON.stringify({ files }));
+    await gh.updateGist(gist, { files }, { timeoutMs: 20000 });
     return gist;
   }
-  const out = await gh(cmd, ['api', '-X', 'POST', 'gists', '--input', '-'], JSON.stringify({ description: 'Test Run: where the shared Test Run is reachable (kept up to date by Test Run)', public: false, files }));
-  const id = JSON.parse(out).id;
+  const out = await gh.createGist({ description: 'Test Run: where the shared Test Run is reachable (kept up to date by Test Run)', public: false, files }, { timeoutMs: 20000 });
+  const id = out && out.id;
   if (!id) throw new Error('GitHub did not return a gist id.');
   return id;
 }

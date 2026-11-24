@@ -3,14 +3,14 @@
 // the gist that keeps its address findable. Fake cloudflared and gh.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import http from 'node:http';
 import { createServer } from '../server.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
 import { makeFakeCloudflared, makeFakeGh } from '../dev/fake-tools.mjs';
-import { inviteLink, normalizeTeam, addPerson, personForKey, isLocalRequest, mayCall, pagesUrlFromRemote, cleanUrl } from '../lib/team.mjs';
+import { inviteLink, normalizeTeam, addPerson, personForKey, isLocalRequest, mayCall, pagesUrlFromRemote, cleanUrl, cleanSuites, setRole, publicPeople, maySeeSuite, mayStartRuns } from '../lib/team.mjs';
 
 const BOOK = 'CMS Sign Off (sample).xlsx';
 const TAB = 'CMS 2.20.1';
@@ -201,6 +201,66 @@ test('a teammate can be given one workbook instead of all', async () => {
     assert.deepEqual((await s.remote('GET', '/api/app', { key: ravi.key })).books.map((b) => b.name).sort(), [OTHER, BOOK].sort());
     // Kept across a restart (app.json), and never in the listing with keys
     assert.equal(JSON.stringify(all.people).includes('hash'), false);
+  } finally { s.close(); }
+});
+
+test('Access › Users: each person\'s automated suites and Start runs, set by the owner only', async () => {
+  const s = await start();
+  try {
+    await s.local('POST', '/api/team', { enabled: true, mode: 'fixed', fixedUrl: s.fixed });
+    // No suite linked yet: only All suites and None
+    const before = await s.local('POST', '/api/team/people', { name: 'Ravi', role: 'tester' });
+    assert.deepEqual(before.suites, [], 'no suites.json: no linked suites');
+    const ravi = before.people.find((p) => p.name === 'Ravi');
+    assert.deepEqual([ravi.automationSuites, ravi.startRuns], ['all', true], 'a tester sees all suites and may start runs');
+    const id = ravi.id;
+    const set = (body) => s.local('POST', '/api/team/people/automation', { id, ...body });
+    assert.equal((await set({ automationSuites: ['cms'] })).code, 'BAD_INPUT', 'no such suite yet');
+    assert.equal((await set({ automationSuites: 'none' })).people.find((p) => p.id === id).automationSuites, 'none');
+
+    // Suites linked in Setup › Automation (sheets/.testrun/automation/suites.json)
+    mkdirSync(join(s.sheets, '.testrun', 'automation'), { recursive: true });
+    writeFileSync(join(s.sheets, '.testrun', 'automation', 'suites.json'), JSON.stringify({ suites: [
+      { id: 'cms', name: 'CMS Automation', repo: 'o/cms' }, { id: 'notif', name: 'Notifications API' }, { name: 'no id: left out' },
+    ] }));
+    const one = await set({ automationSuites: ['cms'] });
+    assert.equal(one.ok, true, one.error);
+    assert.deepEqual(one.suites, [{ id: 'cms', name: 'CMS Automation' }, { id: 'notif', name: 'Notifications API' }], 'listed for the dropdown');
+    assert.deepEqual(one.people.find((p) => p.id === id).automationSuites, ['cms']);
+    for (const bad of [['cms', 'gone'], 'cms', 'everything', 42, null, [7], { id: 'cms' }]) {
+      assert.equal((await set({ automationSuites: bad })).code, 'BAD_INPUT', `refused: ${JSON.stringify(bad)}`);
+    }
+    assert.deepEqual((await s.local('GET', '/api/team')).people.find((p) => p.id === id).automationSuites, ['cms'], 'a refused change changes nothing');
+    assert.equal((await set({})).code, 'BAD_INPUT', 'nothing to change');
+    assert.equal((await set({ startRuns: 'yes' })).code, 'BAD_INPUT', 'Start runs is true or false');
+    assert.equal((await set({ startRuns: false })).people.find((p) => p.id === id).startRuns, false);
+    assert.equal((await set({ startRuns: true, automationSuites: 'all' })).people.find((p) => p.id === id).startRuns, true, 'both at once');
+
+    // View only never starts runs: forced off on the change, and refused after it
+    const viewer = await s.local('POST', '/api/team/people/update', { id, role: 'viewer' });
+    assert.deepEqual([viewer.people.find((p) => p.id === id).role, viewer.people.find((p) => p.id === id).startRuns], ['viewer', false]);
+    const refused = await set({ startRuns: true });
+    assert.deepEqual([refused.code, /View only/.test(refused.error)], ['BAD_INPUT', true]);
+    assert.equal((await set({ automationSuites: ['notif'] })).ok, true, 'a viewer still has suites whose results they see');
+    const back = await s.local('POST', '/api/team/people/update', { id, role: 'tester' });
+    assert.equal(back.people.find((p) => p.id === id).startRuns, true, 'back to Update status: a tester\'s default');
+    assert.equal((await s.local('POST', '/api/team/people/automation', { id: 'nobody', startRuns: false })).code, 'GONE');
+
+    // The owner only: not a tester, not through a tunnel
+    const mate = await s.local('POST', '/api/team/people', { name: 'Mate', role: 'tester' });
+    const r = await s.remote('POST', '/api/team/people/automation', { key: keyOf(mate.link), body: { id: mate.people.find((p) => p.name === 'Mate').id, startRuns: false } });
+    assert.equal(r.status, 403, 'a tester cannot change it, not even for themselves');
+    assert.equal((await s.local('GET', '/api/team')).people.find((p) => p.name === 'Mate').startRuns, true);
+    const listed = JSON.stringify((await s.local('GET', '/api/team')).people);
+    assert.equal(/hash|"key"/.test(listed), false, 'still no keys in the listing');
+
+    // Kept in app.json across a restart
+    s.close();
+    const again = await start({ sheets: s.sheets });
+    try {
+      const p = (await again.local('GET', '/api/team')).people.find((x) => x.id === id);
+      assert.deepEqual([p.role, p.automationSuites, p.startRuns], ['tester', ['notif'], true]);
+    } finally { again.close(); }
   } finally { s.close(); }
 });
 
@@ -420,4 +480,48 @@ test('team helpers: invite links, keys, local requests, permissions, the Pages a
   assert.equal(pagesUrlFromRemote('git@github.com:Org/repo.git'), 'https://org.github.io/repo/test-run/');
   assert.equal(cleanUrl('https://x.example/path/'), 'https://x.example/path');
   assert.equal(cleanUrl('javascript:alert(1)'), '');
+});
+
+test('team helpers: automated suites and Start runs per person', () => {
+  assert.deepEqual([cleanSuites(), cleanSuites(''), cleanSuites('all'), cleanSuites('none'), cleanSuites([]), cleanSuites(['a', 'a', ' b ', '', 3])], ['all', 'all', 'all', 'none', 'none', ['a', 'b']]);
+  assert.deepEqual(cleanSuites('cms'), ['cms'], 'one id');
+  assert.equal(cleanSuites({ x: 1 }), 'all', 'junk reads as the default');
+  const team = normalizeTeam({ enabled: true });
+  const t = addPerson(team, { name: 'T', role: 'tester' }).person;
+  const v = addPerson(team, { name: 'V', role: 'viewer', startRuns: true }).person;
+  assert.deepEqual([t.automationSuites, t.startRuns], ['all', true], 'a tester: all suites, may start runs');
+  assert.deepEqual([v.automationSuites, v.startRuns], ['all', false], 'View only never starts runs, whatever was asked');
+  // normalize keeps them (it drops unknown keys), and fills them in for people added before they existed
+  const kept = normalizeTeam({ enabled: true, people: [{ ...t, automationSuites: ['cms'], startRuns: false, extra: 1 }, { ...v, startRuns: true }] }).people;
+  assert.deepEqual([kept[0].automationSuites, kept[0].startRuns, kept[0].extra], [['cms'], false, undefined]);
+  assert.equal(kept[1].startRuns, false, 'a viewer stored with Start runs on is read as off');
+  const { automationSuites: _a, startRuns: _s, ...older } = t;
+  const old = normalizeTeam({ enabled: true, people: [older, { ...older, role: 'viewer' }] }).people;
+  assert.deepEqual(old.map((p) => [p.automationSuites, p.startRuns]), [['all', true], ['all', false]], 'older people get the defaults');
+  assert.equal(normalizeTeam({ enabled: true, people: [{ ...t, automationSuites: 'none' }] }).people[0].automationSuites, 'none');
+  // Changing access: View only turns Start runs off; Update status gives the default back
+  const p = { ...t, startRuns: true };
+  setRole(p, 'viewer');
+  assert.deepEqual([p.role, p.startRuns], ['viewer', false]);
+  setRole(p, 'tester');
+  assert.deepEqual([p.role, p.startRuns], ['tester', true]);
+  p.startRuns = false;
+  setRole(p, 'tester');
+  assert.equal(p.startRuns, false, 'the same access again changes nothing');
+  setRole(p, 'owner');
+  assert.equal(p.role, 'tester', 'only the two roles');
+  // What the page sees
+  const pub = publicPeople({ people: [{ ...t, automationSuites: ['cms'], startRuns: false }] })[0];
+  assert.deepEqual([pub.automationSuites, pub.startRuns, 'key' in pub, 'hash' in pub], [['cms'], false, false, false]);
+  // For the automation routes
+  assert.equal(maySeeSuite({ role: 'owner', automationSuites: 'none' }, 'cms'), true, 'the owner sees every suite');
+  assert.equal(maySeeSuite({ role: 'viewer', automationSuites: 'all' }, 'cms'), true);
+  assert.equal(maySeeSuite({ role: 'tester', automationSuites: ['notif'] }, 'cms'), false);
+  assert.equal(maySeeSuite({ role: 'tester', automationSuites: 'none' }, 'cms'), false);
+  assert.equal(maySeeSuite(null, 'cms'), false);
+  assert.equal(mayStartRuns({ role: 'owner' }, 'cms'), true);
+  assert.equal(mayStartRuns({ role: 'tester', automationSuites: ['cms'], startRuns: true }, 'cms'), true);
+  assert.equal(mayStartRuns({ role: 'tester', automationSuites: ['notif'], startRuns: true }, 'cms'), false, 'only suites they see');
+  assert.equal(mayStartRuns({ role: 'tester', automationSuites: 'all', startRuns: false }, 'cms'), false);
+  assert.equal(mayStartRuns({ role: 'viewer', automationSuites: 'all', startRuns: true }, 'cms'), false, 'never View only');
 });

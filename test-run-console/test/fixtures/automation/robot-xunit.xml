@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Tests" tests="3" errors="0" failures="1" skipped="1" time="4.512" timestamp="2026-11-22T10:00:00.000">
+<testsuite name="Login" tests="3" errors="0" failures="1" skipped="1" time="4.512" timestamp="2026-11-22T10:00:00.100">
+<testcase classname="Tests.Login" name="Valid Login" time="1.204">
+<properties>
+<property name="tag" value="smoke"/>
+<property name="tag" value="CMS/11"/>
+</properties>
+</testcase>
+<testcase classname="Tests.Login" name="Invalid Password Shows Error" time="2.800">
+<failure message="Element 'id:error' did not appear in 5 seconds." type="AssertionError"/>
+</testcase>
+<testcase classname="Tests.Login" name="Locked Account" time="0.008">
+<skipped message="Skipped with Skip keyword."/>
+</testcase>
+</testsuite>
+</testsuite>

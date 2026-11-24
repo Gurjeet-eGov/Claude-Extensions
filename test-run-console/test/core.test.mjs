@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCore, plain } from '../lib/runtime.mjs';
-import { MANUAL_HEADERS, FEATURE_HEADERS, AUTOMATION_HEADERS, KPI_HEADERS } from '../dev/sample-workbook.mjs';
+import { MANUAL_HEADERS, FEATURE_HEADERS, KPI_HEADERS } from '../dev/sample-workbook.mjs';
 
 const { TRCore } = loadCore();
 const P = (fn) => (...a) => plain(fn(...a));
@@ -27,20 +27,6 @@ test('header detection: feature layout with a Linked issue column', () => {
   assert.equal(d.fields.subFeature, 3);
   assert.equal(d.fields.linkedIssue, 10);
   assert.deepEqual(d.cycles, [{ label: 'v2.20', status: 8, comment: 9 }]);
-});
-
-test('header detection: automation sign-off tab', () => {
-  const d = detect(AUTOMATION_HEADERS);
-  assert.equal(d.fields.feature, 0, 'Suite is the feature');
-  assert.equal(d.fields.subFeature, 1, 'Functionality is the sub feature');
-  assert.equal(d.fields.id, 3);
-  assert.equal(d.fields.scenario, 4);
-  assert.equal(d.fields.preCondition, 6);
-  assert.equal(d.fields.expected, 7);
-  assert.equal(d.fields.linkedIssue, 8);
-  assert.deepEqual(d.cycles, [{ label: '', status: 9, comment: 10 }]);
-  assert.equal(TRCore.detectSpecColumn(AUTOMATION_HEADERS), 2);
-  assert.deepEqual(d.extras, [2, 5], 'Test File and Test Summary stay visible as extra fields');
 });
 
 test('header detection: KPI tab has no ID and pairs Status with Notes', () => {
@@ -127,33 +113,11 @@ test('next IDs follow the sheet pattern and width', () => {
   assert.deepEqual(plain(TRCore.nextIds([])), ['TC-001']);
 });
 
-test('spec references are found in free text and file names', () => {
-  assert.deepEqual(plain(TRCore.extractSpecRefs('inbox-search.spec (by number) skipped; see complaints.spec.ts too')), ['inbox-search', 'complaints']);
-  assert.deepEqual(plain(TRCore.extractSpecRefs('api-helpers.spec.ts')), ['api-helpers']);
-  assert.deepEqual(plain(TRCore.extractSpecRefs('no specs here, specification only')), []);
-});
-
-test('automation badge aggregates results of every referenced spec', () => {
-  const rows = [
-    ['inbox-search.spec.ts', 'Pass'], ['inbox-search.spec.ts', 'NA (Skipped)'],
-    ['complaints.spec.ts', 'Pass'], ['assign.spec.ts', 'Fail'],
-  ];
-  const idx = TRCore.automationIndex(rows, 0, 1);
-  const badge = (text) => plain(TRCore.automationBadge({ automatedBy: '', comments: [text] }, idx));
-  assert.equal(badge('complaints.spec').state, 'pass');
-  assert.equal(badge('inbox-search.spec').state, 'partial');
-  assert.equal(badge('assign.spec and complaints.spec').state, 'fail');
-  assert.equal(badge('ghost.spec').state, 'unknown');
-  assert.equal(badge('nothing'), null);
-  assert.equal(plain(TRCore.automationBadge({ automatedBy: 'complaints', comments: [] }, idx)).state, 'pass');
-});
-
-test('risk tier: new in release, failed last cycle, manual, automation passing', () => {
+test('risk tier: new in release, failed last cycle, everything else', () => {
   const ctx = { release: 'v2.20.1', prevIdx: 0 };
   assert.equal(TRCore.riskTier({ release: '2.20.1', statuses: ['Pass'] }, ctx), 0);
   assert.equal(TRCore.riskTier({ release: '', statuses: ['Fail'] }, ctx), 1);
-  assert.equal(TRCore.riskTier({ release: '', statuses: ['Pass'], auto: null }, ctx), 2);
-  assert.equal(TRCore.riskTier({ release: '', statuses: ['Pass'], auto: { state: 'pass' } }, ctx), 3);
+  assert.equal(TRCore.riskTier({ release: '', statuses: ['Pass'] }, ctx), 2);
 });
 
 test('auto paths group by Feature then Sub feature; a plan keeps its order and collects leftovers', () => {
@@ -237,7 +201,7 @@ test('summary figures: counts, rates, failures, comparison, testers', () => {
     { key: '2', id: '2', scenario: 'b', group1: 'F1', statuses: ['Pass', 'Fail'], comments: ['', 'broke'], linkedIssue: '#5', testedBy: 'x@e.org' },
     { key: '3', id: '3', scenario: 'c', group1: 'F2', statuses: ['Fail', 'Pass'], comments: ['', ''] },
     { key: '4', id: '4', scenario: 'd', group1: 'F2', statuses: ['', 'NA (Skipped)'], comments: ['', ''] },
-    { key: '5', id: '5', scenario: 'e', group1: 'F2', statuses: ['', ''], comments: ['', ''], auto: { state: 'pass' } },
+    { key: '5', id: '5', scenario: 'e', group1: 'F2', statuses: ['', ''], comments: ['', ''] },
   ];
   const s = plain(TRCore.summarize(cases, { cycleIdx: 1, prevIdx: 0 }));
   assert.deepEqual(s.counts, { pass: 2, fail: 1, other: 1, none: 1, total: 5 });
@@ -247,7 +211,6 @@ test('summary figures: counts, rates, failures, comparison, testers', () => {
   assert.deepEqual(s.comparison.newlyFailing.map((x) => x.id), ['2']);
   assert.deepEqual(s.comparison.fixed.map((x) => x.id), ['3']);
   assert.deepEqual(s.groups.map((g) => [g.name, g.counts.total]), [['F1', 2], ['F2', 3]]);
-  assert.deepEqual(s.automation, { linked: 1, pass: 1, fail: 0, other: 0 });
   assert.deepEqual(s.testers, [{ name: 'x@e.org', count: 2 }]);
 });
 

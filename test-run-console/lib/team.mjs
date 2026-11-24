@@ -5,7 +5,7 @@
 // at a fixed address: Tailscale Funnel, or a Cloudflare named tunnel). Every
 // request that comes through a tunnel must carry an invite key:
 //   Authorization: Bearer <key>
-// The owner makes one invite link per person in Setup → Team. Requests are
+// The owner makes one invite link per person in Setup › Access › Users. Requests are
 // checked against a hash of each key. The key itself is kept too, in
 // sheets/.testrun/app.json on the owner's laptop (git-ignored, readable only by
 // the owner), so the owner can copy a person's link again; it never leaves the
@@ -16,12 +16,16 @@
 //            the same person elsewhere with their admin link (team.admin)
 //   tester - marks results, changes and retires cases, writes up findings
 //   viewer - follows the run and the summary (managers); changes nothing
+// Each person also has, for automated suites:
+//   automationSuites - whose automated results they see: 'all' (the default), 'none',
+//                      or a list of linked suite ids (sheets/.testrun/automation/suites.json)
+//   startRuns        - may start runs and import results (testers by default; never a viewer)
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const ROLES = ['tester', 'viewer'];
 
 /** api_* functions anyone signed in may call (they only read). */
-export const READ_FNS = new Set(['api_bootstrap', 'api_loadTab', 'api_version', 'api_listFindings', 'api_summary', 'api_listIssues', 'api_automationSummary']);
+export const READ_FNS = new Set(['api_bootstrap', 'api_loadTab', 'api_version', 'api_listFindings', 'api_summary', 'api_listIssues']);
 /** ... and those a tester may call too. */
 export const TESTER_FNS = new Set(['api_mark', 'api_addCases', 'api_editCase', 'api_updateCase', 'api_retireCase', 'api_restoreCase',
   'api_saveFinding', 'api_setFindingState', 'api_deleteFinding', 'api_writeSummaryTab', 'api_saveIssueMeta', 'api_linkBug']);
@@ -87,18 +91,70 @@ export function normalizeTeam(t = {}) {
     } : null,
     people: (Array.isArray(t.people) ? t.people : [])
       .filter((p) => p && /^[0-9a-f]{64}$/.test(String(p.hash || '')))
-      .map((p) => ({
-        id: clip(p.id, 20) || newId(),
-        name: clip(p.name, 80) || 'Teammate',
-        role: ROLES.includes(p.role) ? p.role : 'tester',
-        hash: String(p.hash),
-        // the key, so the link can be copied again (kept only if it matches the hash)
-        key: /^[\w-]{16,200}$/.test(String(p.key || '')) && hashKey(p.key) === String(p.hash) ? String(p.key) : '',
-        created: clip(p.created, 40),
-        lastSeen: clip(p.lastSeen, 40),
-        books: cleanBooks(p.books), // null: every workbook
-      })),
+      .map((p) => {
+        const role = ROLES.includes(p.role) ? p.role : 'tester';
+        return {
+          id: clip(p.id, 20) || newId(),
+          name: clip(p.name, 80) || 'Teammate',
+          role,
+          hash: String(p.hash),
+          // the key, so the link can be copied again (kept only if it matches the hash)
+          key: /^[\w-]{16,200}$/.test(String(p.key || '')) && hashKey(p.key) === String(p.hash) ? String(p.key) : '',
+          created: clip(p.created, 40),
+          lastSeen: clip(p.lastSeen, 40),
+          books: cleanBooks(p.books), // null: every workbook
+          automationSuites: cleanSuites(p.automationSuites),
+          startRuns: cleanStartRuns(role, p.startRuns),
+        };
+      }),
   };
+}
+
+/** A suite id as stored: a short string with no control characters, or ''. */
+const suiteId = (x) => (typeof x === 'string' && x.trim().length <= 100 && !/[\u0000-\u001f]/.test(x) ? x.trim() : '');
+
+/**
+ * Whose automated results a person sees: 'all' (also for nothing or ''), 'none', or a list of
+ * linked suite ids (an empty list sees none). Ids of suites unlinked since are kept here and
+ * ignored where the list is shown or used.
+ */
+export function cleanSuites(v) {
+  if (v == null || v === '' || v === 'all') return 'all';
+  if (v === 'none') return 'none';
+  if (!Array.isArray(v) && typeof v !== 'string') return 'all';
+  const ids = [...new Set((Array.isArray(v) ? v : [v]).map(suiteId).filter(Boolean))].slice(0, 50);
+  return ids.length ? ids : 'none';
+}
+
+/** May someone with this role start runs and import results? Never View only; testers unless turned off. */
+export function cleanStartRuns(role, v) {
+  if (role === 'viewer') return false;
+  return v == null ? true : v === true;
+}
+
+/**
+ * Change a person's access. View only never starts runs, so it turns Start runs off; back to
+ * Update status gives a tester's default (on).
+ */
+export function setRole(person, role) {
+  if (!ROLES.includes(role) || role === person.role) return;
+  person.role = role;
+  person.startRuns = cleanStartRuns(role, null);
+}
+
+/** May this person see this automated suite's results? The owner always. */
+export function maySeeSuite(person, id) {
+  if (!person) return false;
+  if (person.role === 'owner') return true;
+  const s = cleanSuites(person.automationSuites);
+  return s === 'all' || (Array.isArray(s) && s.includes(id));
+}
+
+/** May this person start a run of this suite, or import results for it? The owner always. */
+export function mayStartRuns(person, id) {
+  if (!person) return false;
+  if (person.role === 'owner') return true;
+  return person.role === 'tester' && cleanStartRuns(person.role, person.startRuns) && maySeeSuite(person, id);
 }
 
 /**
@@ -126,9 +182,11 @@ export function personForKey(team, key) {
 }
 
 /** Add a person; returns { person, key } (the key is shown to the owner once). */
-export function addPerson(team, { name, role, books }, now = '') {
+export function addPerson(team, { name, role, books, automationSuites, startRuns }, now = '') {
   const key = newKey();
-  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: ROLES.includes(role) ? role : 'tester', hash: hashKey(key), key, created: now, lastSeen: '', books: cleanBooks(books) };
+  const r = ROLES.includes(role) ? role : 'tester';
+  const person = { id: newId(), name: clip(name, 80) || 'Teammate', role: r, hash: hashKey(key), key, created: now, lastSeen: '', books: cleanBooks(books),
+    automationSuites: cleanSuites(automationSuites), startRuns: cleanStartRuns(r, startRuns) };
   team.people.push(person);
   return { person, key };
 }
@@ -155,7 +213,10 @@ export function publicAdmin(team) {
 
 /** What the page shows about people (never keys or hashes; canCopy: the link can be copied again). */
 export function publicPeople(team) {
-  return team.people.map(({ id, name, role, created, lastSeen, key, books }) => ({ id, name, role, created, lastSeen, canCopy: !!key, books: books || null }));
+  return team.people.map(({ id, name, role, created, lastSeen, key, books, automationSuites, startRuns }) => ({
+    id, name, role, created, lastSeen, canCopy: !!key, books: books || null,
+    automationSuites: cleanSuites(automationSuites), startRuns: cleanStartRuns(role, startRuns),
+  }));
 }
 
 /**

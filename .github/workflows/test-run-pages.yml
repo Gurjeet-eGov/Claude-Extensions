@@ -1,9 +1,14 @@
-# Publishes the Test Run console's page (test-run-console/ui) on GitHub Pages,
-# at https://<owner>.github.io/<repo>/test-run/, with the reports the host
-# published from Test Run (test-run-console/published/reports), which anyone
-# can read there, even when no Test Run is running. With an access link, the
-# page talks to the Test Run server on the host's laptop, and finds its
-# current address in the gist the server keeps.
+# Publishes the Test Run console's page (test-run-console/ui, from master) on
+# GitHub Pages, at https://<owner>.github.io/<repo>/test-run/, with the data the
+# host published from Test Run: the branch test-run-data (one commit, replaced at
+# each publish) holds reports/, which anyone can read there, even when no Test Run
+# is running, and automation/: automated results locked with age, which only
+# invited people open, in their browser, with their own invite link. Until that branch exists, the reports
+# come from master's test-run-console/published/reports, where they were before.
+# With an access link, the page talks to the Test Run server on the host's
+# laptop, and finds its current address in the gist the server keeps.
+#
+# Test Run starts this workflow after each publish (workflow_dispatch on master).
 #
 # One-time setup in your fork: Settings → Pages → Source: "GitHub Actions".
 name: Test Run page
@@ -26,6 +31,9 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  DATA_BRANCH: test-run-data # where Test Run publishes (the server's dataBranch)
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -34,13 +42,36 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}test-run/
     steps:
       - uses: actions/checkout@v4
+      - name: Look for the published data branch
+        id: data
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/$DATA_BRANCH" > /dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No $DATA_BRANCH branch yet: using test-run-console/published/reports from master."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.data.outputs.found == 'true'
+        with:
+          ref: ${{ env.DATA_BRANCH }}
+          path: _data
+          persist-credentials: false
       - name: Assemble the site
         run: |
           mkdir -p _site/test-run
           cp test-run-console/ui/index.html test-run-console/ui/summary.html test-run-console/ui/*.js test-run-console/ui/*.css _site/test-run/
-          if [ -d test-run-console/published/reports ]; then cp -R test-run-console/published/reports _site/test-run/reports; fi
+          # age for the browser: the page unlocks the locked automated results with it (only invited people can)
+          cp -R test-run-console/ui/vendor _site/test-run/vendor
+          if [ -d _data ]; then
+            if [ -d _data/reports ]; then cp -R _data/reports _site/test-run/reports; fi
+            if [ -d _data/automation ]; then cp -R _data/automation _site/test-run/automation; fi
+          elif [ -d test-run-console/published/reports ]; then
+            cp -R test-run-console/published/reports _site/test-run/reports
+          fi
           touch _site/.nojekyll
           printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=test-run/"><a href="test-run/">Test Run</a>\n' > _site/index.html
+          du -sh _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

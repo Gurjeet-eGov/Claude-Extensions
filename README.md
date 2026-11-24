@@ -7,14 +7,12 @@ Tools for everyday QA work on web apps: run manual test cycles as a team, collec
 | [**Test Run console**](test-run-console/) | A web app for manual test runs on your `.xlsx` test case workbooks. Shows what to test next, marks results with one click or one key, writes them into the workbook, and gives management a summary. One person runs it; testers and managers join with links; reports can be published for anyone to read. | Test leads, testers, managers |
 | [**Test Run Extension**](test-run-console/extension/) | A Chrome extension that works with the console: mark the case you're testing from the toolbar, with a screenshot or a screen recording as evidence. | Testers using Test Run |
 | [**Bug Reporter**](bug-reporter/) | A Chrome extension and a small local helper, on its own. Record while you test, halt on a defect, and file a GitHub issue with a screenshot, a trimmed video, the failing API calls and the project board fields; Claude writes the description. Also re-tests existing issues and tracks missing localizations. | Anyone filing bugs |
-| [**Automation**](automation/) | The catalogue of automated test suites (each kept in its own repository) and the environments they run against. Planned: run a suite from Test Run and publish its report. | Test leads, automation teams |
 
 ## Pick your path
 
 - **I only want to file bugs faster.** Install Bug Reporter: follow its **[setup guide](bug-reporter/docs/SETUP.md)** (about 10 minutes). Nothing else from this repository is needed.
 - **I run test cycles with a team.** Start the **[Test Run console](test-run-console/README.md#quick-start)** on your computer, invite your testers, and have them install **[Test Run Extension](test-run-console/extension/README.md)**. Bug Reporter can add the bugs they file straight into Test Run.
 - **I've been sent a Test Run link.** Open it in your browser; that's all you need to mark results. For screenshots and recordings, install [Test Run Extension](test-run-console/extension/README.md).
-- **I maintain automated tests.** See **[automation/](automation/README.md)** for how suites are listed and how runs will work.
 
 ## How the pieces fit
 
@@ -27,16 +25,14 @@ flowchart LR
   BR["Bug Reporter<br/>(anyone's Chrome + helper)"]
   B["Testers and managers<br/>(browser, invite link)"]
   GH["GitHub<br/>issues and boards"]
-  REPO["This repository<br/>test-run-console/published/"]
+  REPO["This repository<br/>branch test-run-data"]
   PAGES["GitHub Pages<br/>public reports"]
-  AUTO["automation/ catalogue<br/>(suites in their own repos)"]
 
   B -- "tunnel" --> TR
   TRX -- "results, screenshots, recordings" --> TR
   BR -- "files issues" --> GH
   BR -. "optional: adds the bug" .-> TR
   TR -- "Publish" --> REPO --> PAGES
-  AUTO -. "planned: run a suite, publish its report" .-> TR
 ```
 
 - **Test Run** runs on one computer, the host's. Everything it holds stays there. Teammates reach it through a tunnel (Cloudflare or Tailscale) with their own invite links.
@@ -66,10 +62,10 @@ No API keys are needed anywhere. Claude drafts use your Claude subscription thro
 **Leaves the computer:**
 - **Issues you file** with Bug Reporter go to GitHub, with the API calls you tick **unredacted** (DIGIT requests carry a live `authToken`): be careful with public repositories.
 - **Claude drafts** send a summary of the bug (plus the ticked calls in *Detailed* mode, and the screenshot if you tick it) to Claude through your Claude Code login.
-- **While Test Run is shared**, it's reachable from the internet through the tunnel. The page is public; everything else needs an invite key. If a link leaks, make that person a **New link** (or **Remove** them) in Setup › Sharing; the old link stops working at once.
+- **While Test Run is shared**, it's reachable from the internet through the tunnel. The page is public; everything else needs an invite key. If a link leaks, make that person a **New Link** (or **Remove** them) in Setup › Access › Users; the old link stops working at once.
 - **The Complete Report** zip holds every screenshot and recording. Only the host can download it.
 
-> **What's published is public.** `test-run-console/published/` in this repository, and the GitHub Pages site built from it, can be read by anyone: the published workbooks (test cases, results, comments, findings, tester names, issue links) and their reports. It stays in the repository's history even after it's unpublished. Screenshots, recordings, invite keys and settings are never published.
+> **What's published is public.** The `test-run-data` branch of this repository, and the GitHub Pages site built from it, can be read by anyone: the published workbooks (test cases, results, comments, findings, tester names, issue links) and their reports. Each publish replaces that branch with one commit, so what's unpublished leaves it, but anyone may have kept a copy. Screenshots, recordings, invite keys and settings are never published.
 
 ## What's in this repository
 
@@ -80,9 +76,8 @@ docs/
   design-alignment.md   plan to bring both extensions in line with DESIGN.md
 test-run-console/       Test Run: the console (Node app, server + web UI)
   extension/            Test Run Extension (Chrome)
-  published/            what the host published: public, served by GitHub Pages
+  published/            what the host published before the test-run-data branch (read until it exists)
 bug-reporter/           Bug Reporter: extension/ (Chrome) + host/ (local helper) + docs/
-automation/             the catalogue of automated suites and environments (no test code)
 .github/workflows/      publishes the Test Run page and reports to GitHub Pages
 ```
 
@@ -125,11 +120,10 @@ The console's browser tests (which also drive both extensions) need Playwright: 
 ## Working on this repository
 
 - **Design:** every UI follows [DESIGN.md](DESIGN.md). New screens reuse its tokens, components and writing rules.
-- **Branches:** `master` is what's live. GitHub Pages redeploys the Test Run page when `test-run-console/ui/` or the published reports change on `master`.
-- **Publishing commits:** commits titled `Test Run: publish …` are made by Test Run itself when the host publishes. Don't edit `test-run-console/published/` by hand: the next publish replaces it.
+- **Branches:** `master` is what's live. GitHub Pages redeploys the Test Run page when `test-run-console/ui/` changes on `master`, and Test Run starts it after each publish.
+- **Publishing commits:** the `test-run-data` branch is Test Run's own: each publish replaces it with one commit titled `Test Run: publish …`. Don't commit to it by hand: the next publish replaces it.
 - **Before a change:** run the tests of the product you touched.
 
 ## What's next
 
-- Run automated suites from Test Run against a chosen environment, and publish each suite's own report ([automation/](automation/README.md)).
 - Bring both extensions in line with the design guide ([docs/design-alignment.md](docs/design-alignment.md)).

@@ -57,7 +57,7 @@ The limits (720p or 1080p at 30 fps, 20 MB a file, photos up to 1920×1080) are 
 
 | What you see | What to do |
 |---|---|
-| It can't reach Test Run | Is Test Run running? Through an invite link, the host must be sharing (Setup › Sharing). On the host's computer, use `http://127.0.0.1:5178`. |
+| It can't reach Test Run | Is Test Run running? Through an invite link, the host must be sharing (Setup › Access). On the host's computer, use `http://127.0.0.1:5178`. |
 | "Your access link no longer works." | The host replaced or removed it. Ask your test lead for a new one. |
 | **Record** shows nothing to pick, or a black video | On macOS, allow Chrome under Screen Recording (see [Before you start](#before-you-start)) and restart Chrome. |
 | A result won't change | It has evidence: add a new screenshot or recording first, or remove the old files (✕). |

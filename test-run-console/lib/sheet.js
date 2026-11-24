@@ -13,7 +13,7 @@
 var TR_META = '_testrun'; // tab name used by the earlier Google Sheets version; always hidden from the console
 var TR_SUMMARY = 'Test Run Summary';
 var TR_ISSUES = 'Known issues'; // written into downloaded copies only
-var TR_ROLES = ['manual', 'automation', 'ignore'];
+var TR_ROLES = ['manual', 'ignore'];
 
 function tr_err_(code, message) {
   var e = new Error(message);
@@ -73,7 +73,13 @@ function tr_metaDelete_(kind, key) {
 // -----------------------------------------------------------------------------
 
 function tr_config_() {
-  return tr_metaGet_('config', 'global');
+  var cfg = tr_metaGet_('config', 'global');
+  // A role this version does not know (a tab saved as "automation" by an earlier one) is ignored.
+  if (cfg && cfg.tabs) Object.keys(cfg.tabs).forEach(function (n) {
+    var t = cfg.tabs[n];
+    if (t && TR_ROLES.indexOf(t.role) < 0) t.role = 'ignore';
+  });
+  return cfg;
 }
 
 function tr_topRows_(sh, n) {
@@ -89,9 +95,7 @@ function tr_detectTab_(sh, top) {
   var hr0 = TRCore.detectHeaderRow(top);
   var headers = top[hr0] || [];
   var det = TRCore.detectColumns(headers);
-  var role = 'ignore';
-  if (TRCore.detectSpecColumn(headers) >= 0 && det.cycles.length) role = 'automation';
-  else if (det.fields.scenario >= 0) role = 'manual';
+  var role = det.fields.scenario >= 0 ? 'manual' : 'ignore';
   var cycle = det.cycles.length ? det.cycles[det.cycles.length - 1].label : '';
   return {
     role: role,
@@ -199,28 +203,6 @@ function tr_statusOptions_(m, cy) {
   return TRCore.statusOptions(seen.concat(TRCore.DEFAULT_STATUSES));
 }
 
-function tr_automationIndex_(cfg, exceptTab) {
-  var index = {};
-  var ss = tr_ss_();
-  ss.getSheets().forEach(function (sh) {
-    var name = sh.getName();
-    if (name === exceptTab || name === TR_META || name === TR_SUMMARY || name === TR_ISSUES) return;
-    var tcfg = cfg && cfg.tabs && cfg.tabs[name];
-    if (tcfg && tcfg.role !== 'automation') return;
-    if (!tcfg && tr_detectTab_(sh).role !== 'automation') return;
-    var m = tr_open_(name, cfg);
-    var specCol = TRCore.detectSpecColumn(m.headers);
-    if (specCol < 0 || !m.cycles.length) return;
-    var statusCol = m.cycles[m.cycles.length - 1].status;
-    var idx = TRCore.automationIndex(m.values.slice(m.headerRow), specCol, statusCol);
-    Object.keys(idx).forEach(function (k) {
-      var e = index[k] || (index[k] = { pass: 0, fail: 0, other: 0, total: 0 });
-      e.pass += idx[k].pass; e.fail += idx[k].fail; e.other += idx[k].other; e.total += idx[k].total;
-    });
-  });
-  return index;
-}
-
 function tr_versionOf_(m) {
   return TRCore.hashRaw(JSON.stringify(m.values) + '|' + m.struck.map(function (x) { return x ? 1 : 0; }).join('') + '|' + m.issueLinks.join(' '));
 }
@@ -301,10 +283,8 @@ function tr_loadTab(tabName, cycleLabel) {
   var cases = tr_cases_(m);
   var ci = tr_findCycle_(m, cycleLabel, true);
   var pi = ci > 0 ? ci - 1 : -1;
-  var auto = tr_automationIndex_(cfg, m.tab);
   var release = m.tcfg.release || '';
   cases.forEach(function (c) {
-    c.auto = TRCore.automationBadge(c, auto);
     c.tier = TRCore.riskTier(c, { release: release, prevIdx: pi });
   });
   var plan = tr_metaGet_('paths', m.tab);
@@ -325,7 +305,6 @@ function tr_loadTab(tabName, cycleLabel) {
     cases: cases,
     paths: info.paths,
     plan: plan ? { source: 'plan', savedAt: plan.savedAt || '', savedBy: plan.savedBy || '', unknown: info.unknown, leftover: info.leftover } : { source: 'auto' },
-    hasAutomation: Object.keys(auto).length > 0,
     issueInfo: tr_issueInfo_(),
     claude: !!(cfg && cfg.claude),
     version: tr_versionOf_(m)
@@ -1440,62 +1419,6 @@ function tr_summary(tabName, cycleLabel) {
     issueInfo: data.issueInfo,
     summary: s
   };
-}
-
-/**
- * The automation results tabs (role automation): for each, the latest status column's
- * figures, the figures per test file, and the failing tests. Reads only.
- */
-function tr_automationSummary() {
-  var cfg = tr_config_();
-  var ss = tr_ss_();
-  var out = [];
-  ss.getSheets().forEach(function (sh) {
-    var name = sh.getName();
-    if (name === TR_META || name === TR_SUMMARY || name === TR_ISSUES) return;
-    var tcfg = cfg && cfg.tabs && cfg.tabs[name];
-    if ((tcfg ? tcfg.role : tr_detectTab_(sh).role) !== 'automation') return;
-    var m = tr_open_(name, cfg);
-    var cy = m.cycles[m.cycles.length - 1];
-    if (!cy) { out.push({ tab: name, cycle: '', error: 'No status column found in this tab.' }); return; }
-    var norm = m.headers.map(TRCore.normalizeHeader);
-    var col = function (re) { for (var i = 0; i < norm.length; i++) if (re.test(norm[i])) return i; return -1; };
-    var specCol = TRCore.detectSpecColumn(m.headers);
-    var testCol = col(/playwright|test case id|test name|^test$|^title$/);
-    var scenCol = col(/scenario/);
-    var groupCol = col(/^suite$|functionality|feature|module/);
-    var noteCol = cy.comment >= 0 ? cy.comment : col(/^notes?$|^comments?$/);
-    var cell = function (row, i) { return i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : ''; };
-    var counts = { pass: 0, fail: 0, other: 0, none: 0, total: 0 };
-    var files = {};
-    var order = [];
-    var failures = [];
-    m.values.slice(m.headerRow).forEach(function (row) {
-      var file = cell(row, specCol);
-      var test = cell(row, testCol) || cell(row, scenCol);
-      if (!file && !test) return;
-      var status = cell(row, cy.status);
-      var cls = TRCore.classifyStatus(status);
-      counts[cls] += 1;
-      counts.total += 1;
-      var key = file || '(no test file)';
-      if (!files[key]) { files[key] = { file: key, pass: 0, fail: 0, other: 0, none: 0, total: 0 }; order.push(key); }
-      files[key][cls] += 1;
-      files[key].total += 1;
-      if (cls === 'fail') failures.push({ file: file, test: test, group: cell(row, groupCol), note: cell(row, noteCol), status: status });
-    });
-    var ran = counts.pass + counts.fail;
-    out.push({
-      tab: name,
-      cycle: cy.label,
-      counts: counts,
-      executedPct: counts.total ? Math.round(((counts.total - counts.none) / counts.total) * 100) : null,
-      passRate: ran ? Math.round((counts.pass / ran) * 100) : null,
-      files: order.map(function (k) { return files[k]; }).sort(function (a, b) { return (b.fail - a.fail) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0); }),
-      failures: failures
-    });
-  });
-  return { ok: true, tabs: out, sheetName: ss.getName(), generatedAt: tr_now_() };
 }
 
 /** Write the summary into a visible "Test Run Summary" tab, so the published sheet carries it. */

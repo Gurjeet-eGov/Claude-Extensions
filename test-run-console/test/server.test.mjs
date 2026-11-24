@@ -83,7 +83,6 @@ for (const B of BACKENDS) {
     assert.deepEqual(boot.tabs.map((t) => [t.name, t.detected.role]), [
       ['CMS 2.20.1', 'manual'],
       ['CMS 2.20.1 Features', 'manual'],
-      ['CMS Automation', 'automation'],
       ['Dashboard KPI', 'manual'],
     ]);
     assert.equal(boot.tabs[0].detected.cycle, 'v2.12');
@@ -98,7 +97,7 @@ for (const B of BACKENDS) {
     assert.equal(ss.getSheetByName('_testrun'), null);
   });
 
-  test_('loading a tab: cases, statuses from the dropdown, automation badges, risk tiers', async () => {
+  test_('loading a tab: cases, statuses from the dropdown, paths', async () => {
     const { call } = await setup();
     const d = call('api_loadTab', TAB);
     assert.equal(d.ok, true, d.error);
@@ -106,12 +105,20 @@ for (const B of BACKENDS) {
     assert.deepEqual(d.cycles, [{ label: 'v2.12', hasComment: true }]);
     assert.deepEqual(d.statusOptions.map((o) => o.value), ['Pass', 'Fail', 'NA (Skipped)']);
     assert.equal(caseOf(d, 'CMS/02').group2, 'CSR Employee', 'blank Sub feature continues the group above');
-    assert.equal(caseOf(d, 'CMS/06').auto.state, 'partial', 'inbox-search.spec has one pass and one skip');
-    assert.equal(caseOf(d, 'CMS/03').auto, null);
-    assert.equal(d.hasAutomation, true);
     assert.equal(d.plan.source, 'auto');
     assert.ok(d.paths.length >= 5);
     assert.equal(d.paths[0].name, 'CSR Employee');
+  });
+
+  test_('a tab saved as "automation" by an earlier version loads as ignored', async () => {
+    const { store, call } = await setup();
+    const cfg = store.get('config', 'global');
+    cfg.tabs['Dashboard KPI'].role = 'automation';
+    store.put('config', 'global', cfg);
+    const boot = call('api_bootstrap');
+    assert.equal(boot.config.tabs['Dashboard KPI'].role, 'ignore');
+    assert.equal(boot.tabs.find((t) => t.name === 'Dashboard KPI').saved.role, 'ignore');
+    assert.equal(call('api_loadTab', 'Dashboard KPI').role, 'ignore');
   });
 
   test_('marking writes the exact dropdown value; compare-and-set refuses stale writes', async () => {
@@ -561,20 +568,6 @@ for (const B of BACKENDS) {
     assert.equal(call('api_version', TAB).version, v1);
     ss.getSheetByName(TAB).getRange(5, 8).setValue('Fail');
     assert.notEqual(call('api_version', TAB).version, v1);
-  });
-
-  test_('automation summary: the latest results by test file, and what is failing', async () => {
-    const { call } = await setup();
-    const r = call('api_automationSummary');
-    assert.equal(r.ok, true, r.error);
-    assert.equal(r.tabs.length, 1);
-    const t = r.tabs[0];
-    assert.equal(t.tab, 'CMS Automation');
-    assert.deepEqual(t.counts, { pass: 3, fail: 1, other: 1, none: 0, total: 5 });
-    assert.deepEqual([t.executedPct, t.passRate], [100, 75]);
-    assert.equal(t.files[0].file, 'workflow-assign.spec.ts', 'failing files first');
-    assert.deepEqual(t.files.find((f) => f.file === 'inbox-search.spec.ts'), { file: 'inbox-search.spec.ts', pass: 1, fail: 0, other: 1, none: 0, total: 2 });
-    assert.deepEqual(JSON.parse(JSON.stringify(t.failures)), [{ file: 'workflow-assign.spec.ts', test: 'Assign › GRO assigns', group: 'Employee', note: 'Assign button missing', status: 'Fail' }]);
   });
 
   test_('summary figures and the visible summary tab', async () => {

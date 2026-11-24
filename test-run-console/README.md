@@ -8,7 +8,7 @@ A small app for **manual test runs on your test case workbooks** (`.xlsx`). It s
 |---|---|
 | ![Run screen](docs/screenshots/run.png) | ![Summary page](docs/screenshots/summary.png) |
 
-**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [The screens](#the-screens) · [Sharing with your team](#sharing-with-your-team) · [Publishing the reports](#publishing-the-reports) · [Test Run Extension](#test-run-extension) · [With Bug Reporter](#with-bug-reporter) · [Automation results](#automation-results) · [Your workbooks and data](#your-workbooks-and-data) · [Running a cycle well](#running-a-cycle-well) · [Options](#options) · [Updating](#updating) · [Troubleshooting](#troubleshooting) · [Development](#development)
+**Contents:** [Quick start](#quick-start) · [How it works](#how-it-works) · [The screens](#the-screens) · [Sharing with your team](#sharing-with-your-team) · [Publishing the reports](#publishing-the-reports) · [Test Run Extension](#test-run-extension) · [With Bug Reporter](#with-bug-reporter) · [Your workbooks and data](#your-workbooks-and-data) · [Running a cycle well](#running-a-cycle-well) · [Options](#options) · [Updating](#updating) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
 ## Quick start
 
@@ -77,7 +77,6 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **Download** adds them to the workbook as a **Known issues** sheet: the issue (linked), title, priority, state, test cases and when it was added. The file in `sheets/` is not changed.
 - **Colour and symbol together.** ✓ pass, ✗ fail, – other, ○ not run, so results stay readable for colour-blind readers and on paper.
 - **Risk first.** Sections with cases that are new in this release, or failed last cycle, come first, and those cases are tagged.
-- **Automation badges.** If the workbook has the automation sign-off tab, cases whose comment names a spec (e.g. `inbox-search.spec`) show its latest result: **Auto ✓**, **Auto ✗** or **Auto ~**.
 - **Cycles.** Each cycle is a pair of columns, `Test Status` and `Comment`, as your sheets already have.
   - **Setup → Workbook → Start new cycle** adds the next pair beside the last one, with the same header style, dropdown and formatting.
   - **✎** on a cycle renames it: the name changes in both its column headers (results and comments stay), and its evidence and the current-cycle setting follow. A name without a digit is written as `Test Status / name`, so it still reads as a cycle.
@@ -102,8 +101,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
   - **+ New test case** adds a case that has no finding behind it, to the test suite you pick in the form.
   - On the left: **Open** or **Done**, and a filter by test suite.
 - **Summary.** Shows when it was updated, percent executed, pass rate, a colour strip per feature, open failures with issue links (including bugs filed as findings in that suite, not in the test cases yet), and a comparison with the previous cycle. A browser refresh stays on the screen you are on. **Download** saves the workbook (with its Known issues sheet); **Print / PDF** prints it, with a title line on paper.
-  - **Automation**, at the end of the Test suites row on Summary, is an overall summary of the automated test results: totals and pass rate, results per test file, the failing tests with their notes, and how many manual cases are linked to automation. Its **Test cycle** shows which status column the results come from (each automation tab's latest).
-- **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Sharing** (your name and the team), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
+- **Setup** has four parts, on the left: **Workbook** (each tab: what it holds, its test cycles first, then its columns, folded once saved), **Access** (your name, online access and users), **Publish** and **Media** (limits for Test Run Extension's screenshots and recordings).
   - **Save** keeps you on Setup, with a *Setup saved.* message.
   - **Delete**, next to **Cancel** and **Save** at the bottom of Setup → Workbook (the host only, here or with the admin link), removes the open workbook for everyone: the file in `sheets/` and its Test Run data (setup, findings, known issues). A pop-up says first that this cannot be undone. The daily backups in `sheets/.testrun/backups/` stay, and copies already published to GitHub stay until the next publish.
 - **Cells on several lines.** Legacy sheets often have several lines in one cell. The console reads them the way a person would:
@@ -116,50 +114,57 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 
 ## Sharing with your team
 
-Test Run runs on one laptop, yours. To share it, turn on **Share with my team** in **Setup → Sharing → Team**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
+Test Run runs on one laptop, yours. To share it, turn on **Share online** in **Setup → Access → Online access**. Other testers can then mark results at the same time, and managers can follow the run and the summary. Teammates install nothing: they open their invite link.
 
-The Team card has three parts: **Connection** (how the team reaches your laptop, with the hosted page and gist under **Link settings**), **Your admin link**, and **People**.
+**Setup → Access** has two cards:
+- **Online access:** **Online link** (how the team reaches your laptop, with the hosted page and gist under **Link settings**) and **Your admin link**.
+- **Users:** each person, what they can open and what they can do with automation.
 
 ### 1. How your team reaches your laptop
 
-Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Sharing → Team** offers two ways:
+Test Run only listens on your laptop, so a tunnel gives it an internet address. **Setup → Access → Online access** offers two ways:
 
 | | Quick tunnel | Fixed address |
 |---|---|---|
-| Setup | `brew install cloudflared`, then **Start sharing** | Once: Tailscale Funnel, or a Cloudflare named tunnel |
+| Setup | `brew install cloudflared`, then **Start Sharing** | Once: Tailscale Funnel, or a Cloudflare named tunnel |
 | Address | New on every start, e.g. `https://words.trycloudflare.com` | Always the same, e.g. `https://my-mac.tail1234.ts.net` |
 | Invite links | Last only with the hosted page and gist (below) | Always last |
 | Best for | Trying it out | A team, every day |
 
-**Quick tunnel.** `npm run share` (or **Start sharing**) opens a free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/), with no account.
+**Quick tunnel.** `npm run share` (or **Start Sharing**) opens a free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/), with no account.
 
 - If it drops (sleep, a Wi-Fi change), Test Run opens it again by itself and says so in Setup.
-- Sharing also starts again when you restart Test Run (`npm start`), until you press **Stop sharing**.
+- Sharing also starts again when you restart Test Run (`npm start`), until you press **Stop Sharing**.
 - Each start gets a new address. For invite links to survive that, you need both:
   - **Hosted page:** this console on GitHub Pages, `https://<owner>.github.io/<repo>/test-run/`. Invite links open there. It holds no data; it only talks to your laptop. To put it there, once:
     1. In the repository on GitHub: **Settings → Pages → Source: GitHub Actions**.
     2. Merge into `master`. The workflow [`.github/workflows/test-run-pages.yml`](../.github/workflows/test-run-pages.yml) publishes the console.
-    3. In **Setup → Sharing → Team**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
+    3. In **Setup → Access → Online access**, use the suggested address and press **Check**. It must say *Live*. (A `github.com/…/tree/…` address is the repository page, not GitHub Pages, and is refused.)
   - **Keep the current address in a secret gist:** Test Run writes its address to a gist with your `gh` login, and the hosted page looks it up there.
-- Until the hosted page is live, invite links name the current tunnel address. They stop working when it changes, and you make new ones (**New link**).
+- Until the hosted page is live, invite links name the current tunnel address. They stop working when it changes, and you make new ones (**New Link**).
 
 **Fixed address.** An address that never changes, so links always work and no hosted page or gist is needed.
 
 - **[Tailscale Funnel](https://tailscale.com/kb/1223/funnel)** (free, no domain needed):
   1. Install Tailscale on your Mac (`brew install --cask tailscale`, or the App Store) and sign in.
   2. Run `tailscale funnel --bg 5178`. The first time, it gives you a link to allow Funnel for your account. It keeps running after restarts.
-  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Sharing → Team → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
+  3. Your address is `https://<this-mac>.<tailnet>.ts.net` (`tailscale funnel status` shows it). In **Setup → Access → Online access → Fixed address**, enter it (Test Run offers it when Tailscale is signed in) and press **Check**.
 - **Cloudflare named tunnel** (needs a domain you manage in Cloudflare):
   1. `cloudflared tunnel login`
   2. `cloudflared tunnel create test-run`
   3. `cloudflared tunnel route dns test-run testrun.your-domain.org`
-  4. In **Setup → Sharing → Team**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start tunnel**. Test Run runs it while sharing and starts it again if it drops.
+  4. In **Setup → Access → Online access**, enter `https://testrun.your-domain.org` as the fixed address and `test-run` as the tunnel name, then **Start Tunnel**. Test Run runs it while sharing and starts it again if it drops.
 
 **Check** fetches the address and confirms it reaches this Test Run (not another laptop's).
 
 ### 2. Invite people
 
-In **Setup → Sharing → Team → People**, add each person, choose their **Access** (it starts blank, on *Select access*) and the **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused. Change either one at any time in their row.
+In **Setup → Access → Users**, type each person's name and choose their **Access** (it starts blank, on *Select access*), then **+ Add and Make a Link**. Then, in their row, at any time:
+- **Workbooks** they can open: **All workbooks** (the default) or one of them. Someone given one workbook sees only that one in Test Run, its downloads, Bug Reporter and Test Run Extension; the others are refused.
+- **Automated suites:** whose automated results they see: **All suites** (the default), one linked suite, or **None**. Still only for workbooks they can open.
+- **Start runs:** whether they may start automated runs and import results for those suites. On by default for Update status; View only never can (it shows –).
+
+Under each row's name: when they were last seen.
 
 | Access | Who | What they can do |
 |---|---|---|
@@ -167,10 +172,10 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 | View only | managers | Run, Known issues and Summary, read-only. |
 
 - Each person gets their own invite link. Send it to them privately.
-- **Add and make a link**, **Copy link** and **New link** put the link on your clipboard (a message confirms it). Paste it to the person.
-- **Copy link** gives you the same link again if they lose it, with the current address. **New link** replaces it; the old one stops working. (People added before Copy link existed need one **New link** first.)
+- **+ Add and Make a Link**, **Copy Link** and **New Link** put the link on your clipboard (a message confirms it). Paste it to the person.
+- **Copy Link** gives you the same link again if they lose it, with the current address. **New Link** replaces it; the old one stops working. (People added before Copy Link existed need one **New Link** first.)
 - Opening the link signs them in. Their browser keeps it, so they bookmark the page.
-- **Remove** someone, or make them a **New link**: the old link stops working at once.
+- **Remove** someone, or make them a **New Link**: the old link stops working at once.
 - Setup, cycles, workbooks and the team stay with you, at the laptop.
 
 **While sharing:** your laptop must stay on and awake, and Test Run running. Everyone works on the same workbook. Marks are saved one at a time, and a mark that collides with someone else's is refused, with what they marked. Each page picks up others' changes every 10 seconds.
@@ -183,10 +188,10 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 
 ### 3. Your admin link
 
-**Setup → Sharing → Team → Your admin link** gives you, the host, everything the laptop can do (testing, Setup, Sharing, Import, Publish) from another computer or network, through the same address as your team, while the laptop runs Test Run.
+**Setup → Access → Online access → Your admin link** gives you, the host, everything the laptop can do (testing, Setup, Access, Import, Publish) from another computer or network, through the same address as your team, while the laptop runs Test Run.
 
-- **Make my admin link** copies it; open it on the other computer. Bug Reporter takes it like any invite link.
-- It works like a password: keep it to yourself. **New admin link** replaces it; **Remove** turns it off.
+- **Make My Admin Link** copies it; open it on the other computer. Bug Reporter takes it like any invite link.
+- It works like a password: keep it to yourself. **New Link** replaces it; **Remove** turns it off.
 - From the other computer, stopping sharing or changing the way in cuts that browser off, so Test Run asks first.
 - Laptop paths (the sheets folder) and the export files on disk stay on the laptop.
 
@@ -194,29 +199,42 @@ In **Setup → Sharing → Team → People**, add each person, choose their **Ac
 
 The host can publish the reports to the GitHub repository, so they can be read on the GitHub Pages site by anyone, even when no Test Run is running, and so someone else can carry on from a clone.
 
-> **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site. It stays in the repository's history even if you stop publishing it. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
+> **Published workbooks are public.** This repository is public: anyone can read what you publish (test cases, results, comments, findings, tester names and issue links) on GitHub and on the Pages site, and anyone may keep a copy. Each publish replaces the last one, so what you take off leaves the repository, though GitHub can keep old versions reachable by their link for a while. Invite keys and team settings (`sheets/.testrun/app.json`), backups and exports are never published.
 
 **Setup → Publish** (the host only; testers and viewers cannot publish):
-- **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site (the commit removes them; earlier versions stay in the history).
+- **Workbooks to publish:** tick the ones that may go out. With none ticked, publishing takes every published report off the site.
+- **Space on GitHub Pages:** how much of the site's 1 GB a publish takes, for example *5.2 MB of 1 GB · workbooks 4.6 MB · reports 0.6 MB* (workbooks are the download copies on the site). It warns above 800 MB: untick workbooks nobody needs there any more.
 - **When:** every day at **17:00** (change the time there) while Test Run runs. It starts after your first publish. **Publish** on Summary publishes too. Stopping Test Run (Ctrl+C) does not publish.
 - **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
-- **What a publish is:** one commit on the default branch, made through your `gh` login, in `test-run-console/published/`:
+- **What a publish is:** the branch `test-run-data`, replaced by **one commit with no history**, made through your `gh` login. At its root:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
-  - `reports/`: the summary of every test suite and cycle, and the automation summary, which the Pages site shows.
+  - `reports/`: the summary of every test suite and cycle, and a download copy of each workbook, which the Pages site shows.
+- So the repository does not grow with every publish, a workbook you untick really leaves the branch (and so GitHub's copy, once GitHub cleans up), and the code history on `master` stays clean.
+- Then Test Run starts the **Test Run page** workflow, which builds the Pages site from `master` (the page) and `test-run-data` (the data). If GitHub refuses to start it, the publish still counts, and Setup → Publish says so: publish again, or run the workflow from the repository's Actions tab.
 - Your local checkout is not touched (the commit is made on GitHub directly), and nothing is committed when nothing changed.
 - Teammates' results are already saved on the host's laptop, so there is one copy, and that is what is published.
-- If someone else published after you last published or got the data, Test Run says so and does not overwrite theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
+- If someone else published after you last published or got the data (or publishes while you are publishing), Test Run says so and does not replace theirs unless you choose to. **Get it** brings theirs in (a copy of what you had is kept in `sheets/.testrun/backups/`).
+- **Before `test-run-data` existed**, publishing went to `test-run-console/published/` on `master`. Until the first publish creates the branch, **Get it** and the Pages site read that folder; the first publish then creates the branch. The old folder is left as it was.
+- **What the `gh` login needs** (the `repo` scope that `gh auth login` gives covers it): to write to this repository (create and force-move `test-run-data`) and to start its workflows. A ruleset or branch protection that blocks force pushes or branch creation on `test-run-data` stops publishing.
 
-**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite (or **Automation**) and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
+**The Pages site** (`https://<owner>.github.io/<repo>/test-run/`) shows the published reports to everyone: pick the workbook (top right), the test suite and the cycle; **Download** gets that workbook as published, and **Print / PDF** prints the report. A card at the top takes an access link (**Sign in**), which opens the live Test Run. When someone's Test Run is offline, they see the published reports with a note. With nothing published, the summary shows – in its figures and *No data available* in its tables. **Preview here** in Setup → Publish shows the same from your laptop.
 
 ### Carrying on from a clone (hand over)
 
 1. The current host publishes (or it happens at 17:00).
-2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`.
-3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied into `sheets/`.
-4. They turn on **Setup → Sharing** and add people (invite links belong to each host's laptop), and publish from then on.
+2. The next host clones the repository, then `cd test-run-console`, `npm install` and `npm start`. A clone brings `test-run-data` along (as `origin/test-run-data`); in an older clone, `git fetch` first.
+3. With no workbooks yet, Test Run offers **Start from the published data**: the published workbooks and their sidecar files are copied from the clone's `test-run-data` into `sheets/` (from `test-run-console/published/` in a clone made before that branch existed).
+4. They turn on **Share online** in **Setup → Access** and add people (invite links belong to each host's laptop), and publish from then on.
 
 One host at a time: if two hosts work at once, the second to publish is warned before replacing the first one's copy.
+
+## Automation
+
+The **Automation** screen keeps the results of automated suites, whatever the framework, next to the manual runs. A suite runs in its own repository's **GitHub Actions**; Test Run starts it (**▶ Run**, with the workflow's own options), follows it, and brings in its results file (JUnit XML or CTRF JSON, uploaded as an artifact) by itself when it ends. Runs done elsewhere come in with **⤒ Import Results** (a file, or a GitHub run). Every run is attached to a workbook › test suite › test cycle, and the host sets how many are kept in **Setup → Automation**.
+
+Test Run talks to GitHub with the host's own `gh` login (`gh auth login`), through one client (`lib/github.mjs`) that only uses GitHub's REST API, so a token can replace `gh` later.
+
+**Making a suite Test Run-ready and linking it:** [docs/automation.md](docs/automation.md), with copy-paste snippets for Playwright, Cypress, Jest, pytest, Maven/JUnit, TestNG, Robot Framework, Karate, Newman and Go.
 
 ## Test Run Extension
 
@@ -273,17 +291,9 @@ When Test Run is reachable, Bug Reporter's **Report Issue** form has a Test Run 
 
 Bug Reporter is a separate product with its own setup: see [its README](../bug-reporter/README.md).
 
-## Automation results
-
-Automated test results come in through the workbook today: set a tab to **Automation results** in Setup › Workbook (it needs a spec-file column and a status column per cycle; the sample workbook from `npm run demo` has one).
-- **Summary › Automation** shows the totals, results per test file and the failing tests.
-- Manual cases whose comment or *Automated by* column names a spec (e.g. `inbox-search.spec`) show its latest result in Run: **Auto ✓**, **Auto ✗** or **Auto ~**.
-
-Running automated suites from Test Run against a chosen environment, and publishing their own reports, is planned: see [automation/](../automation/README.md).
-
 ## Your workbooks and data
 
-- **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy in `test-run-console/published/`). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
+- **Where they live:** `sheets/*.xlsx`, never committed (only what you publish goes to GitHub, as a copy on the `test-run-data` branch). Settings and findings for a workbook are kept beside it in `sheets/.testrun/<workbook>.json`, so the workbook itself only holds test data. Your name and the team are in `sheets/.testrun/app.json`.
 - **What changes in the workbook:**
   - the status, comment and issue cells you mark (the first issue link adds a *Linked issue* column if the tab has none);
   - case text you edit, and the strikethrough on cases you deprecate or mark as duplicates;
@@ -312,7 +322,7 @@ What leaves the computer: GitHub issue lookups and the gist (through your `gh` l
 
 1. **Setup:** start the cycle (e.g. `v2.20.1`). If you tag cases by release, set the release in scope. Sharing? Start sharing and send the invite links.
 2. **Work path by path.** Stay on one login and reuse the same complaint while it moves through its states.
-3. **Take the Focus order:** new in this release first, then what failed last time. Glance at or skip **Auto ✓** cases.
+3. **Take the Focus order:** new in this release first, then what failed last time.
 4. **A failure:** paste the issue link with the result. Filing it with Bug Reporter? Tick *Also add this to Test Run* and pick the test case: it is marked failed with the link for you.
 5. **Unplanned failure:** file it with Bug Reporter with no test case picked (it becomes a finding), or note a finding by hand.
 6. **End of day:**
@@ -330,6 +340,7 @@ What leaves the computer: GitHub issue lookups and the gist (through your `gh` l
 | `--share` | | Start sharing straight away (`npm run share`). |
 | `--demo` | | Use a throwaway copy of the sample workbook (`npm run demo`). |
 | | `TEST_RUN_GH` | Use another `gh` (development: `dev/fake-gh.cjs`, so nothing is published for real). |
+| `--fake-github` | | Automation talks to a pretend GitHub (`dev/fake-github.mjs`) with one suite repository, `demo-org/cms-automation`, whose runs take about 20 seconds (development and demos). |
 
 ## Updating
 
@@ -350,7 +361,7 @@ Then stop Test Run (Ctrl+C) and start it again. Testers reload Test Run Extensio
 | "This workbook is open in Excel." | Close it in Excel; results can't be saved while Excel has it. |
 | Known issues have no titles or states | Sign in to `gh` (`gh auth login`) on the host's computer, then **Refresh from GitHub**. |
 | Invite links stopped working after a restart | With a quick tunnel the address changes. Set up the hosted page and gist, or a fixed address: see [Sharing with your team](#sharing-with-your-team). |
-| An invite link was shared by mistake | In Setup › Sharing › Team, **New link** for that person (the old one stops working at once), or **Remove** them. |
+| An invite link was shared by mistake | In Setup › Access › Users, **New Link** for that person (the old one stops working at once), or **Remove** them. |
 | Publishing fails | Publishing commits to the repository in this clone's `origin`, through `gh`. You need push rights there, or publish from your own fork. |
 | Test Run Extension can't reach Test Run | Is Test Run running? On the host's computer the extension uses `http://127.0.0.1:5178`; through an invite link, the host must be sharing. |
 
@@ -368,13 +379,13 @@ lib/
   team.mjs       invite keys, roles, local vs tunnelled requests, invite links
   share.mjs      the Cloudflare tunnel (quick or named), and the gist that keeps its address
   issues.mjs     GitHub issue titles, states and priorities, through gh
-  publish.mjs    publishing to the repository: one commit through gh (Git Data API)
+  publish.mjs    publishing to the repository: the test-run-data branch replaced by one commit through gh api (Git Data API), then the Pages workflow started
   evidence.mjs   Test Run Extension's evidence (kept on the laptop), the media limits, the Complete Report zip
   prompts.js     prompts from the Claude drafting there was (off for now; kept for later)
   runtime.mjs    loads the logic for the server and the tests
 ui/            the console and summary pages (also what GitHub Pages serves)
 extension/     Test Run Extension (Chrome, Manifest V3, no build step): see extension/README.md
-published/     what the host published (workbooks, sidecar files, reports); written by publishing, not by hand
+published/     what the host published before the test-run-data branch (workbooks, sidecar files, reports); read until that branch exists, no longer written
 dev/           in-memory sheet API, sample workbook (made-up cases), fake cloudflared and gh (fake-gh.cjs: a small fake GitHub)
 test/          unit tests, HTTP and team tests, and browser tests (console; Test Run Extension; Bug Reporter + Test Run)
 skill/, prompts/  parked with Claude drafting, which is switched off: kept for when it comes back

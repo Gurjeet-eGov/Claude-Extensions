@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites id="" name="" tests="5" failures="2" skipped="1" errors="0" time="61.234">
+<testsuite name="pgr/assign.spec.ts" timestamp="2026-11-24T04:53:00.000Z" hostname="chromium" tests="2" failures="1" skipped="0" time="42.3" errors="0">
+<testcase name="Complaint lifecycle › GRO assigns the complaint to an LME @CMS/02 @area:pgr" classname="pgr/assign.spec.ts" time="30">
+<failure message="assign.spec.ts:18:5 GRO assigns the complaint to an LME" type="FAILURE">
+<![CDATA[  [chromium] › pgr/assign.spec.ts:18:5 › Complaint lifecycle › GRO assigns the complaint to an LME @CMS/02 @area:pgr
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Assign' })
+
+      16 |   await page.goto('/inbox');
+    > 18 |   await page.getByRole('button', { name: 'Assign' }).click();
+         |                                                      ^
+      19 | });
+
+        at AssignPage.assign (/work/tests/pages/assign.page.ts:41:22)
+        at /work/tests/pgr/assign.spec.ts:18:5
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/pgr-assign-chromium/trace.zip]]
+[[ATTACHMENT|test-results/pgr-assign-chromium/test-failed-1.png]]
+]]>
+</system-out>
+</testcase>
+<testcase name="Complaint lifecycle › citizen files a complaint with a photo @CMS/01" classname="pgr/assign.spec.ts" time="12.3">
+<properties>
+<property name="tag" value="@smoke"/>
+</properties>
+</testcase>
+</testsuite>
+<testsuite name="api/search.spec.ts" timestamp="2026-11-24T04:53:02.000Z" hostname="chromium" tests="3" failures="1" skipped="1" time="18.9" errors="0">
+<testcase name="search by mobile number @api" classname="api/search.spec.ts" time="1.2">
+<failure message="search.spec.ts:9:3 search by mobile number" type="FAILURE">
+<![CDATA[  [chromium] › api/search.spec.ts:9:3 › search by mobile number @api
+
+    Error: Request failed with status 500: POST /pgr-services/v2/request/_search
+    auth-token: 1c2f3e4d-aaaa-bbbb-cccc-1234567890ab
+    Authorization: Bearer abc.def.ghi-1234567890
+
+        at ApiClient.post (/work/tests/utils/api.ts:63:11)
+]]>
+</failure>
+</testcase>
+<testcase name="search by locality @api" classname="api/search.spec.ts" time="0.8"/>
+<testcase name="search by date range" classname="api/search.spec.ts" time="0">
+<skipped/>
+</testcase>
+</testsuite>
+</testsuites>

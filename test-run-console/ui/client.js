@@ -11,6 +11,7 @@
     { id: 'issues', label: 'Known issues' },
     { id: 'findings', label: 'Findings' },
     { id: 'summary', label: 'Summary' },
+    { id: 'automation', label: 'Automation' },
     { id: 'setup', label: 'Setup', owner: true }
   ];
 
@@ -49,12 +50,33 @@
     issuesDue: true, // opening Known issues gets the latest from GitHub once
     ddOpen: null, // the dropdown that is open (its bind), and what is typed in its search box
     ddQ: '',
-    teamLink: null, // { name, link } just made in Setup → Team, shown once
-    team: null, // Setup → Team, for the owner
+    teamLink: null, // { name, link } just made in Setup › Access, shown once
+    team: null, // Setup › Access, for the owner
     summary: null,
     setup: null,
     writes: 0,
-    selfDirty: false
+    selfDirty: false,
+    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'link'),
+    // the open run (?run=<id> in the address) and what the run view shows
+    auto: {
+      data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false,
+      detail: null, detailLoading: false, filter: 'failed', q: '', sel: '', open: {}, allFiles: false, moving: false,
+      file: null, busy: false, targets: {}, targetsLoading: {},
+      // GitHub Actions: the runs going (and lately finished) from /api/automation/jobs, the one the
+      // Running view shows ('running'), the Run form's branches ('start'), Link a suite's GitHub steps,
+      // and Import results › GitHub run
+      jobs: null, jobsBusy: false, jobsTimer: null, jobId: '', runForm: null, starting: false,
+      gh: { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null },
+      ghRuns: null, ghRunsFor: '', ghRunsLoading: false, setupGh: null, setupGhLoading: false
+    },
+    // Summary › Manual | Automated (kept for this browser session), and the automated results attached to
+    // the open workbook › test suite › cycle (/api/automation/cycle: the Automated view and Run's Auto badges)
+    sumView: readSumView(),
+    autoCycle: null, // { key: book\ntab\ncycle, data }
+    sumOpen: { 0: true }, // which top failure causes are open
+    // The published site's locked automated results: automation/index.json, each workbook unlocked with
+    // this browser's invite key ({ slug: { token, state, opened: [{ id, identity, meta }] } }), the run open
+    pubAuto: { index: undefined, indexLoading: false, unlock: {}, run: null, runLoading: false }
   };
 
   // ---------------------------------------------------------------------------
@@ -231,6 +253,9 @@
         if (!a.ok) { S.loading = false; S.fatal = a.error; render(); return; }
         S.app = a;
         S.readOnly = a.me && a.me.role === 'viewer';
+        // Who this key is: the published site says "Unlocked for <name>" with it (it keeps the key's last 4 characters to match it)
+        var tk = TR.inviteKey();
+        if (tk && a.me && !a.me.local && a.me.name) TR.store.set('who', JSON.stringify({ k: tk.slice(-4), name: a.me.name }));
         var names = a.books.map(function (b) { return b.name; });
         // The workbook this browser had open last (each person keeps their own), else the owner's.
         var mine = TR.store.get('book');
@@ -361,9 +386,11 @@
     if (!S.app || !S.boot || S.connect || S.reportsMode) return;
     try {
       var u = new URL(window.location.href);
+      var run = S.view === 'automation' && S.auto.screen === 'run' ? S.auto.runId : ''; // the run open in Automation
       if (!PARAMS.case && u.searchParams.has('case')) u.searchParams.delete('case'); // opened on it once; a refresh need not jump back
-      else if (u.searchParams.get('view') === S.view) return;
+      else if (u.searchParams.get('view') === S.view && (u.searchParams.get('run') || '') === run) return;
       u.searchParams.set('view', S.view);
+      if (run) u.searchParams.set('run', run); else u.searchParams.delete('run');
       window.history.replaceState(null, '', u.pathname + u.search + u.hash);
     } catch (e) { /* keep the address as it is */ }
   }
@@ -371,7 +398,7 @@
   /** Test Run Extension follows what this person has open: workbook, suite, cycle and case. */
   var selSent = '';
   function shareSelection() {
-    if (!S.app || S.connect || S.reportsMode || !S.model || S.model.tab !== S.tab || S.autoMode) return;
+    if (!S.app || S.connect || S.reportsMode || !S.model || S.model.tab !== S.tab) return;
     var v = { book: book() || '', tab: S.tab || '', cycle: cycleLabel(), caseKey: S.selected || '' };
     var sig = JSON.stringify(v);
     if (sig === selSent) return;
@@ -410,10 +437,13 @@
       });
     }
     h += userMenu() + '</div>';
+    if (S.app && S.auto.jobs === null && !S.auto.jobsBusy) auJobsLoad(); // runs going in GitHub Actions: the count on Automation
     h += '<nav class="nav" aria-label="Screens">' + VIEWS.filter(function (v) { return !v.owner || isOwner(); }).map(function (v) {
       var n = v.id === 'findings' ? S.findings.filter(function (f) { return f.state === 'open'; }).length
-        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length : 0;
-      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count">' + n + '</span>' : '') + '</button>';
+        : v.id === 'issues' && S.issues && S.issues.issues ? S.issues.issues.filter(function (e) { return e.state !== 'closed'; }).length
+          : v.id === 'automation' ? auActiveJobs().length : 0;
+      var tip = v.id === 'automation' && n ? ' title="' + (n === 1 ? 'A run is going' : n + ' runs are going') + ' in GitHub Actions"' : '';
+      return '<button data-action="view" data-view="' + v.id + '"' + (S.view === v.id ? ' aria-current="page"' : '') + '>' + v.label + (n ? ' <span class="count"' + tip + '>' + n + '</span>' : '') + '</button>';
     }).join('') + '</nav>';
     return h + contextBar() + '</header>';
   }
@@ -442,19 +472,11 @@
     if (!tabs.length) return '';
     var m = S.model;
     var h = '<div class="context"><div class="context-row">';
-    var hasAuto = S.view === 'summary' && S.boot.tabs.some(function (t) { return roleOf(t) === 'automation'; }); // automation is a summary, not something to run
     h += '<span class="ctx-label" id="tabsLabel">Test suites</span><div class="ctx-tabs" role="tablist" aria-labelledby="tabsLabel">' + tabs.map(function (t) {
-      var on = t.name === S.tab && !S.autoMode;
+      var on = t.name === S.tab;
       return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="pick-tab" data-tab="' + esc(t.name) + '" title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</button>';
     }).join('') +
-      (hasAuto ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (S.autoMode ? ' on' : '') + '" role="tab" aria-selected="' + !!S.autoMode + '" data-action="pick-auto" title="Overall summary of the automated test results in this workbook">Automation</button>' : '') +
       '</div><span class="grow"></span>';
-    if (S.autoMode) {
-      var a = autoTotals();
-      if (S.autoSummary && S.autoSummary.book === book()) h += autoCycleSwitch(S.autoSummary);
-      h += '</div>' + (a ? '<div class="progress-wrap">' + TR.bar(a) + TR.legend(a) + '<span class="small muted"><b>' + a.total + '</b> automated tests</span></div>' : '');
-      return h + '</div>';
-    }
     if (m && m.cycles.length) {
       h += dropdown({
         bind: 'top:cycle', id: 'cyclePick', cls: 'top-dd cycle-dd', change: 'cycle', value: String(m.cycleIdx), prefix: '<span class="dd-prefix">Test cycle</span>',
@@ -507,7 +529,7 @@
     return null;
   }
 
-  /** What the reports view shows now: the workbook, its report, the suite (or Automation) and cycle. */
+  /** What the reports view shows now: the workbook, its report, the suite and cycle. */
   function reportPick() {
     var idx = S.reports && S.reports.index;
     if (!idx) return null;
@@ -517,20 +539,11 @@
     var out = { idx: idx, w: w, d: d };
     if (!d || d.error) return out;
     out.suites = d.suites || [];
-    out.auto = !!(val('rAuto', false) && d.automation);
     var sname = val('rSuite:' + w.slug, '');
     out.suite = out.suites.filter(function (x) { return x.tab === sname; })[0] || out.suites[0] || null;
     out.cyc = out.suite ? val('rCycle:' + w.slug + ':' + out.suite.tab, out.suite.current) : '';
     out.sum = out.suite ? (out.suite.summaries[out.cyc] || out.suite.summaries[out.suite.current]) : null;
     return out;
-  }
-
-  /** The Test cycle of Automation: results are read from each automation tab's latest status column. */
-  function autoCycleSwitch(r) {
-    var acyc = [];
-    (r && r.tabs || []).forEach(function (t) { if (t.error) return; var l = t.cycle ? 'Cycle ' + t.cycle : 'Latest results'; if (acyc.indexOf(l) < 0) acyc.push(l); });
-    if (!acyc.length) return '';
-    return dropdown({ bind: 'top:autoCycle', id: 'autoCycle', cls: 'top-dd cycle-dd', value: val('top:autoCycle', acyc[0]), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'The latest status column of the automation results', options: acyc });
   }
 
   /** The top bar of the reports view: like every screen, with the workbook picker top right. */
@@ -545,22 +558,19 @@
       });
     }
     h += '</div>';
-    if (pk && pk.d && !pk.d.error && (pk.suites.length || pk.d.automation)) {
+    if (pk && pk.d && !pk.d.error && pk.suites.length) {
       h += '<div class="context"><div class="context-row"><span class="ctx-label">Test suites</span><div class="ctx-tabs" role="tablist">' +
-        pk.suites.map(function (x) { var on = !pk.auto && pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '" title="' + esc(x.tab) + '">' + esc(TR.tabLabel(x.tab)) + '</button>'; }).join('') +
-        (pk.d.automation ? '<span class="ctx-sep" aria-hidden="true"></span><button class="ctx-tab auto' + (pk.auto ? ' on' : '') + '" role="tab" aria-selected="' + pk.auto + '" data-action="r-auto">Automation</button>' : '') +
+        pk.suites.map(function (x) { var on = pk.suite && x.tab === pk.suite.tab; return '<button class="ctx-tab' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '" data-action="r-suite" data-tab="' + esc(x.tab) + '" title="' + esc(x.tab) + '">' + esc(TR.tabLabel(x.tab)) + '</button>'; }).join('') +
         '</div><span class="grow"></span>';
-      if (!pk.auto && pk.suite && pk.suite.cycles.length) {
+      if (pk.suite && pk.suite.cycles.length) {
         h += dropdown({ bind: 'top:rCycle', id: 'rCycle', cls: 'top-dd cycle-dd', change: 'r-cycle', value: pk.cyc, prefix: '<span class="dd-prefix">Test cycle</span>',
           options: pk.suite.cycles.map(function (cl) { return { value: cl, label: cl ? 'Cycle ' + cl : 'Status' }; }) });
-      } else if (pk.auto) {
-        h += autoCycleSwitch(pk.d.automation);
       }
       h += '</div>';
-      var c = pk.auto ? autoTotals(pk.d.automation) : pk.sum ? pk.sum.summary.counts : null;
+      var c = pk.sum ? pk.sum.summary.counts : null;
       if (c && c.total) {
         var done = Math.round(((c.total - c.none) / c.total) * 100);
-        h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) + '<span class="small muted"><b>' + (pk.auto ? c.total + '</b> automated tests' : done + '%</b> done') + '</span></div>';
+        h += '<div class="progress-wrap">' + TR.bar(c) + TR.legend(c) + '<span class="small muted"><b>' + done + '%</b> done</span></div>';
       }
       h += '</div>';
     }
@@ -598,15 +608,163 @@
     if (!pk) return h + '<div class="section">' + emptyReport() + '</div>';
     if (!pk.d) return h + '<div class="loading section">Loading ' + esc(pk.w.title) + '…</div>';
     if (pk.d.error) return h + '<div class="banner bad section">' + esc(pk.d.error) + '</div>';
+    // Manual | Automated: Manual is public; Automated opens with the visitor's invite link
+    var aIdx = pubAutoIndex();
+    var hasAuto = !!(pk.suite && aIdx && pubRunsFor(pk.w.slug).length);
+    var sw = sumSwitch(hasAuto, aIdx === undefined ? 'Looking for automated results…' : 'No automated results are published for ' + pk.w.title + ' yet');
+    if (hasAuto && S.sumView === 'automated') return h + '<div class="section">' + pubAutoView(pk, sw) + '</div>';
     // The suite and cycle are picked above, so no title here; on paper, one line says what it is.
     var published = 'published ' + pk.idx.publishedAt + (pk.idx.by ? ' by ' + pk.idx.by : '');
-    var tools = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(pk.idx.publishedAt) + '</span><span class="grow"></span>' + (pk.w.xlsx ? '<a class="btn" href="reports/' + encodeURIComponent(pk.w.slug) + '.xlsx" download="' + esc(pk.w.title) + '.xlsx" title="The workbook as published, with a Known issues sheet">Download</a>' : '') +
-      '<button data-action="print">Print / PDF</button></div>';
-    if (pk.auto) return h + '<div class="section">' + tools + '<div class="print-only print-title">' + esc(pk.w.title) + ' · Automation · ' + esc(published) + '</div>' + automationHtml(pk.d.automation, { live: false, bare: true }) + '</div>';
+    var tools = '<div class="report-tools no-print">' + sw + '<span class="updated grow">Updated on: ' + esc(pk.idx.publishedAt) + '</span>' + (pk.w.xlsx ? '<a class="btn" href="reports/' + encodeURIComponent(pk.w.slug) + '.xlsx" download="' + esc(pk.w.title) + '.xlsx" title="The workbook as published, with a Known issues sheet"><span aria-hidden="true">⤓</span> Download</a>' : '') +
+      '<button data-action="print">Print / PDF</button></div>' + (aIdx && pk.suite && !hasAuto ? SUM_NOTE : '');
     if (!pk.suite) return h + '<div class="empty card section"><p>This workbook has no test suites.</p></div>';
     if (!pk.sum) return h + '<div class="empty card section"><p>No summary for this cycle.</p></div>';
     var sum = pk.sum;
     return h + '<div class="section">' + tools + '<div class="print-only print-title">' + esc(pk.w.title) + ' · ' + esc(sum.tab) + ' · cycle ' + esc(sum.cycle || '–') + ' · ' + esc(published) + '</div>' + TR.summaryHtml(sum) + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Published site › Automated: the locked automated results (lib/automation/seal.mjs). This
+  // browser's invite key gives the visitor's age identity (ui/vendor/age.js, loaded only here); it
+  // opens each run's key.age it is a recipient of, then that run's summary (meta.age) and, when
+  // opened, its results (run.age). Nothing leaves the browser.
+  // ---------------------------------------------------------------------------
+
+  /** automation/index.json (per run: id, workbook slug, when, size), or undefined while it's read. */
+  function pubAutoIndex() {
+    var P = S.pubAuto;
+    if (P.index !== undefined || P.indexLoading) return P.index;
+    P.indexLoading = true;
+    fetch('automation/index.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (j) { P.indexLoading = false; P.index = j && Array.isArray(j.runs) ? j : { runs: [] }; render(); });
+    return undefined;
+  }
+  function pubRunsFor(slug) { var i = S.pubAuto.index; return i ? i.runs.filter(function (r) { return r.book === slug; }) : []; }
+
+  var agePromise = null;
+  function loadAge() {
+    if (!agePromise) agePromise = import('./vendor/age.js').catch(function (e) { agePromise = null; throw e; });
+    return agePromise;
+  }
+  function fetchBytes(path) {
+    return fetch(path, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('Not published: ' + path);
+      return r.arrayBuffer();
+    }).then(function (b) { return new Uint8Array(b); });
+  }
+  function textOf(bytes) { return new TextDecoder().decode(bytes); }
+  function gunzipText(bytes) {
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  }
+
+  /** Open a workbook's published runs with this browser's invite key: each run's key, then its summary. */
+  function pubUnlock(slug, token) {
+    var u = S.pubAuto.unlock[slug] = { token: token, state: 'unlocking', opened: [] };
+    loadAge().then(function (age) {
+      var me = age.identityFromKey(token);
+      return Promise.all(pubRunsFor(slug).map(function (x) {
+        var base = 'automation/' + encodeURIComponent(x.id) + '/';
+        return fetchBytes(base + 'key.age').then(function (k) { return age.open(k, me); }).then(function (key) {
+          if (!key) return null; // not one of this run's recipients
+          var identity = textOf(key);
+          return fetchBytes(base + 'meta.age').then(function (m) { return age.open(m, identity); }).then(function (plain) {
+            return plain ? { id: x.id, identity: identity, meta: JSON.parse(textOf(plain)) } : null;
+          });
+        }).catch(function () { return null; });
+      }));
+    }).then(function (list) {
+      if (S.pubAuto.unlock[slug] !== u) return;
+      u.opened = list.filter(Boolean);
+      u.state = 'done';
+      render();
+    }, function () {
+      if (S.pubAuto.unlock[slug] !== u) return;
+      u.state = 'error';
+      render();
+    });
+    return u;
+  }
+
+  /** The visitor's name, when this browser signed in with the same key before. */
+  function pubWho(token) {
+    try { var w = JSON.parse(TR.store.get('who') || 'null'); return w && w.k === token.slice(-4) ? String(w.name || '') : ''; } catch (e) { return ''; }
+  }
+
+  /** What the Automated view shows for a test suite and cycle, from the runs this visitor opened: as /api/automation/cycle gives it live. */
+  function pubAutoData(u, tab, cycle) {
+    var when = function (x) { return (x.meta.summary.startedAt || '') + '|' + (x.meta.summary.importedAt || ''); };
+    var list = u.opened.filter(function (x) { var a = x.meta.summary.attach; return a.tab === tab && a.cycle === cycle; })
+      .sort(function (a, b) { return when(a) < when(b) ? 1 : when(a) > when(b) ? -1 : 0; });
+    if (!list.length) return null;
+    var cases = {};
+    list.forEach(function (x) { var m = x.meta.cases || {}; Object.keys(m).forEach(function (k) { if (!(k in cases)) cases[k] = m[k]; }); });
+    var cv = { total: list[0].meta.tabCases || 0, covered: 0, passing: 0, failing: 0 };
+    Object.keys(cases).forEach(function (k) { cv.covered++; if (cases[k] === 'pass') cv.passing++; else if (cases[k] === 'fail') cv.failing++; });
+    return { latest: list[0].meta.summary, runs: list.map(function (x) { return x.meta.brief; }), coverage: cv };
+  }
+  function pubOpened(id) {
+    var found = null;
+    Object.keys(S.pubAuto.unlock).forEach(function (k) { (S.pubAuto.unlock[k].opened || []).forEach(function (x) { if (x.id === id) found = x; }); });
+    return found;
+  }
+
+  /** Published site › Automated, for the workbook, test suite and cycle picked above. */
+  function pubAutoView(pk, sw) {
+    var P = S.pubAuto;
+    var token = TR.inviteKey();
+    var where = TR.tabLabel(pk.suite.tab) + ' › ' + cycleText(pk.cyc);
+    var tools = function (extra) { return '<div class="report-tools no-print">' + sw + '<span class="updated grow">Published ' + esc(pk.idx.publishedAt) + ' · ' + esc(where) + '</span>' + (extra || '') + '</div>'; };
+    var spin = function (text) { return '<div class="spin-page"><div class="stack" style="align-items:center"><div class="spinner" aria-hidden="true"></div><p class="muted" role="status">' + esc(text) + '</p></div></div>'; };
+    if (!token) {
+      return tools() + '<div class="empty card"><h3>Automated results are for invited people</h3><p>Open your Test Run invite link once in this browser, then come back. The manual results are open to everyone.</p>' +
+        '<p style="margin-top:12px"><button data-action="pub-have-link">I Have an Invite Link</button></p></div>';
+    }
+    var u = P.unlock[pk.w.slug];
+    if (!u || u.token !== token) u = pubUnlock(pk.w.slug, token);
+    if (u.state === 'unlocking') return tools() + spin('Unlocking the automated results with your invite link…');
+    if (u.state === 'error') return tools() + '<div class="banner bad"><span>The automated results could not be unlocked in this browser.</span><span class="grow"></span><button data-action="pub-retry">Try Again</button></div>';
+    if (!u.opened.length) {
+      return tools() + '<div class="empty card"><h3>These results are locked</h3><p>Your invite link doesn\'t open “' + esc(pk.w.title) + '”. Ask the host for access to this workbook, or for a new link.</p></div>';
+    }
+    if (P.run) {
+      if (P.runLoading || !S.auto.detail || !pubOpened(P.run)) return tools() + spin('Opening the run…');
+      return tools() + auRunView(S.auto.detail, { published: true });
+    }
+    var d = pubAutoData(u, pk.suite.tab, pk.cyc);
+    if (!d) return tools() + '<div class="empty card"><h3>No automated run for this cycle</h3><p>No automated run you can open is attached to ' + esc(where) + '. Pick another test suite or cycle above.</p></div>';
+    var r = d.latest;
+    var actions = '<div class="run-actions"><button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The automated results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' +
+      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div>';
+    return tools(actions) + autoSummaryHtml(d, { open: 'pub-open', unlockedFor: pubWho(token) });
+  }
+
+  /** A published run's results (run.age), opened with its run key, for the read-only run view. */
+  function pubRunDetail(id) {
+    var x = pubOpened(id);
+    if (!x) return Promise.reject(new Error('locked'));
+    if (x.detail) return Promise.resolve(x.detail);
+    return Promise.all([loadAge(), fetchBytes('automation/' + encodeURIComponent(id) + '/run.age')]).then(function (v) {
+      return v[0].open(v[1], x.identity);
+    }).then(function (plain) {
+      if (!plain) throw new Error('locked');
+      return gunzipText(plain);
+    }).then(function (text) { x.detail = JSON.parse(text); return x.detail; });
+  }
+
+  /** A run's tests as CSV (opens in Excel), made in this browser from the unlocked results. */
+  function resultsCsv(run) {
+    var cell = function (v) {
+      var s = String(v == null ? '' : v);
+      if (/^[=+\-@\t\r]/.test(s)) s = '\'' + s; // never read as a formula
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    var word = { pass: 'Passed', fail: 'Failed', other: 'Skipped' };
+    var rows = [['Suite', 'File', 'Test', 'Tags', 'Case IDs', 'Status', 'Duration (s)', 'Retries', 'Message']].concat(run.tests.map(function (x) {
+      return [x.suite, x.file, x.title, (x.tags || []).join(', '), (x.caseIds || []).join(', '), (word[x.status] || x.status) + (x.flaky ? ' (flaky)' : ''), Math.round((x.durationMs || 0) / 10) / 100, x.retries || 0, x.message];
+    }));
+    return '﻿' + rows.map(function (r) { return r.map(cell).join(','); }).join('\r\n') + '\r\n';
   }
 
   function body() {
@@ -627,6 +785,7 @@
     if (S.app && S.app.publishNotice && isOwner()) banners += '<div class="banner"><span><b>' + esc(S.app.publishNotice.by || 'Someone') + '</b> published newer data to GitHub at ' + esc(S.app.publishNotice.at) + '.</span><span class="grow"></span><button data-action="publish-get">Get it</button></div>';
     if (S.excelOpen) banners += '<div class="banner warn"><b>This workbook is open in Excel.</b><span class="muted">Close it there while you test: saving from Excel would overwrite results marked here.</span></div>';
     if (S.view === 'setup' && isOwner()) return banners + viewSetup();
+    if (S.view === 'automation') return banners + viewAutomation(); // across workbooks: no test suite needed
     if (!S.tab) return banners + (isOwner()
       ? '<div class="empty card"><h3>No test case tab found</h3><p>Open Setup and mark which tabs hold test cases.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Open Setup</button></p></div>'
       : '<div class="empty card"><h3>No test case tab yet</h3><p>Your test lead has not set up this workbook yet.</p></div>');
@@ -635,7 +794,6 @@
     var m = S.model;
     if (!m.configured && isOwner()) banners += '<div class="banner"><span>Columns for this tab were detected automatically.</span><span class="grow"></span><button data-action="view" data-view="setup">Check Setup</button></div>';
     if (m.missing && m.missing.length) banners += '<div class="banner bad"><span>These columns were renamed or removed in the workbook: <b>' + esc(m.missing.map(function (f) { return S.boot.labels[f]; }).join(', ')) + '</b>.</span><span class="grow"></span>' + (isOwner() ? '<button data-action="view" data-view="setup">Fix in Setup</button>' : '') + '</div>';
-    if (S.autoMode && S.view === 'summary') return banners + viewAutomation();
     switch (S.view) {
       case 'issues': return banners + viewIssues();
       case 'findings': return banners + viewFindings();
@@ -665,6 +823,9 @@
   function ddSet(bind, v) {
     if (bind === 'filter:type') { S.filters.type = v; S.keep = {}; return; }
     S.form[bind] = v;
+    var au = /^au:(\w+):(book|tab)$/.exec(bind); // Automation's attach pickers: a new workbook or test suite resets what follows it
+    if (au) auPicked(au[1], au[2]);
+    if (bind === 'au:l:wf') auWorkflowPicked(); // Link a suite: a workflow chosen, its artifacts and options follow
   }
 
   /**
@@ -672,7 +833,8 @@
    *      value (single choice) | values (multiple choice), change (single: a CHANGES handler to call
    *      with the value, instead of keeping it in S.form), free (single: a value typed in the search box
    *      may be used), prefix (HTML before the value, e.g. "Workbook"), cls (on the wrapper),
-   *      placeholder ('Select'), tagLabel(v), tagTitle(v), title, disabled }
+   *      placeholder ('Select'), tagLabel(v), tagTitle(v), title, disabled,
+   *      label (its name when no <label for> can carry it, e.g. in a table row: read out before the value) }
    * The search box shows from 9 options up, and always where a new value may be typed (free).
    */
   function dropdown(o) {
@@ -685,7 +847,8 @@
     var dd = esc(o.bind);
     var h = '<div class="multi' + (o.cls ? ' ' + o.cls : '') + '" data-dd="' + dd + '">' +
       '<button type="button" class="multi-btn"' + (o.id ? ' id="' + esc(o.id) + '"' : '') + ' data-action="dd-open" data-dd="' + dd + '" aria-haspopup="true" aria-expanded="' + open + '"' +
-      (o.title || text ? ' title="' + esc(o.title || text) + '"' : '') + (o.disabled ? ' disabled' : '') + '>' + (o.prefix || '') +
+      (o.title || text ? ' title="' + esc(o.title || text) + '"' : '') + (o.label ? ' aria-label="' + esc(o.label + ': ' + (text || o.placeholder || 'Select')) + '"' : '') +
+      (o.disabled ? ' disabled' : '') + '>' + (o.prefix || '') +
       '<span class="grow' + (text ? '' : ' dd-ph') + '">' + esc(text || o.placeholder || 'Select') + '</span>' + CHEVRON + '</button>';
     if (open) {
       var search = !!o.free || opts.length > 8; // a list that takes new values always has it: that's where a new one is typed
@@ -729,6 +892,11 @@
     S.covering = null; clearForm('cov:');
     S.form.noteOpen = false; ['fText', 'fIssue', 'fArea', 'fDetails', 'fTab'].forEach(function (k) { delete S.form[k]; });
     clearForm('ai'); // Add issue: aiOpen, aiUrl, aiCases, aiSuite, aiFail
+    if (S.auto.screen === 'import' || S.auto.screen === 'link' || S.auto.screen === 'start') S.auto.screen = 'runs'; // Automation's Import results, Link a suite, Run, Change cycle
+    S.auto.file = null; S.auto.moving = false; S.auto.editing = false;
+    S.auto.gh = auGhFresh();
+    clearForm('au:l:'); clearForm('au:im:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
+    delete S.form['au:branch']; delete S.form['au:env'];
     S.ddOpen = null; S.ddQ = '';
   }
 
@@ -791,6 +959,7 @@
 
   function viewRun() {
     var m = S.model;
+    autoCycle(); // the Auto ✓ / ✗ badges: read once for this suite and cycle
     if (!m.cycles.length) {
       return '<div class="empty card"><h3>This tab has no status column yet</h3>' + (isOwner()
         ? '<p>Start a cycle to add a <i>Test Status</i> and <i>Comment</i> column pair.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Start a cycle in Setup</button></p>'
@@ -873,13 +1042,6 @@
       scenarioEditor(S.addHere.draft, 'ah:' + id, '<span class="small faint grow">Added after the last case in the workbook, with the next ID.</span><button class="ghost" data-action="add-here-cancel">Cancel</button><button class="primary" data-action="add-here-save"' + dis + '>Save</button>') + '</div>';
   }
 
-  function autoPill(a) {
-    var map = { pass: ['pass', 'Auto ✓'], fail: ['fail', 'Auto ✗'], skip: ['other', 'Auto –'], partial: ['other', 'Auto ~'], unknown: ['none', 'Auto ?'] };
-    var x = map[a.state] || map.unknown;
-    var title = 'Automation: ' + a.refs.join(', ') + (a.counts && a.counts.total ? ' (' + a.counts.pass + ' pass, ' + a.counts.fail + ' fail, ' + a.counts.other + ' skipped)' : ' (no results found)');
-    return pill(x[0], x[1], title);
-  }
-
   function caseRow(c) {
     var k = clsOf(c);
     var sel = S.selected === c.key;
@@ -888,8 +1050,9 @@
     if (c.retired) badges.push(pill('none', '⊘ ' + retiredLabel(c.retired), c.retired.reason || 'Struck out in the workbook'));
     if (c.tier === 0 && !c.retired) badges.push(pill('accent', S.model.release ? 'New in ' + S.model.release : 'New'));
     if (c.tier === 1) badges.push(pill('fail', 'Failed last'));
-    if (c.auto) badges.push(autoPill(c.auto));
     if (c.issues && c.issues.length) badges.push(pill('outline', c.issues.map(function (i) { return i.ref; }).join(', ')));
+    var auto = autoBadge(c);
+    if (auto) badges.push(auto);
     return '<div class="case' + (sel ? ' sel' : '') + (c.retired ? ' retired' : '') + '" role="button" tabindex="0" data-action="select" data-key="' + esc(c.key) + '" aria-expanded="' + sel + '">' +
       TR.dot(k, S.pending[c.key]) + '<span class="sr">' + (c.retired ? retiredLabel(c.retired) + ', struck out. ' : '') + TR.CLS_LABEL[k] + '. </span>' +
       '<span class="cid">' + esc(c.id) + '</span>' +
@@ -917,7 +1080,6 @@
     if (c.testData.trim()) f.push(field('Test data', TR.cellHtml(c.testData)));
     if (c.expected.trim()) f.push(field('Expected result', TR.cellHtml(c.expected, true)));
     c.extras.forEach(function (x) { f.push(field(x.label, TR.cellHtml(x.value))); });
-    if (c.auto) f.push(field('Automation', esc(c.auto.refs.join(', ')) + ' ' + autoPill(c.auto)));
     if (m.prevIdx >= 0 && c.statuses[m.prevIdx]) {
       var pk = TR.classify(c.statuses[m.prevIdx]);
       f.push(field('Last cycle (' + (m.cycles[m.prevIdx].label || 'previous') + ')', '<span class="sym-' + pk + '">' + TR.SYM[pk] + '</span> ' + esc(c.statuses[m.prevIdx]) + (c.comments[m.prevIdx] ? ' – <span class="ml">' + esc(TR.cellLines(c.comments[m.prevIdx]).join('\n')) + '</span>' : '')));
@@ -1407,7 +1569,7 @@
   }
 
   function tierHelp(id) {
-    return ['Release column matches the release in scope', 'Failed in the previous cycle', 'No passing automation', 'Automation passed; a quick look is enough'][id] || '';
+    return ['Release column matches the release in scope', 'Failed in the previous cycle', 'Everything else'][id] || '';
   }
 
   // ---------------------------------------------------------------------------
@@ -1774,80 +1936,113 @@
   // Summary
   // ---------------------------------------------------------------------------
 
-  /** Summary of the test suite and cycle open. (Automation has its own place in the Test suites strip.) */
+  /** Summary of the test suite and cycle open: the manual results, or the automated ones attached to the cycle. */
   function viewSummary() {
-    return viewManualSummary();
+    var d = autoCycle();
+    return d && d.latest && S.sumView === 'automated' ? viewAutoSummary(d) : viewManualSummary(d);
   }
 
-  /** Pass, fail, other and not-run counts over every automation tab ({..., total}), or null before they are read. */
-  function autoTotals(given) {
-    var r = given || S.autoSummary;
-    if (!r || (!given && r.book !== book()) || r.error) return null;
-    var all = { pass: 0, fail: 0, other: 0, none: 0, total: 0 };
-    r.tabs.forEach(function (t) { if (!t.error) ['pass', 'fail', 'other', 'none', 'total'].forEach(function (k) { all[k] += t.counts[k]; }); });
-    return all;
+  function readSumView() {
+    try { return window.sessionStorage.getItem('testrun.sumView') === 'automated' ? 'automated' : 'manual'; } catch (e) { return 'manual'; }
+  }
+  function setSumView(v) {
+    S.sumView = v === 'automated' ? 'automated' : 'manual';
+    try { window.sessionStorage.setItem('testrun.sumView', S.sumView); } catch (e) { /* storage unavailable: kept on this page only */ }
   }
 
-  function autoKpi(cls, value, label) {
-    return '<div class="card kpi ' + cls + '"><div class="v">' + esc(value) + '</div><div class="l">' + esc(label) + '</div></div>';
+  /** Manual | Automated, the same size (template screen 8). Automated is off while nothing is attached to the cycle. */
+  function sumSwitch(enabled, offTitle) {
+    var on = enabled && S.sumView === 'automated';
+    return '<span class="seg same" role="group" aria-label="Results to show">' +
+      '<button data-action="sum-view" data-v="manual" aria-pressed="' + !on + '">Manual</button>' +
+      '<button data-action="sum-view" data-v="automated" aria-pressed="' + on + '"' + (enabled ? '' : ' disabled title="' + esc(offTitle || '') + '"') + '>Automated</button></span>';
   }
+  var SUM_NOTE = '<p class="small muted no-print sum-note">Automated results show here once a run is attached to this test suite and cycle.</p>';
 
-  /** Automated: the latest results of each automation tab, by test file, and what is failing. */
-  function viewAutomation() {
-    var r = S.autoSummary;
-    if (!r || r.book !== book()) {
-      if (!S.autoLoading) {
-        S.autoLoading = true;
-        api('api_automationSummary').then(function (x) {
-          S.autoLoading = false;
-          S.autoSummary = x.ok ? x : { book: book(), error: x.error, tabs: [] };
-          S.autoSummary.book = x.book || book();
-          render();
-        });
-      }
-      return '<div class="loading">Reading the automation results…</div>';
-    }
-    return automationHtml(r, { live: true });
-  }
-
-  /** The automation summary (r: tr_automationSummary's result). live: in Test Run (else a published copy). */
-  function automationHtml(r, opts) {
-    var live = !!(opts && opts.live);
-    if (r.error) return '<div class="banner bad">' + esc(r.error) + '</div>';
-    var tabs = r.tabs.filter(function (t) { return !t.error; });
-    if (!r.tabs.length) {
-      return '<div class="empty card"><h3>No automation results in this workbook</h3><p>' + (live && isOwner() ? 'In <b>Setup</b>, mark the tab that holds your automated test results as <b>Automation results</b>.' : 'This workbook has no tab of automated test results.') + '</p></div>';
-    }
-    var all = autoTotals(r);
-    var ran = all.pass + all.fail;
-    var h = (opts && opts.bare ? '' : '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-        (live ? '<button data-action="auto-refresh">Refresh</button>' : '') + '<button data-action="print">Print / PDF</button></div>' +
-        '<div class="print-only print-title">Automation · ' + esc(tabs.map(function (t) { return TR.tabLabel(t.tab); }).join(', ')) + ' · updated on ' + esc(r.generatedAt) + '</div>');
-    h += '<div class="kpis">' + autoKpi('', String(all.total), 'automated tests') + autoKpi('pass', ran ? Math.round((all.pass / ran) * 100) + '%' : '–', 'pass rate (of Pass + Fail)') +
-      autoKpi('fail', String(all.fail), 'failing') + autoKpi('', String(all.other), 'skipped or other') + '</div>';
-    r.tabs.forEach(function (t) {
-      if (t.error) { h += '<div class="banner warn section"><b>' + esc(TR.tabLabel(t.tab)) + ':</b> ' + esc(t.error) + '</div>'; return; }
-      h += '<div class="section card"><div class="card-pad"><div class="row" style="margin-bottom:8px"><h2 title="' + esc(t.tab) + '">' + esc(TR.tabLabel(t.tab)) + '</h2><span class="small muted">' + esc(t.cycle ? 'status column ' + t.cycle : 'latest status column') + '</span><span class="grow"></span>' + TR.legend(t.counts) + '</div>' + TR.bar(t.counts) + '</div>';
-      h += '<div class="table-wrap"><table><thead><tr><th>Test file</th><th style="width:28%">Progress</th><th class="num">Pass</th><th class="num">Fail</th><th class="num">Other</th><th class="num">Not run</th></tr></thead><tbody>' +
-        t.files.map(function (f) {
-          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + TR.bar(f, true) + '</td><td class="num">' + f.pass + '</td><td class="num">' + f.fail + '</td><td class="num">' + f.other + '</td><td class="num">' + f.none + '</td></tr>';
-        }).join('') + '</tbody></table></div></div>';
-      h += '<div class="section card"><div class="card-pad"><h2>Failing in ' + esc(TR.tabLabel(t.tab)) + ' <span class="pill fail">' + t.failures.length + '</span></h2></div>' +
-        (t.failures.length ? '<div class="table-wrap"><table><thead><tr><th>Test file</th><th>Test</th><th>Note</th></tr></thead><tbody>' + t.failures.map(function (f) {
-          return '<tr><td class="mono">' + esc(f.file) + '</td><td>' + esc(f.test) + (f.group ? '<div class="small faint">' + esc(f.group) + '</div>' : '') + '</td><td class="ml">' + esc(f.note) + '</td></tr>';
-        }).join('') + '</tbody></table></div>' : '<div class="card-pad muted" style="padding-top:0">No failing automated tests.</div>') + '</div>';
+  /** The automated results attached to the open workbook › test suite › cycle, or null while they're read. */
+  function autoCycle() {
+    if (!S.tab || !S.model || !book()) return null;
+    var key = book() + '\n' + S.tab + '\n' + cycleLabel();
+    if (S.autoCycle && S.autoCycle.key === key) return S.autoCycle.data;
+    var mine = S.autoCycle = { key: key, data: null };
+    TR.http('GET', '/api/automation/cycle?book=' + enc(book()) + '&tab=' + enc(S.tab) + '&cycle=' + enc(cycleLabel())).then(function (r) {
+      if (S.autoCycle !== mine) return;
+      mine.data = r.ok ? r : { error: r.error || 'The automated results could not be read.', latest: null, runs: [], cases: {} };
+      render();
     });
-    if (live && S.summary && S.summary.tab === S.tab && S.summary.summary && S.summary.summary.automation) {
-      var a = S.summary.summary.automation;
-      h += '<div class="section card card-pad"><h2>Manual cases in ' + esc(S.tab) + ' linked to automation</h2><table style="margin-top:8px"><tbody>' +
-        '<tr><td>Linked to a test file</td><td class="num"><b>' + a.linked + '</b> of ' + S.summary.summary.counts.total + '</td></tr>' +
-        '<tr><td>Their automation passing</td><td class="num"><b class="sym-pass">' + a.pass + '</b></td></tr>' +
-        '<tr><td>Their automation failing</td><td class="num"><b class="sym-fail">' + a.fail + '</b></td></tr></tbody></table></div>';
-    }
-    return h;
+    return null;
   }
 
-  function viewManualSummary() {
+  /** Run: "Auto ✓ / ✗ / –" on a case whose ID automated tests name, in the runs kept for this cycle. */
+  function autoBadge(c) {
+    var d = S.autoCycle && S.autoCycle.data;
+    if (!d || !d.cases || !c.id || c.retired || S.autoCycle.key !== book() + '\n' + S.tab + '\n' + cycleLabel()) return '';
+    var st = d.cases[String(c.id).trim().toUpperCase()];
+    if (!st) return '';
+    var cls = st === 'pass' || st === 'fail' ? st : 'other';
+    return '<span class="pill ' + cls + '" title="Latest automated result attached to this cycle">Auto ' + TR.SYM[cls] +
+      '<span class="sr">, automated test ' + { pass: 'passed', fail: 'failed', other: 'skipped' }[cls] + '</span></span>';
+  }
+
+  /** Summary › Automated: the latest run attached to the test suite and cycle, and the runs kept for it. */
+  function viewAutoSummary(d) {
+    var r = d.latest;
+    var tools = '<div class="report-tools no-print">' + sumSwitch(true) + '<span class="updated grow">Updated on: ' + esc(d.generatedAt) + '</span>' +
+      '<div class="run-actions"><button class="small-btn" data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>' +
+      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div></div>' +
+      '<div class="print-only print-title">' + esc(bookTitle(book())) + ' · ' + esc(TR.tabLabel(S.tab)) + ' · cycle ' + esc(cycleLabel() || '–') + ' · automated · updated on ' + esc(d.generatedAt) + '</div>';
+    return tools + autoSummaryHtml(d, { open: 'sum-open', keep: d.keep });
+  }
+
+  /**
+   * The Automated view, live and on the published site: the latest run (figures with the previous
+   * run's, what changed, top causes), the runs kept for the cycle, and the manual cases automation
+   * also runs. d: { latest, runs, coverage }; o: { open (the action that opens a run), keep, unlockedFor }.
+   */
+  function autoSummaryHtml(d, o) {
+    var r = d.latest, t = r.totals, prev = r.previous, pt = prev ? prev.totals : null, c = r.changed;
+    var open = function (id, f) { return ' data-action="' + o.open + '" data-id="' + esc(id) + '"' + (f ? ' data-f="' + f + '"' : ''); };
+    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2>Latest run · ' + esc(r.suiteName) + '</h2>' +
+      '<p class="small muted">' + esc([auDate(r.startedAt), auCommit(r), r.env, auOptions(r)].filter(Boolean).join(' · ')) + '</p></div>' +
+      (o.unlockedFor != null ? '<span class="pill pass">' + esc(o.unlockedFor ? 'Unlocked for ' + o.unlockedFor : 'Unlocked with your invite link') + '</span>' : '') + '</div>' +
+      '<div class="kpis" style="margin-bottom:0">' +
+      auKpi(r.passRate == null ? '–' : r.passRate + '%', 'pass rate', auFrom(r.passRate, prev && prev.passRate, '%'), '', 'Passed out of passed and failed; skipped tests are left out') +
+      auKpi(t.passed, 'passed', auFrom(t.passed, pt && pt.passed), 'pass') + auKpi(t.failed, 'failed', auFrom(t.failed, pt && pt.failed, '', true), 'fail') +
+      auKpi(t.skipped, 'skipped') + auKpi(t.flaky, 'flaky', '', '', 'Passed on a retry') + '</div>' +
+      '<div class="progress-wrap">' + TR.bar(auCounts(t)) + '<div class="legend"><span><span class="sym-pass">' + TR.SYM.pass + '</span> <b>' + t.passed + '</b> passed</span><span><span class="sym-fail">' + TR.SYM.fail + '</span> <b>' + t.failed + '</b> failed</span><span><span class="sym-other">' + TR.SYM.other + '</span> <b>' + t.skipped + '</b> skipped</span></div>' +
+      '<span class="small muted">' + (prev ? 'previous run: ' + esc(auDate(prev.startedAt)) : 'no earlier run to compare with') + '</span></div></section>';
+
+    function card(n, l, sub, f) { return '<button' + open(r.id, f) + '><span class="v">' + n + '</span><span class="l"><b>' + l + '</b>' + (sub ? ' · ' + sub : '') + '</span></button>'; }
+    h += '<section class="card card-pad stack"><h2>What changed since the previous run</h2>' + (prev
+      ? '<div class="changed">' + card(c.newFailures, 'new failures', 'passed last time', 'newfail') + card(c.stillFailing, 'still failing', '', 'still') + card(c.fixed, 'fixed', 'failed last time', 'fixed') + card(c.flaky, 'flaky', 'passed on a retry', 'flaky') + '</div>'
+      : '<p class="small muted">This is the first run of ' + esc(r.suiteName) + ' kept for ' + esc(r.attach.tab) + ', so there is nothing to compare it with yet.</p>') + '</section>';
+
+    h += '<section class="card card-pad stack"><div class="row"><h2 class="grow">Top failure causes</h2>' + (r.causeCount ? '<button class="link-btn"' + open(r.id, 'failed') + '>All causes ›</button>' : '') + '</div><div>' +
+      (r.causes.length ? r.causes.map(function (g, i) {
+        var isOpen = !!S.sumOpen[i];
+        return '<div class="cause' + (isOpen ? '' : ' collapsed') + '"><button class="cause-head" data-action="sum-cause" data-i="' + i + '" aria-expanded="' + isOpen + '"><span class="chev" aria-hidden="true">▾</span><span class="' + (g.other ? '' : 'mono') + '">' + esc(g.signature) + '</span>' +
+          '<span class="nowrap"><b>' + g.count + '</b> ' + (g.count === 1 ? 'test' : 'tests') + (g.newCount ? ' <span class="pill fail">' + g.newCount + ' new</span>' : '') + '</span></button>' +
+          '<div class="cause-body">' + g.tests.map(function (n) { return '<span>' + esc(n) + '</span>'; }).join('') + (g.more ? '<span class="muted">… ' + g.more + ' more</span>' : '') + '</div></div>';
+      }).join('') : '<p class="small muted">Nothing failed in this run.</p>') + '</div></section>';
+
+    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs for this cycle</h2>' + (o.keep ? '<p class="small muted">' + auKeepText(o.keep) + ' for each automated suite.</p>' : '') + '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th class="num">Pass rate</th><th><span class="sr">Open</span></th></tr></thead><tbody>' +
+      d.runs.map(function (x) {
+        return '<tr><td class="nowrap">' + esc(auDate(x.startedAt)) + '<div class="small muted">' + esc([x.suiteName, x.env, auOptions(x)].filter(Boolean).join(' · ')) + '</div></td>' +
+          '<td style="min-width:150px">' + auResult(x.totals) + '</td>' +
+          '<td class="num nowrap">' + (x.passRate == null ? '–' : '<b>' + x.passRate + '%</b><div>' + auFrom(x.passRate, x.prevPassRate, '%') + '</div>') + '</td>' +
+          '<td class="num"><button class="small-btn"' + open(x.id) + ' aria-label="Open the run from ' + esc(auDate(x.startedAt)) + '">Open</button></td></tr>';
+      }).join('') + '</tbody></table></div></section>';
+
+    var cv = d.coverage;
+    if (cv && cv.total) {
+      h += '<p class="small muted">Manual cases also run by automation: <b>' + cv.covered + '</b> of ' + cv.total +
+        (cv.covered ? ' · automation passing on <b>' + cv.passing + '</b>, failing on <b>' + cv.failing + '</b>' : '') + '.</p>';
+    }
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  function viewManualSummary(auto) {
     var label = cycleLabel();
     if (!S.summary || S.summary.tab !== S.tab || S.summary.cycle !== label) {
       if (!S.summaryLoading) {
@@ -1862,12 +2057,846 @@
       return '<div class="loading">Working out the figures…</div>';
     }
     var r = S.summary;
+    // Manual | Automated first (Automated is off until a run is attached to this suite and cycle)
+    var hasAuto = !!(auto && auto.latest);
+    var offTitle = !auto ? 'Looking for automated runs…' : auto.error ? auto.error : 'No automated run is attached to ' + TR.tabLabel(r.tab) + ' › ' + cycleText(r.cycle) + ' yet';
     // The suite and cycle are picked above; on paper, one line says what it is.
-    var h = '<div class="report-tools no-print"><span class="updated">Updated on: ' + esc(r.generatedAt) + '</span><span class="grow"></span>' +
-      downloadButton('summary', '', 'Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
+    var h = '<div class="report-tools no-print">' + sumSwitch(hasAuto, offTitle) + '<span class="updated grow">Updated on: ' + esc(r.generatedAt) + '</span>' +
+      downloadButton('summary', '', '<span aria-hidden="true">⤓</span> Download', 'The workbook, with a Known issues sheet') + '<button data-action="print">Print / PDF</button>' +
       (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') + '</div>' +
+      (auto && !hasAuto ? SUM_NOTE : '') +
       '<div class="print-only print-title">' + esc(String(book() || '').replace(/\.xlsx$/i, '')) + ' · ' + esc(TR.tabLabel(r.tab)) + ' · cycle ' + esc(r.cycle || '–') + ' · updated on ' + esc(r.generatedAt) + '</div>';
     return h + TR.summaryHtml(r);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automation: automated suites, their runs, and each run's results
+  // (lib/automation/ on the server). Screens: suite and runs, run results, import results (a file
+  // or a GitHub run), link a suite (with its GitHub workflow), Run (start one in GitHub Actions)
+  // and Running (follow it until its results come in).
+  // ---------------------------------------------------------------------------
+
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /** "24 Nov, 10:23" (or "24 Nov" without the time), in this computer's time. */
+  function auDate(iso, withTime) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '–';
+    var day = d.getDate() + ' ' + MONTHS[d.getMonth()];
+    return withTime === false ? day : day + ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function auStamp(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + '-' + pad2(d.getMinutes()); }
+  /** A test's time ("30.0 s"), or a run's ("38 min"). */
+  function auSecs(ms) { return ms ? (ms / 1000).toFixed(1) + ' s' : '–'; }
+  function auLength(ms) {
+    if (!ms) return '';
+    if (ms < 60000) return Math.max(1, Math.round(ms / 1000)) + ' s';
+    var m = Math.round(ms / 60000);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+  }
+  function enc(v) { return encodeURIComponent(v == null ? '' : v); }
+  function bookTitle(b) { return String(b || '').replace(/\.xlsx$/i, ''); }
+  function cycleText(c) { return c ? 'Cycle ' + c : 'Status'; }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+  function auKeepText(n) { return n === 1 ? 'The last run is kept' : 'The last ' + n + ' runs are kept'; }
+  function attachText(a) { return bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle); }
+  function auCounts(t) { return { pass: t.passed, fail: t.failed, other: t.skipped, none: 0, total: t.total }; }
+  function auOptions(r) { var o = r.options || {}; return Object.keys(o).map(function (k) { return o[k]; }).filter(Boolean).join(' · '); }
+  function auHow(r) {
+    var s = r.source || {};
+    return s.kind === 'github' ? 'from GitHub' : 'imported' + (s.format === 'ctrf' ? ' (CTRF file)' : s.format === 'junit' ? ' (JUnit file)' : '');
+  }
+  function auCommit(r) { return r.branch || r.sha ? (r.branch || '–') + (r.sha ? ' @ ' + r.sha.slice(0, 7) : '') : ''; }
+  /** A run in a sentence: "24 Nov · master · net_two · smoke", or its date and time when nothing else tells it apart. */
+  function auLabel(r) {
+    var parts = [auDate(r.startedAt, false), r.branch, r.env, auOptions(r)].filter(Boolean);
+    return parts.length > 1 ? parts.join(' · ') : auDate(r.startedAt);
+  }
+  /** The previous run's figure beside this one: "↑ from 84%", green when it got better. */
+  function auFrom(cur, prev, unit, lowerIsBetter) {
+    if (prev == null || cur == null || prev === cur) return '';
+    var up = cur > prev, good = lowerIsBetter ? !up : up;
+    return '<span class="delta ' + (good ? 'good' : 'bad') + '" title="Previous run: ' + prev + (unit || '') + '">' + (up ? '↑' : '↓') + ' from ' + prev + (unit || '') + '</span>';
+  }
+  function auResult(t) {
+    return '<div class="stack-s">' + TR.bar(auCounts(t), true) + '<span class="small"><span class="sym-pass">' + TR.SYM.pass + '</span> ' + t.passed + ' &nbsp;<span class="sym-fail">' + TR.SYM.fail + '</span> ' + t.failed + ' &nbsp;<span class="sym-other">' + TR.SYM.other + '</span> ' + t.skipped + '</span></div>';
+  }
+  function auHist(list) {
+    var word = { pass: 'passed', fail: 'failed', other: 'skipped', none: 'not in that run' };
+    return '<span class="hist" aria-label="Last runs: ' + esc(list.map(function (c) { return word[c]; }).join(', ')) + '">' + list.map(function (c) { return TR.dot(c); }).join('') + '</span>';
+  }
+  function auKpi(v, l, extra, cls, title) {
+    return '<div class="card kpi' + (cls ? ' ' + cls : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '><div class="v">' + esc(v) + '</div><div class="l">' + esc(l) + (extra ? ' · ' + extra : '') + '</div></div>';
+  }
+  function auField(id, label, control, hint) {
+    return '<div><label class="note-label" for="' + id + '">' + label + '</label>' + control + (hint ? '<span class="small muted">' + hint + '</span>' : '') + '</div>';
+  }
+  function maskedHtml(s) { return esc(s).replace(/\*\*\*/g, '<span class="masked">***</span>'); }
+
+  function auLoad() {
+    var A = S.auto;
+    A.loading = true;
+    return TR.http('GET', '/api/automation').then(function (r) {
+      A.loading = false;
+      if (!r.ok) { A.error = r.error || 'The automated results could not be read.'; render(); return r; }
+      A.data = r;
+      A.error = '';
+      var ids = r.suites.map(function (s) { return s.id; });
+      if (ids.indexOf(A.suite) < 0) A.suite = ids[0] || '';
+      render();
+      return r;
+    });
+  }
+  function auSuite(id) {
+    var d = S.auto.data;
+    var want = id || S.auto.suite;
+    return d ? d.suites.filter(function (s) { return s.id === want; })[0] || null : null;
+  }
+  function auRunsOf(id) { return S.auto.data.runs.filter(function (r) { return r.suiteId === id; }); }
+  function auShownRuns(id) {
+    var env = val('au:f:env', ''), branch = val('au:f:branch', '');
+    return auRunsOf(id).filter(function (r) { return (!env || r.env === env) && (!branch || r.branch === branch); });
+  }
+  function distinctOf(list, k) {
+    var out = [];
+    list.forEach(function (r) { if (r[k] && out.indexOf(r[k]) < 0) out.push(r[k]); });
+    return out.sort();
+  }
+
+  /** A workbook's test suites and their cycles, for the attach pickers (read once per form). */
+  function auTargets(b, then) {
+    var A = S.auto;
+    if (!b) return;
+    if (A.targets[b]) { if (then) then(A.targets[b]); return; }
+    if (A.targetsLoading[b]) return;
+    A.targetsLoading[b] = true;
+    TR.http('GET', '/api/automation/targets?book=' + enc(b)).then(function (r) {
+      delete A.targetsLoading[b];
+      if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+      A.targets[b] = r;
+      if (then) then(r);
+      render();
+    });
+  }
+  /** Fill in a test suite and cycle that fit the chosen workbook: the one open in Run when it's there, else the first; its current cycle. */
+  function auDefaults(prefix) {
+    var bk = 'au:' + prefix + ':book', tk = 'au:' + prefix + ':tab', ck = 'au:' + prefix + ':cycle';
+    var b = S.form[bk];
+    var tg = b && S.auto.targets[b];
+    if (!tg) return;
+    var tabs = tg.tabs;
+    var here = b === book();
+    if (!tabs.some(function (t) { return t.name === S.form[tk]; })) S.form[tk] = here && tabs.some(function (t) { return t.name === S.tab; }) ? S.tab : tabs[0] ? tabs[0].name : '';
+    var t = tabs.filter(function (x) { return x.name === S.form[tk]; })[0];
+    if (!t) { delete S.form[ck]; return; }
+    var have = S.form[ck];
+    if (!(have && have.indexOf('c:') === 0 && t.cycles.indexOf(have.slice(2)) >= 0)) {
+      S.form[ck] = 'c:' + (here && t.name === S.tab && t.cycles.indexOf(cycleLabel()) >= 0 ? cycleLabel() : t.current);
+    }
+  }
+  /** A picked workbook or test suite: what depends on it starts again. */
+  function auPicked(prefix, what) {
+    if (what === 'book') { delete S.form['au:' + prefix + ':tab']; delete S.form['au:' + prefix + ':cycle']; auTargets(S.form['au:' + prefix + ':book'], function () { auDefaults(prefix); }); }
+    else delete S.form['au:' + prefix + ':cycle'];
+    auDefaults(prefix);
+  }
+  /** The chosen workbook › test suite › test cycle, or null while one is missing. */
+  function auAttachChosen(prefix) {
+    var b = S.form['au:' + prefix + ':book'], t = S.form['au:' + prefix + ':tab'], c = S.form['au:' + prefix + ':cycle'];
+    var tg = b && S.auto.targets[b];
+    var tab = tg && tg.tabs.filter(function (x) { return x.name === t; })[0];
+    if (!tab || !c || c.indexOf('c:') !== 0 || tab.cycles.indexOf(c.slice(2)) < 0) return null;
+    return { book: b, tab: t, cycle: c.slice(2) };
+  }
+  /** Workbook › Test suite › Test cycle, each a dropdown (a cycle's value is "c:<label>", so an unnamed Status column can be picked too). */
+  function auAttachPickers(prefix, required) {
+    var b = val('au:' + prefix + ':book', '');
+    var tg = b ? S.auto.targets[b] : null;
+    var tabs = tg ? tg.tabs : [];
+    var t = val('au:' + prefix + ':tab', '');
+    var tab = tabs.filter(function (x) { return x.name === t; })[0];
+    var keep = S.auto.data.keep;
+    return '<div class="stack-s"><label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label><div class="link-path">' +
+      dropdown({ bind: 'au:' + prefix + ':book', id: 'au_' + prefix + '_book', cls: 'top-dd', value: b, prefix: '<span class="dd-prefix">Workbook</span>', title: 'Workbook',
+        options: S.app.books.map(function (x) { return { value: x.name, label: bookTitle(x.name) }; }) }) +
+      dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading…' : 'Select',
+        options: tabs.map(function (x) { return { value: x.name, label: TR.tabLabel(x.name) }; }) }) +
+      dropdown({ bind: 'au:' + prefix + ':cycle', id: 'au_' + prefix + '_cycle', cls: 'top-dd', value: val('au:' + prefix + ':cycle', ''), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'Test cycle', disabled: !tab,
+        options: tab ? tab.cycles.map(function (c) { return { value: 'c:' + c, label: cycleText(c) }; }) : [] }) +
+      '</div><span class="small muted">Only people who can open this workbook can see the results. Test Run keeps the last ' + (keep === 1 ? 'run' : keep + ' runs') + ' for each test suite and cycle.</span></div>';
+  }
+  /** "Notifications › Cycle v2.12 already has 2 runs. Importing this one removes the oldest (20 Nov, 11:02)." */
+  function auFullWarning(prefix, suiteId, runId) {
+    var a = auAttachChosen(prefix);
+    if (!a) return '';
+    var d = S.auto.data;
+    var group = d.runs.filter(function (r) { return r.suiteId === suiteId && r.id !== runId && r.attach.book === a.book && r.attach.tab === a.tab && r.attach.cycle === a.cycle; });
+    if (group.length < d.keep) return '';
+    var goes = group.slice(d.keep - 1); // newest first: the oldest ones are pushed out
+    return '<div class="note warn">' + esc(a.tab + ' › ' + cycleText(a.cycle)) + ' already has ' + plural(group.length, 'run') + '. ' +
+      (prefix === 'mv' ? 'Moving this one there' : 'Importing this one') + ' removes the oldest (' + esc(goes.map(function (r) { return auDate(r.startedAt); }).join(', ')) + ').</div>';
+  }
+  function auRemovedText(removed, keep) {
+    if (!removed || !removed.length) return '';
+    return ' The run' + (removed.length > 1 ? 's' : '') + ' from ' + removed.map(function (r) { return auDate(r.startedAt); }).join(' and ') + (removed.length > 1 ? ' were' : ' was') + ' removed: ' + (keep === 1 ? '1 is' : keep + ' are') + ' kept.';
+  }
+
+  /** Send results files: one as it is (its name in ?name=), several as a form. */
+  function auUpload(path, files) {
+    if (files.length === 1) return TR.http('POST', path + (path.indexOf('?') >= 0 ? '&' : '?') + 'name=' + enc(files[0].name), files[0], true);
+    var fd = new FormData();
+    files.forEach(function (f) { fd.append('files', f, f.name); });
+    return TR.http('POST', path, fd, true);
+  }
+  /** Files picked or dropped on Import results: read at once (format and counts), kept on the page until Import Results. */
+  function auChoose(list) {
+    var files = Array.prototype.slice.call(list || []);
+    if (!files.length || S.auto.screen !== 'import') return;
+    var size = files.reduce(function (n, f) { return n + f.size; }, 0);
+    if (size > 20 * 1024 * 1024) { toast('That is too large: results files can be at most 20 MB together.', 'bad'); return; }
+    var mine = { files: files, label: files.length === 1 ? files[0].name : files.length + ' files', size: size, busy: true, preview: null, error: '' };
+    S.auto.file = mine;
+    render();
+    auUpload('/api/automation/preview?suite=' + enc(S.auto.suite), files).then(function (r) {
+      if (S.auto.file !== mine) return;
+      mine.busy = false;
+      if (!r.ok) mine.error = r.error;
+      else {
+        mine.preview = r;
+        if (!String(val('au:branch', '')).trim() && r.branch) S.form['au:branch'] = r.branch;
+        if (!String(val('au:env', '')).trim() && r.env) S.form['au:env'] = r.env;
+      }
+      render();
+    });
+  }
+
+  function viewAutomation() {
+    var A = S.auto;
+    if (!A.data) {
+      if (!A.loading && !A.error) auLoad();
+      return A.error ? '<div class="banner bad"><span>' + esc(A.error) + '</span><span class="grow"></span><button data-action="au-reload">Try Again</button></div>' : '<div class="loading">Loading the automated results…</div>';
+    }
+    if (A.screen === 'run' && A.runId) {
+      var det = auDetail();
+      return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run…</div>');
+    }
+    if (A.screen === 'link') return withRail(auRail(A.editing ? A.suite : 'new'), auLinkForm());
+    var s = auSuite();
+    if (!s) {
+      return withRail(auRail(''), '<div class="empty card"><h3>No automated suites yet</h3>' + (A.data.canAct
+        ? '<p>Link a suite to bring in its results: any framework that writes JUnit XML or CTRF JSON.</p><p style="margin-top:12px"><button class="primary" data-action="au-link">+ Link Suite</button></p>'
+        : '<p>Your test lead has not linked an automated suite yet, or not shared one with you.</p>') + '</div>');
+    }
+    if (A.screen === 'import' && A.data.canAct) return withRail(auRail(s.id), auImport(s));
+    if (A.screen === 'start' && A.data.canAct && s.workflowId) return withRail(auRail(s.id), auStart(s));
+    if (A.screen === 'running') {
+      var job = auJob(A.jobId);
+      if (job) return withRail(auRail(job.suiteId), auRunning(job, auSuite(job.suiteId)));
+      A.screen = 'runs';
+    }
+    return withRail(auRail(s.id), auRunsList(s));
+  }
+
+  /** Left: the linked suites, + Link Suite, and the Environment and Branch filters (DESIGN.md › Dropdowns › As a filter). */
+  function auRail(active) {
+    var d = S.auto.data;
+    var h = '<div class="rail-group subtabs" role="tablist" aria-label="Automated suites"><span class="rail-title">Automated suites</span>' +
+      d.suites.map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
+      (d.canAct ? '<button class="ghost" data-action="au-link"' + (active === 'new' ? ' aria-pressed="true"' : '') + '>+ Link Suite</button>' : '') + '</div>';
+    if (active && active !== 'new' && S.auto.screen === 'runs') {
+      var runs = auRunsOf(active);
+      var envs = distinctOf(runs, 'env'), branches = distinctOf(runs, 'branch');
+      if (envs.length || val('au:f:env', '')) h += auFilter('au:f:env', 'Environment', envs);
+      if (branches.length || val('au:f:branch', '')) h += auFilter('au:f:branch', 'Branch', branches);
+    }
+    return h + '<p class="small muted rail-note">Each suite runs in its own repository\'s GitHub Actions. Test Run reads its results file (JUnit XML or CTRF JSON), whatever the framework.</p>';
+  }
+  /** A single-choice filter: nothing chosen = everything (the field reads Select); ↻ on its title's row clears it. */
+  function auFilter(bind, title, options) {
+    var on = !!val(bind, '');
+    var id = bind.replace(/\W/g, '_');
+    var low = title.toLowerCase();
+    return '<div class="rail-group"><div class="rail-head"><label class="rail-title" for="' + id + '">' + esc(title) + '</label>' +
+      '<button type="button" class="help-btn" data-action="au-filter-reset" data-dd="' + esc(bind) + '" title="Show every ' + low + '" aria-label="Reset the ' + low + ' filter"' + (on ? '' : ' disabled') + '>' + RESET_ICON + '</button></div>' +
+      dropdown({ bind: bind, id: id, value: val(bind, ''), options: options }) + '</div>';
+  }
+
+  /** The suite's card: name, repository, results format; its actions on the right. */
+  function auHead(s, actions) {
+    var d = S.auto.data;
+    var meta = [];
+    if (s.repo) meta.push('<a href="https://github.com/' + esc(s.repo) + '" target="_blank" rel="noopener">' + esc(s.repo) + ' ↗</a>');
+    if (s.workflow) meta.push('workflow ' + esc(s.workflow));
+    meta.push(s.format ? 'results: ' + esc(d.formats[s.format] || s.format) + (s.artifact ? ' in artifact <span class="mono">' + esc(s.artifact) + '</span>' : '') : 'no results imported yet');
+    if (s.casePattern) meta.push('case IDs <span class="mono">' + esc(s.casePattern) + '</span>');
+    // ▶ Run (GitHub Actions) is the primary button once the suite is linked to its workflow; until then ⤒ Import Results is
+    if (actions == null) {
+      actions = !d.canAct ? '' : '<button data-action="au-edit">✎ Edit</button>' + (s.workflowId
+        ? '<button data-action="au-import">⤒ Import Results</button><button class="primary" data-action="au-run">▶ Run</button>'
+        : '<button class="primary" data-action="au-import">⤒ Import Results</button>');
+    }
+    return '<section class="card card-pad"><div class="auto-head"><div class="grow"><h2>' + esc(s.name) + '</h2><p class="small muted">' + meta.join(' · ') + '</p></div>' +
+      (actions ? '<div class="row">' + actions + '</div>' : '') + '</div></section>';
+  }
+
+  /** Screen 1: the suite and its kept runs. */
+  function auRunsList(s) {
+    var d = S.auto.data;
+    var all = auRunsOf(s.id);
+    var rows = auShownRuns(s.id);
+    var h = auHead(s) + auJobsCard(s) + '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs</h2><p class="small muted">' + auKeepText(d.keep) + ' for each test suite and cycle.</p></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>What ran</th><th>Result</th><th class="num">Pass rate</th><th>Attached to</th><th><span class="sr">Open</span></th></tr></thead><tbody>';
+    if (!rows.length) h += '<tr><td colspan="6" class="no-data">' + (all.length ? 'No runs match the filters' : 'No runs yet' + (d.canAct ? '. Bring one in with ⤒ Import Results.' : '')) + '</td></tr>';
+    rows.forEach(function (r) {
+      var what = auCommit(r);
+      var sub = [r.env, auOptions(r)].filter(Boolean).join(' · ');
+      h += '<tr><td class="nowrap">' + esc(auDate(r.startedAt)) + '<div class="small muted">' + esc([r.by, auHow(r)].filter(Boolean).join(' · ')) + '</div></td>' +
+        '<td>' + (what ? '<span class="mono">' + esc(what) + '</span>' : '<span class="faint">–</span>') + (sub ? '<div class="small muted">' + esc(sub) + '</div>' : '') + '</td>' +
+        '<td style="min-width:150px">' + auResult(r.totals) + '</td>' +
+        '<td class="num nowrap">' + (r.passRate == null ? '–' : '<b>' + r.passRate + '%</b><div>' + auFrom(r.passRate, r.prev && r.prev.passRate, '%') + '</div>') + '</td>' +
+        '<td><span class="small">' + esc(attachText(r.attach)) + '</span></td>' +
+        '<td class="num"><button class="small-btn" data-action="au-open" data-id="' + esc(r.id) + '" aria-label="Open the run from ' + esc(auDate(r.startedAt)) + '">Open</button></td></tr>';
+    });
+    return '<div class="stack">' + h + '</tbody></table></div></section></div>';
+  }
+
+  /** One run with its comparison, causes and history (read once, when opened). */
+  function auDetail() {
+    var A = S.auto;
+    if (A.detail && A.detail.run.id === A.runId) return A.detail;
+    if (!A.detailLoading) {
+      A.detailLoading = true;
+      TR.http('GET', '/api/automation/run?id=' + enc(A.runId)).then(function (r) {
+        A.detailLoading = false;
+        if (!r.ok) { toast(r.error, 'bad'); A.runId = ''; A.screen = 'runs'; render(); return; }
+        A.detail = r;
+        A.suite = r.run.suiteId;
+        A.open = { 0: true };
+        A.filter = A.wantFilter || (r.run.totals.failed ? 'failed' : 'all'); // wantFilter: a What changed card on Summary
+        A.wantFilter = '';
+        A.q = '';
+        A.allFiles = false;
+        A.moving = false;
+        var firstFail = r.run.tests.filter(function (t) { return t.status === 'fail'; })[0];
+        A.sel = firstFail ? firstFail.id : '';
+        render();
+      });
+    }
+    return null;
+  }
+
+  /** The tests the All tests list shows, for its chips and search. */
+  function auTestsShown(det) {
+    var A = S.auto, c = det.compare;
+    var sets = { newfail: c.newFailures, still: c.stillFailing, fixed: c.fixed };
+    var inSet = sets[A.filter] ? {} : null;
+    if (inSet) sets[A.filter].forEach(function (id) { inSet[id] = true; });
+    var q = String(A.q || '').trim().toLowerCase();
+    return det.run.tests.filter(function (t) {
+      if (A.filter === 'failed' && t.status !== 'fail') return false;
+      if (A.filter === 'skipped' && t.status !== 'other') return false;
+      if (A.filter === 'flaky' && !t.flaky) return false;
+      if (inSet && !inSet[t.id]) return false;
+      return !q || [t.title, t.file, t.suite, t.tags.join(' '), t.caseIds.join(' '), t.message].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  /** The Full report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
+  function auReportTip(r) {
+    var text = r.source && r.source.runUrl
+      ? 'The suite\'s own report, traces, videos and logs, on its GitHub Actions run. Kept by GitHub for up to 90 days, or until it\'s deleted there. The results on this page stay in Test Run.'
+      : 'This run was imported from a results file, so Test Run has no link to the suite\'s own report: it stays wherever the run was done. The results on this page stay in Test Run.';
+    return helpButton({ id: 'frTip', label: 'About the full report', title: 'Full report', html: '<span>' + esc(text) + '</span>' });
+  }
+
+  /** Screen 4: a run's results, the management view. o.published: on the published site, read only (unlocked there). */
+  function auRunView(det, o) {
+    o = o || {};
+    var A = S.auto, r = det.run, t = r.totals, prev = det.previous;
+    var can = !o.published && det.canAct && !!S.app && S.app.books.some(function (b) { return b.name === r.attach.book; });
+    var state = t.failed ? 'fail' : t.passed ? 'pass' : 'other';
+    var by = r.by ? (r.source.kind === 'github' ? 'started by ' : 'imported by ') + r.by : '';
+    var meta = [auDate(r.startedAt), auCommit(r), r.env, auOptions(r), by, auLength(r.durationMs)].filter(Boolean);
+    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
+      '<p class="small muted">' + esc(meta.join(' · ')) + '</p><span class="small">' + esc(attachText(r.attach)) + '</span></div></div>';
+    // Actions: back on the left; then Change Cycle…, Delete…, ⤓ Download, ↗ Full Report and its ? last
+    h += '<div class="run-actions">' + (o.published ? '<button class="small-btn" data-action="pub-back">‹ Summary</button>' : '<button class="small-btn" data-action="au-back">‹ Runs</button>') + '<span class="grow"></span>' +
+      (can ? '<button class="small-btn" data-action="au-move" aria-expanded="' + !!A.moving + '">Change Cycle…</button><button class="small-btn danger-outline" data-action="au-delete">Delete…</button>' : '') +
+      (o.published
+        ? '<button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>'
+        : '<button class="small-btn" data-action="au-excel" title="The results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>') +
+      (r.source.runUrl ? '<button class="small-btn" data-action="au-full-report" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div>';
+    if (A.moving && can) {
+      h += '<div class="item stack"><div class="tool-title">Change cycle</div><p class="small muted">Attach this run to another workbook, test suite or test cycle.</p>' + auAttachPickers('mv') + auFullWarning('mv', r.suiteId, r.id) +
+        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-move-cancel">Cancel</button><button class="primary" data-action="au-move-save">Save</button></div></div>';
+    }
+    var pt = prev ? prev.totals : null;
+    h += '<div class="kpis" style="margin-bottom:0">' +
+      auKpi(r.passRate == null ? '–' : r.passRate + '%', 'pass rate', auFrom(r.passRate, prev && prev.passRate, '%'), '', 'Passed out of passed and failed; skipped tests are left out') +
+      auKpi(t.passed, 'passed', auFrom(t.passed, pt && pt.passed), 'pass') + auKpi(t.failed, 'failed', auFrom(t.failed, pt && pt.failed, '', true), 'fail') +
+      auKpi(t.skipped, 'skipped') + auKpi(t.flaky, 'flaky', '', '', 'Passed on a retry') + '</div>' +
+      '<div class="progress-wrap">' + TR.bar(auCounts(t)) + '<div class="legend"><span><span class="sym-pass">' + TR.SYM.pass + '</span> <b>' + t.passed + '</b> passed</span><span><span class="sym-fail">' + TR.SYM.fail + '</span> <b>' + t.failed + '</b> failed</span><span><span class="sym-other">' + TR.SYM.other + '</span> <b>' + t.skipped + '</b> skipped</span></div>' +
+      '<span class="small muted">' + (prev ? 'previous run: ' + esc(auDate(prev.startedAt)) : 'no earlier run to compare with') + '</span></div></section>';
+
+    // What changed: each card sets the tests list below
+    var c = det.compare;
+    function card(n, l, sub, f) { return '<button data-action="au-filter" data-f="' + f + '"><span class="v">' + n + '</span><span class="l"><b>' + l + '</b>' + (sub ? ' · ' + sub : '') + '</span></button>'; }
+    h += '<section class="card card-pad stack"><h2>What changed since the previous run</h2>' + (prev
+      ? '<div class="changed">' + card(c.newFailures.length, 'new failures', 'passed last time', 'newfail') + card(c.stillFailing.length, 'still failing', '', 'still') + card(c.fixed.length, 'fixed', 'failed last time', 'fixed') + card(c.flaky.length, 'flaky', 'passed on a retry', 'flaky') + '</div>'
+      : '<p class="small muted">This is the first run of ' + esc(r.suiteName) + ' kept for ' + esc(bookTitle(r.attach.book) + ' › ' + r.attach.tab) + ', so there is nothing to compare it with yet.</p>') + '</section>';
+
+    // Failures by cause
+    var byId = {};
+    r.tests.forEach(function (x) { byId[x.id] = x; });
+    var name = function (x) { return (x.file ? x.file + ' › ' : x.suite ? x.suite + ' › ' : '') + x.title; };
+    h += '<section class="card card-pad stack"><div><h2>Failures by cause</h2><p class="small muted">Failure messages with the numbers, IDs and quoted values taken out, so tests that broke the same way sit together.</p></div><div>' +
+      (det.causes.length ? det.causes.map(function (g, i) {
+        var open = !!A.open[i];
+        var list = g.tests.slice(0, 8).map(function (id) { var x = byId[id]; return x ? '<button class="linkish" data-action="au-test" data-id="' + esc(id) + '">' + esc(name(x)) + '</button>' : ''; }).join('');
+        return '<div class="cause' + (open ? '' : ' collapsed') + '"><button class="cause-head" data-action="au-cause" data-i="' + i + '" aria-expanded="' + open + '"><span class="chev" aria-hidden="true">▾</span><span class="' + (g.other ? '' : 'mono') + '">' + esc(g.signature) + '</span>' +
+          '<span class="nowrap"><b>' + g.count + '</b> ' + (g.count === 1 ? 'test' : 'tests') + (g.newCount ? ' <span class="pill fail">' + g.newCount + ' new</span>' : '') + '</span></button>' +
+          '<div class="cause-body">' + list + (g.tests.length > 8 ? '<span class="muted">… ' + (g.tests.length - 8) + ' more</span>' : '') + '</div></div>';
+      }).join('') : '<p class="small muted">Nothing failed in this run.</p>') + '</div></section>';
+
+    // By test file
+    var files = A.allFiles ? det.files : det.files.slice(0, 10);
+    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>By test file</h2></div><div class="table-wrap"><table><thead><tr><th>File</th><th class="num">Tests</th>' +
+      '<th class="num"><span aria-hidden="true">' + TR.SYM.pass + '</span><span class="sr">Passed</span></th><th class="num"><span aria-hidden="true">' + TR.SYM.fail + '</span><span class="sr">Failed</span></th><th class="num"><span aria-hidden="true">' + TR.SYM.other + '</span><span class="sr">Skipped</span></th><th>Result</th></tr></thead><tbody>' +
+      (files.length ? files.map(function (f) {
+        return '<tr><td class="mono">' + esc(f.file) + '</td><td class="num">' + f.total + '</td><td class="num">' + f.passed + '</td><td class="num">' + f.failed + '</td><td class="num">' + f.skipped + '</td><td style="min-width:120px">' + TR.bar({ pass: f.passed, fail: f.failed, other: f.skipped, none: 0, total: f.total }, true) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="no-data">No data available</td></tr>') +
+      (det.files.length > 10 && !A.allFiles ? '<tr><td colspan="6" class="small muted">… ' + plural(det.files.length - 10, 'more file') + ' <button class="linkish" data-action="au-all-files">Show All</button></td></tr>' : '') + '</tbody></table></div></section>';
+
+    // All tests, with search, chips and the test panel
+    var counts = { all: t.total, failed: t.failed, newfail: c.newFailures.length, still: c.stillFailing.length, fixed: c.fixed.length, flaky: t.flaky, skipped: t.skipped };
+    var chips = [['all', 'All'], ['failed', 'Failed'], ['newfail', 'New failures'], ['still', 'Still failing'], ['fixed', 'Fixed'], ['flaky', 'Flaky'], ['skipped', 'Skipped']]
+      .filter(function (x) { return x[0] === 'all' || x[0] === 'failed' || counts[x[0]] || A.filter === x[0]; });
+    var shown = auTestsShown(det);
+    var isNew = {}, isFixed = {};
+    c.newFailures.forEach(function (id) { isNew[id] = true; });
+    c.fixed.forEach(function (id) { isFixed[id] = true; });
+    var hist = det.history.byTest;
+    var LIMIT = 200;
+    h += '<section class="card card-pad stack" id="auTests"><h2>All tests</h2><div class="toolbar" style="margin:0"><label class="sr" for="auQ">Search tests</label><input id="auQ" type="search" placeholder="Search title, file or tag" value="' + esc(A.q) + '">' +
+      chips.map(function (x) { return '<button class="chip" data-action="au-chip" data-f="' + x[0] + '" aria-pressed="' + (A.filter === x[0]) + '">' + x[1] + ' <span class="n">' + counts[x[0]] + '</span></button>'; }).join('') + '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th><span class="sr">Result</span></th><th>Test</th><th>Last ' + det.history.runs.length + ' run' + (det.history.runs.length === 1 ? '' : 's') + '</th><th class="num">Time</th></tr></thead><tbody>' +
+      (shown.length ? shown.slice(0, LIMIT).map(function (x) {
+        return '<tr class="test-row' + (x.id === A.sel ? ' sel' : '') + '" tabindex="0" data-action="au-test" data-id="' + esc(x.id) + '"><td>' + TR.dot(x.status) + '<span class="sr">' + TR.CLS_LABEL[x.status] + '</span></td>' +
+          '<td>' + esc(x.title) + (isNew[x.id] ? ' <span class="pill fail">new</span>' : '') + (isFixed[x.id] ? ' <span class="pill pass">fixed</span>' : '') + (x.flaky ? ' <span class="pill other">flaky</span>' : '') +
+          (x.file || x.suite ? '<div class="small muted mono">' + esc(x.file || x.suite) + '</div>' : '') + '</td><td>' + auHist(hist[x.id] || [x.status]) + '</td><td class="num nowrap">' + esc(auSecs(x.durationMs)) + '</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="no-data">Nothing matches</td></tr>') + '</tbody></table></div>' +
+      (shown.length > LIMIT ? '<p class="small muted">Showing ' + LIMIT + ' of ' + shown.length + '. Search to narrow them down.</p>' : '');
+    var sel = byId[A.sel];
+    if (sel) h += auTestPanel(sel, det);
+    return '<div class="stack">' + h + '</section></div>';
+  }
+
+  /** The test picked in All tests: its message, where it broke, and its last runs. */
+  function auTestPanel(x, det) {
+    var list = det.history.byTest[x.id] || [x.status];
+    var since = '';
+    if (x.status === 'fail' && list.length > 1) {
+      if (list[list.length - 2] !== 'fail') since = 'First failure: this run.';
+      else {
+        var k = list.length - 1;
+        while (k > 0 && list[k - 1] === 'fail') k--;
+        since = 'Failing since ' + auDate(det.history.runs[k].startedAt, false) + '.';
+      }
+    }
+    var info = [x.file ? '<span class="mono">' + esc(x.file) + '</span>' : '', x.suite && x.suite !== x.file ? esc(x.suite) : '', esc(auSecs(x.durationMs)),
+      x.retries ? plural(x.retries, 'retry', 'retries') : '', x.tags.length ? 'tags <span class="mono">' + esc(x.tags.join(' ')) + '</span>' : '',
+      x.caseIds.length ? 'manual case' + (x.caseIds.length > 1 ? 's' : '') + ' <b>' + esc(x.caseIds.join(', ')) + '</b>' : ''].filter(Boolean);
+    return '<div class="item stack" id="auTestPanel"><div class="row"><b class="grow">' + esc(x.title) + '</b>' + TR.dot(x.status) + '<span class="sr">' + TR.CLS_LABEL[x.status] + '</span></div>' +
+      '<div class="small muted">' + info.join(' · ') + '</div>' +
+      (x.message ? '<div><div class="field-label">Message</div><pre class="trace">' + maskedHtml(x.message) + '</pre>' + (x.masked ? '<span class="small muted">A token or password was masked before it was saved.</span>' : '') + '</div>' : '') +
+      (x.stack ? '<div><div class="field-label">Where</div><pre class="trace">' + maskedHtml(x.stack) + '</pre></div>' : '') +
+      '<div class="row"><span class="small muted">Last ' + plural(list.length, 'run') + '</span>' + auHist(list) + (since ? '<span class="small muted">' + since + '</span>' : '') + '</div></div>';
+  }
+
+  /** Screen 5: Import results, attached to a workbook › test suite › test cycle. */
+  function auImport(s) {
+    var A = S.auto, f = A.file;
+    var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
+    h += '<section class="card card-pad stack"><div><h2>Import results</h2><p class="small muted">For a run done outside Test Run: on a laptop, another CI, or a GitHub run started there. JUnit XML or CTRF JSON; several files, or a .zip of them, make one run.</p></div>';
+    var fromGh = !!s.workflowId && val('au:im:src', 'file') === 'github';
+    if (s.workflowId) {
+      h += '<span class="seg" role="group" aria-label="Where the results come from"><button data-action="au-im-src" data-src="file" aria-pressed="' + !fromGh + '">Results File</button>' +
+        '<button data-action="au-im-src" data-src="github" aria-pressed="' + fromGh + '">GitHub Run</button></span>';
+    }
+    if (fromGh) {
+      var ready2 = auAttachChosen('im') && val('au:gh:run', '') && !A.busy;
+      h += auGhRunPicker(s) + auAttachPickers('im', true) + auFullWarning('im', s.id, '') +
+        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-gh-import"' + (ready2 ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+      return '<div class="stack">' + h + '</div>';
+    }
+    if (f) {
+      var p = f.preview;
+      h += '<div class="item row"><span class="file-chosen grow">' + (p ? '<span class="sym-pass" aria-hidden="true">✓</span>' : f.error ? '<span class="sym-fail" aria-hidden="true">✗</span>' : '') +
+        '<span class="mono">' + esc(f.label) + '</span><span class="faint">' + fmtBytes(f.size) + '</span></span>' +
+        (p ? '<span class="small">' + esc(p.formatLabel) + ' · <b>' + p.totals.total + '</b> tests · <span class="sym-pass">' + TR.SYM.pass + '</span> ' + p.totals.passed + ' <span class="sym-fail">' + TR.SYM.fail + '</span> ' + p.totals.failed + ' <span class="sym-other">' + TR.SYM.other + '</span> ' + p.totals.skipped + (p.tool ? ' · from ' + esc(p.tool) : '') + '</span>'
+          : f.busy ? '<span class="small muted">Reading…</span>' : '') +
+        '<button class="link-btn danger" data-action="au-file-clear" aria-label="Remove ' + esc(f.label) + '">✕</button></div>';
+      if (f.error) h += '<div class="bad-text small">' + esc(f.error) + '</div>';
+      if (p && p.ignored && p.ignored.length) h += '<div class="note warn">Not results files, so left out: ' + esc(p.ignored.join(', ')) + '.</div>';
+    } else {
+      h += '<div class="drop" id="auDrop"><b>Drop the results file here</b><span class="small muted">or</span><button data-action="au-file">⤒ Choose Files…</button></div>';
+    }
+    h += '<div class="form-grid">' +
+      auField('auBranch', 'Branch <span class="faint">(optional)</span>', '<input id="auBranch" data-bind="au:branch" value="' + esc(val('au:branch', '')) + '">', 'Read from the file when it says') +
+      auField('auEnv', 'Environment <span class="faint">(optional)</span>', '<input id="auEnv" data-bind="au:env" value="' + esc(val('au:env', '')) + '">') + '</div>';
+    h += auAttachPickers('im', true) + auFullWarning('im', s.id, '');
+    var ready = f && f.preview && auAttachChosen('im') && !A.busy;
+    h += '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-import-save"' + (ready ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  /** Screen 6: Link a suite (or change one): the repository checked on GitHub, its workflow, results artifact and environment option, then a try. */
+  function auLinkForm() {
+    var A = S.auto, s = A.editing ? auSuite() : null, G = A.gh;
+    var v = function (k, dflt) { return val('au:l:' + k, dflt == null ? '' : dflt); };
+    var h = '<section class="card card-pad stack"><div><h2>' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact. <a href="' + AU_GUIDE + '" target="_blank" rel="noopener">How, for each framework ↗</a></p></div>';
+    // 1 · Repository, checked on GitHub
+    var c = G.check;
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">1</span>Repository</div><div class="row"><label class="sr" for="auRepo">Repository link</label>' +
+      '<input id="auRepo" type="url" style="flex:1 1 360px" data-bind="au:l:repo" placeholder="https://github.com/owner/repo" value="' + esc(v('repo', s ? (s.repo ? 'https://github.com/' + s.repo : '') : '')) + '">' +
+      '<button data-action="au-gh-check"' + (G.checking ? ' disabled' : '') + '>' + (G.checking ? 'Checking…' : 'Check') + '</button></div>' +
+      (G.checkError ? '<div class="check-line bad">' + esc(G.checkError) + '</div>'
+        : c ? '<div class="check-line ok">✓ ' + esc(c.repo.fullName) + ' · ' + (c.repo.private ? 'private' : 'public') + ' · ' + plural(c.counts.total, 'workflow') + ', ' + c.counts.dispatch + ' you can start by hand</div>'
+          : '<div class="small muted">Any repository Test Run\'s GitHub access can read. Check it to pick its workflow, so ▶ Run can start it; without that, results come in with ⤒ Import Results.</div>') + '</div>';
+    // 2 · Name, workflow and results
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>' + (c ? 'Workflow and results' : 'Name') + '</div><div class="form-grid' + (c ? '' : ' narrow') + '">' +
+      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">');
+    var wf = c ? auLinkWorkflow() : null;
+    if (c) {
+      var can = c.workflows.filter(function (w) { return w.dispatch && w.active; });
+      h += auField('au_l_wf', 'Workflow', dropdown({ bind: 'au:l:wf', id: 'au_l_wf', value: v('wf', ''), title: 'Workflow', placeholder: can.length ? 'Select' : 'None can be started by hand',
+        disabled: !can.length, options: can.map(function (w) { return { value: String(w.id), label: w.name, hint: w.path.split('/').pop() }; }) }), 'Its Run workflow options become the run form');
+      var arts = G.arts && G.artsFor === v('wf', '') ? G.arts : null;
+      var artOpts = arts ? arts.artifacts.map(function (a) { return { value: a.name, label: a.name, hint: a.results ? a.results.formatLabel + ' · ' + plural(a.results.tests, 'test') : a.note }; }) : [];
+      var artHint = !wf ? 'Choose the workflow first' : G.artsLoading ? 'Looking inside the latest run’s artifacts…' : G.artsError ? '' : arts && arts.run ? 'From the latest run (' + auDate(arts.run.createdAt, false) + '), or type the name it will have' : 'No finished run yet: type the artifact’s name (test-results by default)';
+      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf, placeholder: G.artsLoading ? 'Loading…' : 'Select', options: artOpts }),
+        G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : artHint);
+      var envOpts = [{ value: '', label: 'None' }].concat(wf ? wf.inputs.map(function (x) { return { value: x.name, label: x.name, hint: x.description }; }) : []);
+      h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), 'Runs are grouped by it, and the run form names its GitHub environment');
+      var no = c.workflows.length - can.length;
+      if (no) h += '<p class="small muted wide">' + plural(no, 'workflow') + ' can\'t be started by hand (no <span class="mono">workflow_dispatch</span>): ' + esc(c.workflows.filter(function (w) { return !(w.dispatch && w.active); }).map(function (w) { return w.name; }).join(', ')) + '.</p>';
+    }
+    h += '</div></div>';
+    // 3 · Extras
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">3</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
+      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') +
+      auField('auMask', 'Extra masking', '<textarea id="auMask" class="mono" rows="2" data-bind="au:l:mask" placeholder="e.g. otp=\\d{6}">' + esc(v('mask', s ? s.masking.join('\n') : '')) + '</textarea>', 'One per line: a text, or a /pattern/. Tokens, passwords and Authorization headers are always masked.') + '</div></div>';
+    // 4 · Try it: saves the suite and brings the latest run in
+    if (wf) {
+      var im = G.imported;
+      h += '<div class="subsection"><div class="step-title"><span class="step-n">4</span>Try it</div>' + auAttachPickers('lk', true) +
+        '<div class="row"><button data-action="au-gh-import-latest"' + (G.importing || !auAttachChosen('lk') ? ' disabled' : '') + '>' + (G.importing ? 'Importing…' : 'Import Latest Run') + '</button>' +
+        (im ? '<span class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</span>' : '<span class="small muted">Saves the suite, then brings in the latest finished run.</span>') + '</div></div>';
+    }
+    h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
+      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  function auGhFresh() { return { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null }; }
+  var AU_GUIDE = 'https://github.com/Gurjeet-eGov/Claude-Extensions/blob/master/test-run-console/docs/automation.md';
+  /** The workflow chosen on Link a suite (from the check), or null. */
+  function auLinkWorkflow() {
+    var c = S.auto.gh.check, id = val('au:l:wf', '');
+    return c && id ? c.workflows.filter(function (w) { return String(w.id) === id; })[0] || null : null;
+  }
+  function auRepoTyped() {
+    var s = S.auto.editing ? auSuite() : null;
+    return String(val('au:l:repo', s && s.repo ? 'https://github.com/' + s.repo : '')).trim();
+  }
+  /** Check: the repository and its workflows, read from GitHub. */
+  function auGhCheck() {
+    var A = S.auto, G = A.gh, s = A.editing ? auSuite() : null;
+    var repo = auRepoTyped();
+    if (!repo) { toast('Paste the suite\'s GitHub repository link first.', 'bad'); return; }
+    G.checking = true; G.checkError = ''; G.check = null; G.arts = null; G.artsFor = ''; G.imported = null;
+    render();
+    TR.http('POST', '/api/automation/github/check', { repo: repo, id: s ? s.id : '' }).then(function (r) {
+      G.checking = false;
+      if (!r.ok) { G.checkError = r.error; render(); return; }
+      G.check = r;
+      var can = r.workflows.filter(function (w) { return w.dispatch && w.active; });
+      var keepWf = val('au:l:wf', s && s.workflowId ? String(s.workflowId) : '');
+      if (!can.some(function (w) { return String(w.id) === keepWf; })) keepWf = can.length === 1 ? String(can[0].id) : '';
+      if (S.form['au:l:art'] == null && s && s.artifact) S.form['au:l:art'] = s.artifact;
+      if (S.form['au:l:env'] == null && s) S.form['au:l:env'] = s.envInput || '';
+      S.form['au:l:wf'] = keepWf;
+      if (keepWf) auWorkflowPicked(); else render();
+    });
+  }
+  /** A workflow chosen: its options for the environment, and the latest run's artifacts (which hold results). */
+  function auWorkflowPicked() {
+    var A = S.auto, G = A.gh, wf = auLinkWorkflow(), s = A.editing ? auSuite() : null;
+    if (!wf) return;
+    if (val('au:l:env', '') && !wf.inputs.some(function (x) { return x.name === val('au:l:env', ''); })) S.form['au:l:env'] = '';
+    if (!S.form['au:l:env'] && S.form['au:l:env'] !== '' ) {
+      var guess = wf.inputs.filter(function (x) { return x.type === 'environment' || /^(env|environment|target|stage)$/i.test(x.name); })[0];
+      S.form['au:l:env'] = guess ? guess.name : '';
+    }
+    var id = String(wf.id);
+    if (G.artsFor === id && (G.arts || G.artsLoading)) return;
+    G.artsFor = id; G.arts = null; G.artsError = ''; G.artsLoading = true;
+    if (!S.form['au:lk:book']) {
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:lk:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:lk:book'], function () { auDefaults('lk'); });
+    }
+    TR.http('POST', '/api/automation/github/artifacts', { repo: auRepoTyped(), workflowId: wf.id, id: s ? s.id : '' }).then(function (r) {
+      if (G.artsFor !== id) return;
+      G.artsLoading = false;
+      if (!r.ok) { G.artsError = r.error; render(); return; }
+      G.arts = r;
+      if (!val('au:l:art', '')) {
+        var hit = r.artifacts.filter(function (a) { return a.results; })[0];
+        S.form['au:l:art'] = hit ? hit.name : r.artifacts.some(function (a) { return a.name === 'test-results'; }) || !r.artifacts.length ? 'test-results' : '';
+      }
+      render();
+    });
+    render();
+  }
+  /** What Link a suite sends: its fields, and (once checked) its workflow. */
+  function auLinkBody() {
+    var s = S.auto.editing ? auSuite() : null, wf = S.auto.gh.check ? auLinkWorkflow() : null;
+    return {
+      id: s ? s.id : '',
+      name: String(val('au:l:name', s ? s.name : '')).trim(),
+      repo: auRepoTyped(),
+      casePattern: String(val('au:l:pattern', s ? s.casePattern : '')).trim(),
+      masking: String(val('au:l:mask', s ? s.masking.join('\n') : '')),
+      workflowId: wf ? wf.id : 0,
+      artifact: String(val('au:l:art', '')).trim(),
+      envInput: val('au:l:env', '')
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Automation › GitHub Actions: runs going, the Run form, the Running view
+  // ---------------------------------------------------------------------------
+
+  var AU_ACTIVE = { waiting: true, queued: true, in_progress: true, importing: true };
+  function auActiveJobs() { return (S.auto.jobs || []).filter(function (j) { return AU_ACTIVE[j.state]; }); }
+  function auJob(id) { return (S.auto.jobs || []).filter(function (j) { return j.id === id; })[0] || null; }
+
+  /** The runs going (and those finished lately) this person may see; read again every few seconds while one is going. */
+  function auJobsLoad() {
+    var A = S.auto;
+    if (A.jobsBusy || S.connect || S.reportsMode) return;
+    A.jobsBusy = true;
+    TR.http('GET', '/api/automation/jobs').then(function (r) {
+      A.jobsBusy = false;
+      var before = A.jobs || [];
+      if (!r.ok) { if (A.jobs === null) A.jobs = []; return; }
+      var same = JSON.stringify(before) === JSON.stringify(r.jobs);
+      A.jobs = r.jobs;
+      auJobsFinished(before, r.jobs);
+      clearTimeout(A.jobsTimer);
+      if (auActiveJobs().length) A.jobsTimer = setTimeout(auJobsLoad, 3000);
+      if (!same) render();
+    });
+  }
+
+  /** Runs that finished since the last look: the Running view moves on to the results; whoever started one hears of it. */
+  function auJobsFinished(before, after) {
+    var A = S.auto, was = {};
+    before.forEach(function (j) { was[j.id] = j.state; });
+    after.forEach(function (j) {
+      if (!AU_ACTIVE[was[j.id]] || AU_ACTIVE[j.state]) return;
+      var here = S.view === 'automation' && A.screen === 'running' && A.jobId === j.id;
+      var where = j.attach.tab + ' › ' + cycleText(j.attach.cycle);
+      if (j.state === 'imported') {
+        var n = j.totals ? plural(j.totals.total, 'test') : 'the results';
+        if (here) { A.screen = 'run'; A.runId = j.importedRunId; A.detail = null; window.scrollTo(0, 0); }
+        if (here || j.by === me().name) toast('Imported ' + n + ' into ' + where + ' from GitHub Actions.' + auRemovedText(j.removed, A.data ? A.data.keep : 2));
+      } else if (!here && j.by === me().name) {
+        toast('The run of “' + j.suiteName + '” ended without results. Open it in Automation to see why.', 'bad');
+      }
+      if (S.view === 'automation') auLoad();
+    });
+  }
+
+  /** On a suite's page: its runs going in GitHub Actions, and finished ones that brought nothing in. */
+  function auJobsCard(s) {
+    var list = (S.auto.jobs || []).filter(function (j) { return j.suiteId === s.id && j.state !== 'imported'; });
+    if (!list.length) return '';
+    return '<section class="card card-pad stack"><h2>In GitHub Actions</h2>' + list.map(function (j) {
+      var active = AU_ACTIVE[j.state];
+      return '<div class="item row job-line">' + auJobDot(j) + '<span class="grow"><b>' + esc(auJobTitle(j)) + '</b><div class="small muted">' + esc(auJobMeta(j)) + '</div>' +
+        (!active && j.message ? '<div class="small bad-text">' + esc(j.message) + '</div>' : '') + '</span>' +
+        (active ? '<button class="small-btn" data-action="au-job-open" data-id="' + esc(j.id) + '">Open</button>'
+          : (j.runUrl ? '<button class="small-btn" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '') + '<button class="small-btn" data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button>') + '</div>';
+    }).join('') + '</section>';
+  }
+
+  function auJobTitle(j) {
+    return { waiting: 'Starting in GitHub Actions', queued: 'Queued in GitHub Actions', in_progress: 'Running in GitHub Actions', importing: 'Bringing the results in',
+      imported: 'Results imported', no_results: 'Finished without results', cancelled: 'Cancelled', failed: 'The results did not come in' }[j.state] || 'In GitHub Actions';
+  }
+  function auJobDot(j) {
+    if (AU_ACTIVE[j.state]) return TR.dot('none', true) + '<span class="sr">Going.</span>';
+    var c = j.state === 'imported' ? 'pass' : j.state === 'cancelled' ? 'other' : 'fail';
+    return TR.dot(c) + '<span class="sr">' + TR.CLS_LABEL[c] + '.</span>';
+  }
+  /** "master @ 9629653 · net_two · smoke · started by Gurjeet from Test Run at 10:23" */
+  function auJobMeta(j) {
+    var d = new Date(j.dispatchedAt);
+    var opts = Object.keys(j.inputs || {}).filter(function (k) { return k !== auEnvInput(j.suiteId) && j.inputs[k] && j.inputs[k] !== 'false'; })
+      .map(function (k) { return j.inputs[k] === 'true' ? k : j.inputs[k]; });
+    return [j.branch + (j.sha ? ' @ ' + j.sha.slice(0, 7) : ''), j.env].concat(opts).filter(Boolean).join(' · ') +
+      ' · started by ' + j.by + ' from Test Run at ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + (j.runNumber ? ' · run #' + j.runNumber : '');
+  }
+  function auEnvInput(suiteId) { var s = auSuite(suiteId); return s ? s.envInput : ''; }
+  /** "06:42", "1:02:05" */
+  function auClock(ms) {
+    var t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return (h ? h + ':' + pad2(m) : pad2(m)) + ':' + pad2(sec);
+  }
+  function auStepDot(x) {
+    if (x.status === 'completed') return TR.dot(x.conclusion === 'success' ? 'pass' : x.conclusion === 'failure' || x.conclusion === 'timed_out' ? 'fail' : 'other');
+    if (x.status === 'in_progress') return TR.dot('none', true);
+    return TR.dot('none');
+  }
+
+  /** Screen 3: a run going in GitHub Actions (and how it ended, when it brought nothing in). */
+  function auRunning(j, s) {
+    var A = S.auto, active = AU_ACTIVE[j.state];
+    var can = A.data.canAct;
+    var since = Date.parse(j.startedAt) || j.dispatchedAt;
+    var head = s ? auHead(s, '<button class="ghost" data-action="au-back">Back</button>' + (j.runUrl ? '<button class="ghost" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '')) : '';
+    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + auJobDot(j) + ' ' + esc(auJobTitle(j)) + '</h2>' +
+      '<p class="small muted">' + esc(auJobMeta(j)) + (active ? ' · <b id="auElapsed" data-since="' + since + '">' + auClock(Date.now() - since) + '</b> so far' : '') + '</p>' +
+      '<span class="small">' + esc(attachText(j.attach)) + '</span></div>' +
+      (active && can && j.state !== 'importing' ? '<div class="row"><button class="danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling…' : 'Cancel Run') + '</button></div>' : '') + '</div>';
+    if (j.lastError && active) h += '<div class="note warn">' + esc(j.lastError) + ' Trying again.</div>';
+    if (!active && j.message) h += '<div class="banner ' + (j.state === 'cancelled' ? 'warn' : 'bad') + '"><span>' + esc(j.message) + '</span></div>';
+    if (j.jobs && j.jobs.length) {
+      h += j.jobs.map(function (x) {
+        return '<div class="stack-s"><span class="small muted">Job <b>' + esc(x.name) + '</b>' + (x.status === 'queued' ? ', waiting for a GitHub machine' : '') + '</span><div class="steps-list">' +
+          (x.steps.length ? x.steps.map(function (st) { return '<div>' + auStepDot(st) + '<span' + (st.status === 'queued' || st.status === 'pending' ? ' class="muted"' : '') + '>' + esc(st.name) + '</span></div>'; }).join('') : '<div class="small muted">No steps yet.</div>') +
+          '</div></div>';
+      }).join('');
+    } else if (active) {
+      h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up…' : 'Asking GitHub for the new run…') + '</p>';
+    }
+    h += active ? '<p class="small muted">The results are imported by themselves when the run ends. Leaving this page doesn\'t stop the run; the full log is on GitHub.</p>'
+      : '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Back</button><button data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button></div>';
+    return '<div class="stack">' + head + h + '</section></div>';
+  }
+
+  /** The Run form's branches (and the repository's environments), read once per form. */
+  function auRunFormLoad(s) {
+    var A = S.auto;
+    A.runForm = { suite: s.id, loading: true };
+    TR.http('GET', '/api/automation/github/branches?suite=' + enc(s.id)).then(function (r) {
+      if (!A.runForm || A.runForm.suite !== s.id) return;
+      if (!r.ok) { A.runForm = { suite: s.id, error: r.error }; render(); return; }
+      A.runForm = { suite: s.id, branches: r.branches, environments: r.environments || [], defaultBranch: r.defaultBranch };
+      if (!S.form['au:rn:branch']) S.form['au:rn:branch'] = r.defaultBranch || (r.branches[0] && r.branches[0].name) || '';
+      render();
+    });
+  }
+  /** An input's value on the Run form: what was typed or picked, else its default. */
+  function auInputVal(d) {
+    var k = 'au:in:' + d.name;
+    if (d.type === 'boolean') return Object.prototype.hasOwnProperty.call(S.form, k) ? !!S.form[k] : d.default === 'true';
+    return String(val(k, d.default));
+  }
+
+  /** Screen 2: Start a run: branch, the workflow's own options, and where its results attach. */
+  function auStart(s) {
+    var A = S.auto, rf = A.runForm && A.runForm.suite === s.id ? A.runForm : null;
+    var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
+    h += '<section class="card card-pad stack"><div><h2>Start a run</h2><p class="small muted">Runs the workflow <b>' + esc(s.workflow || 'workflow') + '</b> in GitHub Actions, in ' + esc(s.repo) + '. The options below come from that workflow.</p></div>';
+    if (rf && rf.error) h += '<div class="note bad">' + esc(rf.error) + '</div>';
+    var branches = rf && rf.branches ? rf.branches : null;
+    h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: val('au:rn:branch', ''), title: 'Branch', disabled: !branches,
+      placeholder: rf && rf.loading ? 'Loading…' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
+    (s.inputs || []).forEach(function (d) {
+      var id = 'au_in_' + d.name.replace(/\W/g, '_'), bind = 'au:in:' + d.name, hint = esc(d.description);
+      var opt = !d.required && (d.type === 'string' || d.type === 'number') ? ' <span class="faint">(optional)</span>' : '';
+      if (d.type === 'boolean') {
+        h += '<div><label class="note-label" for="' + id + '">' + esc(d.name) + '</label><label class="check"><input type="checkbox" id="' + id + '" data-bind="' + esc(bind) + '"' + (auInputVal(d) ? ' checked' : '') + '> ' + (hint || 'On') + '</label></div>';
+        return;
+      }
+      var envs = d.type === 'environment' && rf && rf.environments ? rf.environments : [];
+      var control = d.type === 'choice' || envs.length
+        ? dropdown({ bind: bind, id: id, value: auInputVal(d), title: d.name, options: d.type === 'choice' ? d.options : envs })
+        : '<input id="' + id + '" data-bind="' + esc(bind) + '"' + (d.type === 'number' ? ' inputmode="decimal"' : '') + ' value="' + esc(auInputVal(d)) + '">';
+      h += auField(id, esc(d.name) + opt, control, hint);
+    });
+    h += '</div>' + auAttachPickers('rn', true) + auFullWarning('rn', s.id, '');
+    var envName = s.envInput ? auInputVal((s.inputs || []).filter(function (x) { return x.name === s.envInput; })[0] || { name: s.envInput, default: '' }) : '';
+    if (!envName) { var e = (s.inputs || []).filter(function (x) { return x.type === 'environment'; })[0]; if (e) envName = auInputVal(e); }
+    var ready = val('au:rn:branch', '') && auAttachChosen('rn') && !A.starting;
+    h += '<div class="row"><span class="small muted secrets-note">' + (envName ? 'Secrets come from the repository\'s GitHub environment <span class="mono">' + esc(envName) + '</span>; nothing to upload.' : 'Secrets come from the repository\'s GitHub settings; nothing to upload.') + '</span>' +
+      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-run-start"' + (ready ? '' : ' disabled') + '>' + (A.starting ? 'Starting…' : 'Start Run') + '</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  /** Import results › GitHub run: a finished run of the suite's workflow, picked from the latest ones. */
+  function auGhRunPicker(s) {
+    var A = S.auto;
+    if (A.ghRunsFor !== s.id && !A.ghRunsLoading) {
+      A.ghRunsLoading = true; A.ghRunsFor = s.id; A.ghRuns = null;
+      TR.http('GET', '/api/automation/github/runs?suite=' + enc(s.id)).then(function (r) {
+        A.ghRunsLoading = false;
+        A.ghRuns = r.ok ? r.runs : { error: r.error };
+        if (r.ok && !val('au:gh:run', '')) { var first = r.runs.filter(function (x) { return !x.kept; })[0]; if (first) S.form['au:gh:run'] = String(first.id); }
+        render();
+      });
+    }
+    var list = A.ghRuns;
+    if (list && list.error) return '<div class="note bad">' + esc(list.error) + '</div>';
+    var word = { success: 'passed', failure: 'failed', cancelled: 'cancelled', timed_out: 'timed out', skipped: 'skipped' };
+    return auField('au_gh_run', 'GitHub run', dropdown({ bind: 'au:gh:run', id: 'au_gh_run', cls: 'cover-dd', value: val('au:gh:run', ''), title: 'GitHub run', disabled: !list || !list.length,
+      placeholder: !list ? 'Loading…' : list.length ? 'Select' : 'No finished runs yet',
+      options: (list || []).map(function (x) {
+        return { value: String(x.id), label: '#' + x.number + ' · ' + x.branch + ' · ' + auDate(x.createdAt) + ' · ' + (x.event === 'workflow_dispatch' ? 'started by hand' : x.event),
+          hint: (word[x.conclusion] || x.conclusion || '') + (x.kept ? ' · already in Test Run' : '') };
+      }) }), 'Finished runs of “' + esc(s.workflow) + '”, newest first. Its results artifact is read from GitHub.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Setup › Automation (the host only)
+  // ---------------------------------------------------------------------------
+
+  function auSetupCard() {
+    var A = S.auto;
+    if (!A.data) { if (!A.loading && !A.error) auLoad(); return A.error ? '<div class="banner bad">' + esc(A.error) + '</div>' : '<div class="loading">Loading the automation settings…</div>'; }
+    if (!A.setupGh && !A.setupGhLoading) {
+      A.setupGhLoading = true;
+      TR.http('GET', '/api/automation/github/status').then(function (r) { A.setupGhLoading = false; A.setupGh = r; render(); });
+    }
+    var g = A.setupGh;
+    var via = g && (g.transport === 'gh' ? 'gh' : g.transport === 'fetch' ? 'a GitHub token' : g.transport === 'fake' ? 'a pretend GitHub (demo)' : 'GitHub');
+    var access = !g ? '<span class="small muted">Checking…</span>'
+      : g.ok ? '<span class="check-line ok" style="margin:0">✓ ' + esc(via) + ', signed in as ' + esc(g.login || 'unknown') + '</span>'
+        : '<span class="check-line bad" style="margin:0">' + esc(g.error) + '</span>';
+    var keep = A.data.keep;
+    var keeps = ['1', '2', '3', '5'];
+    if (keeps.indexOf(String(keep)) < 0) keeps.push(String(keep));
+    var suites = A.data.suites;
+    var masks = suites.filter(function (s) { return s.masking.length; });
+    var h = '<section class="card card-pad stack"><div><h2>Automation</h2><p class="small muted">Suites run in their own repositories\' GitHub Actions. Test Run keeps their results; GitHub keeps the full reports. Who can see and run them is in <button class="linkish" data-action="setup-part" data-part="access">Access › Users</button>.</p></div><div class="kv-grid">' +
+      '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this laptop, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
+      '<label class="kv-k" for="auKeep">Runs kept</label><span class="row">' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) +
+      '<span class="small muted">for each test suite and cycle; the oldest goes when a new one comes in</span></span>' +
+      '<span class="kv-k">Masking</span><span class="stack-s"><span class="small">Always: tokens, passwords, Authorization headers, JWTs</span><span class="small muted">Extra rules are set on each suite, in its ✎ Edit' +
+      (masks.length ? ': ' + esc(masks.map(function (s) { return s.name + ' (' + plural(s.masking.length, 'rule') + ')'; }).join(', ')) : '; none yet') + '.</span></span>' +
+      '<span class="kv-k">Space on GitHub Pages</span><span class="small">Shown in <button class="linkish" data-action="setup-part" data-part="publish">Setup › Publish</button>, automation results included.</span>' +
+      '</div></section>';
+    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Linked suites</h2></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
+      (suites.length ? suites.map(function (s) {
+        var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
+        return '<tr><td>' + esc(s.name) + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
+          '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
+          '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
+      }).join('') : '<tr><td colspan="5" class="no-data">No data available</td></tr>') + '</tbody></table></div></section>';
+    return '<div class="stack">' + h + '</div>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1939,7 +2968,7 @@
         toast((lead || '') + name + '\'s invite link is copied. Send it to them privately.' + (warn ? ' ' + warn : ''), warn ? 'long' : '');
       } else {
         S.teamLink = { name: name, link: link, warn: warn };
-        toast('Copying was blocked: copy the link shown under People.', 'bad');
+        toast('Copying was blocked: copy the link shown under Users.', 'bad');
       }
       render();
       if (!ok) { var t = $('teamLink'); if (t) t.select(); }
@@ -1956,7 +2985,7 @@
   function copyAdminLink(r) {
     copyText(r.link).then(function (ok) {
       if (ok) { S.teamLink = null; toast('Your admin link is copied. Open it on the other computer; keep it to yourself.' + (r.linkWarning ? ' ' + r.linkWarning : ''), 'long'); }
-      else { S.teamLink = { name: 'your admin link', link: r.link, warn: r.linkWarning }; toast('Copying was blocked: copy the link shown under People.', 'bad'); }
+      else { S.teamLink = { name: 'your admin link', link: r.link, warn: r.linkWarning }; toast('Copying was blocked: copy the link shown under Users.', 'bad'); }
       render();
     });
   }
@@ -1966,14 +2995,14 @@
     return '<div class="check-line ' + (c.ok ? 'ok' : 'bad') + '">' + (c.ok ? '✓ ' + esc(okText || c.message) : '✗ ' + esc(c.message)) + ' <span class="faint">(' + esc(c.at) + ')</span></div>';
   }
 
-  /** Setup → Team: who may use this Test Run, and how they reach this laptop. */
-  function teamCard() {
+  /** Setup › Access › Online access: whether the team can reach this laptop, and how. */
+  function onlineCard() {
     if (!isOwner()) return '';
     var r = S.team;
-    var h = '<section class="section card card-pad stack team-card" id="team">';
+    var h = '<section class="section card card-pad stack team-card" id="online">';
     var head = function (on) {
-      return '<div class="row team-head"><div class="grow"><h2>Team</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
-        (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share with my team</label>') + '</div>';
+      return '<div class="row team-head"><div class="grow"><h2>Online access</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This laptop must stay on while they work.</p></div>' +
+        (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share online</label>') + '</div>';
     };
     if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading…</div></section>'; }
     var t = r.team;
@@ -1981,8 +3010,8 @@
     h += head(t.enabled);
     if (!t.enabled) return h + '<p class="small faint">Off: only this computer can open Test Run.</p></section>';
 
-    // Connection: how the team reaches this laptop
-    h += '<div class="team-block"><h3>Connection</h3>';
+    // Online link: how the team reaches this laptop
+    h += '<div class="team-block"><h3>Online link</h3>';
     h += '<div class="way-choice" role="radiogroup" aria-label="Way in">' +
       '<label class="way' + (t.mode === 'quick' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="quick"' + (t.mode === 'quick' ? ' checked' : '') + '><span><b>Quick tunnel</b><span class="small muted">Free, no account. A new address each time it starts.</span></span></label>' +
       '<label class="way' + (t.mode === 'fixed' ? ' on' : '') + '"><input type="radio" name="teamMode" data-action="team-mode" value="fixed"' + (t.mode === 'fixed' ? ' checked' : '') + '><span><b>Fixed address</b> <span class="pill accent">best for a team</span><span class="small muted">Never changes. A one-time setup (Tailscale or Cloudflare).</span></span></label></div>';
@@ -1990,9 +3019,9 @@
     if (t.mode === 'quick') {
       if (a.tunnel.running || a.tunnel.reconnectIn != null) {
         h += '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
-          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop sharing</button></div>';
+          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop Sharing</button></div>';
       } else if (a.tunnel.available) {
-        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start sharing over the internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
+        h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start Sharing Over the Internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this laptop.</span></div>';
       } else {
         h += '<div class="note info">Install <span class="mono">cloudflared</span> first: <span class="mono">brew install cloudflared</span>. Then press Start here, or run <span class="mono">npm run share</span>.</div>';
       }
@@ -2024,8 +3053,8 @@
         '<div class="row"><span class="grow"></span><button data-action="team-save">Save</button></div>';
       if (t.tunnelName) {
         h += a.tunnel.running || a.tunnel.reconnectIn != null
-          ? '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono grow">' + esc(t.tunnelName) + '</span><button data-action="team-share" data-on="0">Stop the tunnel</button></div>'
-          : '<div class="row"><button class="primary" data-action="team-share" data-on="1"' + (a.tunnel.available ? '' : ' disabled') + '>Start tunnel ' + esc(t.tunnelName) + '</button></div>';
+          ? '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Tunnel running' : 'Reconnecting') + '</span><span class="mono grow">' + esc(t.tunnelName) + '</span><button data-action="team-share" data-on="0">Stop the Tunnel</button></div>'
+          : '<div class="row"><button class="primary" data-action="team-share" data-on="1"' + (a.tunnel.available ? '' : ' disabled') + '>Start Tunnel ' + esc(t.tunnelName) + '</button></div>';
         if (a.tunnel.error) h += '<div class="note ' + (a.tunnel.reconnectIn != null ? 'info' : 'bad') + '">' + esc(a.tunnel.error) + '</div>';
       }
       h += '<div class="small muted">Reached at: ' + (a.effective ? '<span class="mono">' + esc(a.effective) + '</span>' : '<b>no address yet</b>') + '</div>';
@@ -2043,47 +3072,89 @@
     h += '<div class="team-block"><div class="row"><h3>Your admin link</h3><span class="small muted grow">Full control from another computer or network. Keep it to yourself, like a password.</span></div>' +
       (me().admin ? '<div class="note info">You are using your admin link now. Stopping sharing or making a new admin link disconnects this browser.</div>' : '') +
       '<div class="row">' + (ad.exists
-        ? '<button data-action="admin-copy"' + (ad.canCopy ? aoff : ' disabled') + '>Copy admin link</button><button class="ghost" data-action="admin-new"' + aoff + ' title="Make a new admin link; the old one stops working">New admin link</button><button class="ghost danger" data-action="admin-remove">Remove</button>' +
+        ? '<button data-action="admin-copy"' + (ad.canCopy ? aoff : ' disabled') + '>Copy Link</button><button class="ghost" data-action="admin-new"' + aoff + ' title="Make a new admin link; the old one stops working">New Link</button><button class="ghost danger" data-action="admin-remove">Remove</button>' +
           '<span class="small faint">' + (ad.lastSeen ? 'Last used ' + esc(ad.lastSeen) : 'Not used yet') + '</span>'
-        : '<button data-action="admin-new"' + aoff + '>Make my admin link</button>') + '</div>' +
+        : '<button data-action="admin-new"' + aoff + '>Make My Admin Link</button>') + '</div>' +
       (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
 
-    // People: each with their access and the workbooks they can open
-    var books = (S.app && S.app.books || []).map(function (b) { return b.name; });
-    var bookPick = function (attrs, current) {
-      var cur = current && current.length ? current[0] : '';
-      return '<select ' + attrs + '>' + opt('', 'All workbooks', !cur) + books.map(function (n) { return opt(n, n.replace(/\.xlsx$/i, ''), n === cur); }).join('') +
-        (cur && books.indexOf(cur) < 0 ? opt(cur, cur.replace(/\.xlsx$/i, '') + ' (deleted)', true) : '') + '</select>';
-    };
-    h += '<div class="team-block"><h3>People</h3>';
+    return h + '</section>';
+  }
+
+  var ROLE_OPTIONS = [{ value: 'tester', label: 'Update status' }, { value: 'viewer', label: 'View only' }];
+
+  /** "today", "yesterday" or "20 Nov" (with the year when it isn't this one), from "2026-11-24 10:23". */
+  function seenWhen(stamp) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(stamp || ''));
+    if (!m) return '';
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var days = Math.round((today - d) / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    return d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + (d.getFullYear() === today.getFullYear() ? '' : ' ' + d.getFullYear());
+  }
+
+  /** A person's Automated suites as one choice: 'all', 'none', 's:<id>', or 'multi' (several, set elsewhere). Suites unlinked since are left out. */
+  function suitesChoice(p, names) {
+    var s = p.automationSuites;
+    if (s === 'none') return { value: 'none', ids: [] };
+    if (!Array.isArray(s)) return { value: 'all', ids: [] };
+    var ids = s.filter(function (id) { return names[id] != null; });
+    return { value: !ids.length ? 'none' : ids.length === 1 ? 's:' + ids[0] : 'multi', ids: ids };
+  }
+
+  /** Setup › Access › Users: each person's invite link, what they can open, and what they can do with automation. */
+  function usersCard() {
+    if (!isOwner() || !S.team) return '';
+    var r = S.team;
+    var t = r.team;
+    var canAdd = t.enabled && r.canInvite;
+    var why = !t.enabled ? 'Turn on Share online above to make links.' : 'Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.');
+    var h = '<section class="section card card-pad stack" id="users"><div><h2>Users</h2><p class="small muted">Each person\'s invite link, what they can open, and what they can do with automation.</p></div>';
+    if (!t.enabled && r.people.length) h += '<div class="note info">Share online is off, so these links do not open Test Run until it is on again.</div>';
     if (S.teamLink) {
       h += '<div class="note info stack-s"><span>This browser did not let Test Run copy the link for <b>' + esc(S.teamLink.name) + '</b>. Copy it from here and send it to them privately.</span>' +
         '<div class="row"><input id="teamLink" readonly value="' + esc(S.teamLink.link) + '" class="grow mono"><button class="primary" data-action="copy-link">Copy</button><button class="ghost" data-action="hide-link">Done</button></div>' +
         (S.teamLink.warn ? '<span class="small">' + esc(S.teamLink.warn) + '</span>' : '') + '</div>';
     }
+    var books = (S.app && S.app.books || []).map(function (b) { return b.name; });
+    var suites = r.suites || [];
+    var names = {};
+    suites.forEach(function (x) { names[x.id] = x.name; });
     if (r.people.length) {
-      h += '<div class="table-wrap"><table class="people"><thead><tr><th>Name</th><th>Access</th><th>Workbooks</th><th>Last seen</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
-        return '<tr><td>' + esc(p.name) + '</td><td><select aria-label="Access for ' + esc(p.name) + '" data-change="team-role" data-id="' + esc(p.id) + '">' +
-          opt('tester', 'Update status', p.role === 'tester') + opt('viewer', 'View only', p.role === 'viewer') + '</select></td>' +
-          '<td>' + bookPick('aria-label="Workbooks ' + esc(p.name) + ' can open" data-change="team-books" data-id="' + esc(p.id) + '"', p.books) + '</td>' +
-          '<td class="small muted">' + esc(p.lastSeen || 'not yet') + '</td>' +
+      h += '<div class="table-wrap"><table class="people"><thead><tr><th>Name</th><th>Access</th><th>Workbooks</th><th>Automated suites</th><th>Start runs</th><th></th></tr></thead><tbody>' + r.people.map(function (p) {
+        var viewer = p.role === 'viewer';
+        var book = p.books && p.books.length ? p.books[0] : '';
+        var bookOpts = [{ value: 'all', label: 'All workbooks' }].concat(books.map(function (n) { return { value: n, label: n.replace(/\.xlsx$/i, '') }; }),
+          book && books.indexOf(book) < 0 ? [{ value: book, label: book.replace(/\.xlsx$/i, '') + ' (deleted)' }] : []);
+        var sc = suitesChoice(p, names);
+        var suiteOpts = [{ value: 'all', label: 'All suites' }].concat(
+          sc.value === 'multi' ? [{ value: 'multi', label: sc.ids.map(function (id) { return names[id]; }).join(', ') }] : [],
+          suites.map(function (x) { return { value: 's:' + x.id, label: x.name }; }),
+          [{ value: 'none', label: 'None', hint: 'no automated results' }]);
+        var copyTip = !p.canCopy ? 'This link was made before links could be copied again: use New Link once' : !canAdd ? why : 'Copy ' + p.name + '\'s link again (it keeps working)';
+        return '<tr><td>' + esc(p.name) + '<div class="small muted"' + (p.lastSeen ? ' title="Last seen ' + esc(p.lastSeen) + '"' : '') + '>' + (p.lastSeen ? 'seen ' + esc(seenWhen(p.lastSeen) || p.lastSeen) : 'not seen yet') + '</div></td>' +
+          '<td class="u-role">' + dropdown({ bind: 'u:role:' + p.id, id: 'uRole-' + p.id, change: 'team-role', value: p.role, options: ROLE_OPTIONS, label: 'Access for ' + p.name }) + '</td>' +
+          '<td class="u-books">' + dropdown({ bind: 'u:books:' + p.id, id: 'uBooks-' + p.id, change: 'team-books', value: book || 'all', options: bookOpts, label: 'Workbooks ' + p.name + ' can open' }) + '</td>' +
+          '<td class="u-suites">' + dropdown({ bind: 'u:suites:' + p.id, id: 'uSuites-' + p.id, change: 'team-suites', value: sc.value, options: suiteOpts, label: 'Automated suites ' + p.name + ' sees' }) + '</td>' +
+          '<td class="u-runs">' + (viewer ? '<span class="faint" title="View only can read results but not start runs">–<span class="sr">View only never starts runs</span></span>'
+            : '<input type="checkbox" data-action="team-runs" data-id="' + esc(p.id) + '" aria-label="' + esc(p.name) + ' can start runs and import results"' + (p.startRuns ? ' checked' : '') + '>') + '</td>' +
           '<td class="num"><div class="row" style="justify-content:flex-end">' +
-          '<button class="ghost" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && r.canInvite ? '' : ' disabled') +
-          ' title="' + (!p.canCopy ? 'This link was made before links could be copied again: use New link once' : !r.canInvite ? 'Links need an address first' : 'Copy ' + esc(p.name) + '\'s link again (it keeps working)') + '">Copy link</button>' +
-          '<button class="ghost" data-action="team-rotate" data-id="' + esc(p.id) + '" title="Make a new link; the old one stops working">New link</button>' +
-          '<button class="ghost danger" data-action="team-remove" data-id="' + esc(p.id) + '">Remove</button></div></td></tr>';
+          '<button class="small-btn" data-action="team-copy" data-id="' + esc(p.id) + '"' + (p.canCopy && canAdd ? '' : ' disabled') + ' title="' + esc(copyTip) + '">Copy Link</button>' +
+          '<button class="small-btn" data-action="team-rotate" data-id="' + esc(p.id) + '"' + (canAdd ? '' : ' disabled') + ' title="' + esc(canAdd ? 'Make a new link; the old one stops working' : why) + '">New Link</button>' +
+          '<button class="small-btn danger" data-action="team-remove" data-id="' + esc(p.id) + '">Remove</button></div></td></tr>';
       }).join('') + '</tbody></table></div>';
     } else {
       h += '<p class="small faint">Nobody yet.</p>';
     }
-    var off = r.canInvite ? '' : ' disabled';
+    var off = canAdd ? '' : ' disabled';
     h += '<div class="row add-person"><label class="sr" for="teamName">Name</label><input id="teamName" data-bind="team:name" placeholder="Name, e.g. John Doe (QA)" value="' + esc(val('team:name')) + '"' + off + '>' +
       // No access chosen for them until you choose one
-      '<label class="sr" for="teamRole">Access</label><select id="teamRole" class="choose" data-bind="team:role"' + off + '>' +
-      '<option value="" disabled' + (val('team:role') ? '' : ' selected') + '>Select access</option>' + opt('tester', 'Update status', val('team:role') === 'tester') + opt('viewer', 'View only', val('team:role') === 'viewer') + '</select>' +
-      '<label class="sr" for="teamBooks">Workbooks</label>' + bookPick('id="teamBooks" data-bind="team:books"' + off, val('team:books') ? [val('team:books')] : null) +
-      '<button data-action="team-add"' + off + '>Add and make a link</button></div>' +
-      (r.canInvite ? '' : '<p class="small faint">Links need an address first: ' + (t.mode === 'quick' ? 'start sharing above.' : 'enter your fixed address above.') + '</p>') + '</div>';
+      '<label class="sr" for="teamRole">Access</label>' + dropdown({ bind: 'team:role', id: 'teamRole', cls: 'u-new', value: val('team:role'), placeholder: 'Select access', options: ROLE_OPTIONS, disabled: !canAdd }) +
+      '<button class="small-btn" data-action="team-add"' + off + '>+ Add and Make a Link</button></div>' +
+      (canAdd ? '' : '<p class="small faint">' + esc(why) + '</p>') +
+      '<ul class="bullets small muted"><li><span><b>Automated suites:</b> whose results they see, in Automation, Summary and the published site (still only for workbooks they can open).</span></li>' +
+      '<li><span><b>Start runs:</b> can press ▶ Run and ⤒ Import Results for those suites. View only never can.</span></li></ul>';
     return h + '</section>';
   }
 
@@ -2140,19 +3211,24 @@
     });
   }
 
-  /** Setup, in two parts: Workbook (test suites, cycles, columns) and Sharing (you and your team). */
+  /** Setup, in parts: Workbook (test suites, cycles, columns), Access (you, online access and users), Publish, Media, Automation. */
   function viewSetup() {
     var part = S.cfg ? val('setupPart', 'workbook') : 'workbook'; // a workbook not set up yet opens on its tabs
+    if (part === 'sharing') part = 'access'; // Access was called Sharing: older links and state still open it
+    if (!S.team && isOwner()) loadTeam(); // so Access shows on or off from the start, not only once it has been opened
+    var shareState = S.team && S.team.team ? (S.team.team.enabled ? ' <span class="pill pass">on</span>' : ' <span class="pill fail">off</span>') : '';
     var rail = '<div class="rail-group subtabs" role="tablist" aria-label="Setup"><span class="rail-title">Setup</span>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="workbook" aria-selected="' + (part === 'workbook') + '">Workbook</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="sharing" aria-selected="' + (part === 'sharing') + '">Sharing' + (S.team && S.team.team && S.team.team.enabled ? ' <span class="pill pass">on</span>' : '') + '</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="access" aria-selected="' + (part === 'access') + '">Access' + shareState + '</button>' +
       '<button role="tab" class="subtab" data-action="setup-part" data-part="publish" aria-selected="' + (part === 'publish') + '">Publish</button>' +
-      '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button></div>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="media" aria-selected="' + (part === 'media') + '">Media</button>' +
+      '<button role="tab" class="subtab" data-action="setup-part" data-part="automation" aria-selected="' + (part === 'automation') + '">Automation</button></div>' +
       (part === 'workbook' ? '<p class="small muted rail-note">This sets up the workbook chosen in <b>Workbook</b> at the top right. To set up another one, choose it there first.</p>'
-        : part === 'sharing' ? '<p class="small muted rail-note">Sharing is for all workbooks: your team can switch between them at the top right.</p>'
+        : part === 'access' ? '<p class="small muted rail-note">Who can use this Test Run, and how they reach this laptop. Applies to all workbooks.</p>'
           : part === 'media' ? '<p class="small muted rail-note">Media is for everyone using Test Run Extension: their screenshots and recordings follow these limits.</p>'
+            : part === 'automation' ? '<p class="small muted rail-note">Automation is for all workbooks. Only the host sees this.</p>'
             : '<p class="small muted rail-note">Publishing puts the reports on the GitHub Pages site, for anyone, even when this laptop is off. It also lets someone else carry on from a clone of the repository.</p>');
-    return withRail(rail, part === 'sharing' ? youCard() + teamCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : setupWorkbook());
+    return withRail(rail, part === 'access' ? youCard() + onlineCard() + usersCard() : part === 'publish' ? publishCard() : part === 'media' ? mediaCard() : part === 'automation' ? auSetupCard() : setupWorkbook());
   }
 
   function fmtBytes(n) {
@@ -2213,6 +3289,33 @@
     });
   }
 
+  /** How much of GitHub Pages' 1 GB a publish takes (measured on the server from what it would publish). */
+  function loadPublishSpace() {
+    if (S.publishSpaceLoading) return;
+    S.publishSpaceLoading = true;
+    TR.http('GET', '/api/publish/space').then(function (r) {
+      S.publishSpaceLoading = false;
+      S.publishSpace = r.ok ? r : { error: r.error || 'Could not measure it.' };
+      render();
+    });
+  }
+
+  /** Space on GitHub Pages: a bar in parts (workbooks, reports, automation results) and their sizes. */
+  function spaceMeter() {
+    var sp = S.publishSpace;
+    if (!sp) { loadPublishSpace(); return '<span class="small muted">Measuring…</span>'; }
+    if (sp.error) return '<span class="small bad-text">' + esc(sp.error) + '</span>';
+    var parts = [['wb', 'workbooks', sp.parts.workbooks], ['rp', 'reports', sp.parts.reports], ['au', 'automation results', sp.parts.automation]];
+    var size = function (n) { return n ? fmtBytes(n) : '0 KB'; };
+    var limit = fmtBytes(sp.limit).replace('.0 ', ' '); // "1 GB"
+    var used = size(sp.total) + ' of ' + limit;
+    return (sp.warn ? '<div class="note warn">The site is close to GitHub Pages’ ' + limit + ' limit. Untick workbooks nobody needs on the site any more; above the limit, GitHub may stop updating it.</div>' : '') +
+      '<span class="space-bar" role="img" aria-label="' + esc(used) + ' used">' + parts.map(function (p) {
+        return p[2] ? '<span class="' + p[0] + '" style="width:' + Math.min(100, p[2] / sp.limit * 100).toFixed(2) + '%"></span>' : '';
+      }).join('') + '</span>' +
+      '<span class="small muted">' + esc(used) + parts.filter(function (p, i) { return p[2] || i < 2; }).map(function (p) { return ' · ' + p[1] + ' ' + size(p[2]); }).join('') + '</span>';
+  }
+
   /** Publish now: asks once that it is public, and before replacing a newer publish by someone else. */
   function publishNow(extra) {
     if (S.publishBusy) return;
@@ -2222,11 +3325,12 @@
     TR.http('POST', '/api/publish/now', extra || {}).then(function (r) {
       S.publishBusy = false;
       if (r.repo != null) S.publish = r;
+      if (r.ok) S.publishSpace = null; // measured again from what was published
       render();
       if (r.code === 'CONFIRM_PUBLIC') {
         askConfirm({
           title: 'Publish to the public repository?',
-          banner: 'Anyone can read what you publish, and it stays in the repository’s history.', bannerKind: 'warn',
+          banner: 'Anyone can read what you publish, and keep a copy of it.', bannerKind: 'warn',
           items: ['The ticked workbooks, their findings and their reports go to the public repository.', 'Screenshots and recordings are never published.'],
           yes: 'Publish now'
         }, function () { publishNow(Object.assign({}, extra, { confirmPublic: true })); });
@@ -2245,7 +3349,9 @@
       }
       if (!r.ok) { toast(r.error || 'Could not publish.', 'bad'); return; }
       var down = r.books && !r.books.some(function (b) { return b.on; });
-      toast(!(r.result && r.result.committed) ? 'Nothing changed since the last publish.' : down ? 'The published reports are taken off GitHub. The site updates in about a minute.' : 'Published to GitHub. The site updates in about a minute.', 'long');
+      var res = r.result || {};
+      if (res.pagesError) { toast((res.committed ? 'Published to GitHub, but the site was not updated.' : 'Nothing changed, and the site still was not updated.') + ' Setup › Publish says why.', 'bad'); return; }
+      toast(!res.committed ? 'Nothing changed since the last publish.' : down ? 'The published reports are taken off GitHub. The site updates in about a minute.' : 'Published to GitHub. The site updates in about a minute.', 'long');
     });
   }
 
@@ -2280,6 +3386,7 @@
       if (!r.ok) { toast(r.error, 'bad'); return; }
       S.publish = r;
       S.pubDraft = null;
+      S.publishSpace = null; // the ticked workbooks may have changed
       closeModal();
       render();
       if (publishAfter) publishNow({ confirmPublic: true });
@@ -2299,7 +3406,7 @@
       '<ul class="modal-list">' +
       (on ? '<li><b>The workbooks you ticked are published</b>, for anyone to read.</li>' : '') +
       (none ? '<li><b>Every published report is taken off the site.</b></li>' : off ? '<li><b>The workbooks you unticked are taken off the site.</b></li>' : '') +
-      '<li>Earlier versions stay in the public repository\'s history.</li></ul>' +
+      '<li>Each publish replaces the last one, so what comes off leaves the repository. Anyone may already have a copy.</li></ul>' +
       '<div class="row" style="margin-top:14px"><span class="grow"></span><button data-action="publish-cancel-books">Cancel</button>' +
       '<button class="primary" data-action="publish-confirm">Save and update the site</button></div>');
   }
@@ -2309,9 +3416,14 @@
     var h = '<section class="card card-pad stack" id="publish"><h2>Publish to GitHub</h2>';
     if (!r) { loadPublish(); return h + '<div class="loading">Loading…</div></section>'; }
     if (r.error && r.repo == null) return h + '<div class="note bad">' + esc(r.error) + '</div></section>';
-    h += '<div class="note warn"><b>Published workbooks are public.</b> Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links. They stay in the repository\'s history even if you stop publishing them. Invite keys and team settings are never published.</div>';
+    h += '<div class="note warn"><b>Published workbooks are public.</b> Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links, and anyone may keep a copy. Invite keys and team settings are never published.</div>';
     if (r.problem) h += '<div class="note bad">' + esc(r.problem) + '</div>';
-    else h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '/tree/' + esc(r.branch) + '/' + esc(r.folder) + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>, branch <span class="mono">' + esc(r.branch) + '</span>, folder <span class="mono">' + esc(r.folder) + '</span>' + (r.isPrivate === false ? ' (a public repository)' : '') + '.</div>';
+    else {
+      h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '/tree/' + esc(r.dataBranch) + (r.folder ? '/' + esc(r.folder) : '') + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>' + (r.isPrivate === false ? ' (a public repository)' : '') +
+        ', branch <span class="mono">' + esc(r.dataBranch) + '</span>' + (r.folder ? ', folder <span class="mono">' + esc(r.folder) + '</span>' : '') +
+        ': one commit, replaced at each publish, so what you take off leaves the branch. The site is built from <span class="mono">' + esc(r.branch) + '</span> and that branch.</div>';
+      if (r.dataBranchExists === false) h += '<div class="small muted">The first publish creates <span class="mono">' + esc(r.dataBranch) + '</span>. Until then, <b>Get it</b> reads the data published before, in <span class="mono">' + esc(r.oldFolder) + '</span> on <span class="mono">' + esc(r.branch) + '</span>.</div>';
+    }
     if (r.newer && r.remote) {
       h += '<div class="note info row"><span class="grow"><b>' + esc(r.remote.by || 'Someone') + '</b> published at ' + esc(r.remote.at) + ', after this laptop last published or got the data.</span><button data-action="publish-get">Get it</button></div>';
     }
@@ -2320,7 +3432,10 @@
     h += '<div class="subsection"><h3>Workbooks to publish</h3>' + (r.books.length ? r.books.map(function (b) {
       return '<label class="check"><input type="checkbox" data-action="publish-book" data-name="' + esc(b.name) + '"' + (d.books[b.name] ? ' checked' : '') + '> ' + esc(b.name.replace(/\.xlsx$/i, '')) + '</label>';
     }).join('') : '<p class="small faint">No workbooks yet.</p>') +
-      (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') + '</div>';
+      (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') +
+      (r.automation && r.automation.runs ? '<p class="small muted">With them go their <b>' + plural(r.automation.runs, 'automated run') + '</b>, locked: on the site, only invited people who may see a run open it, with their own invite link. New Link, Remove or a change of access locks them again at the next publish.</p>' : '') + '</div>';
+    h += '<div class="subsection space-meter"><h3>Space on GitHub Pages</h3>' + spaceMeter() +
+      '<span class="small faint">What Publish now puts on the site: a download copy of each published workbook, its reports, and its locked automated results.</span></div>';
     h += '<div class="subsection"><h3>When</h3>' +
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
       (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
@@ -2332,7 +3447,8 @@
       '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this laptop yet.') + '</span>' +
       '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this laptop">Preview here</a>' +
       '</div>' +
-      (l.error ? '<div class="note bad">' + esc(l.error) + '</div>' : '');
+      (l.error ? '<div class="note bad">' + esc(l.error) + '</div>' : '') +
+      (!l.error && l.pagesError ? '<div class="note warn">' + esc(l.pagesError) + '</div>' : '');
     return h + '</section>';
   }
 
@@ -2350,12 +3466,8 @@
       h += '<section class="section card card-pad stack"><div class="row"><h2 title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
         '<span class="grow"></span>' +
         '<label for="role' + ti + '" class="sr">Role</label><select id="role' + ti + '" data-setup-tab="' + ti + '" data-key="role"' + dis + '>' +
-        opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('automation', 'Automation results', t.role === 'automation') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
+        opt('manual', 'Test suite (manual cases)', t.role === 'manual') + opt('ignore', 'Ignore', t.role === 'ignore') + '</select></div>';
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
-      if (t.role === 'automation') {
-        h += '<p class="small muted">Results here feed <b>Automation</b> (next to the test suites, at the top), and the <b>Auto</b> badges on manual cases. Manual cases link to a test file when their comment or an <i>Automated by</i> column names it (e.g. <span class="mono">inbox-search.spec</span>).</p></section>';
-        return;
-      }
       h += cycleSetup(t, ti);
       var mapped = S.boot.fields.filter(function (f) { return t.columns[f]; }).length;
       var openCols = !t.saved || val('colsOpen:' + ti);
@@ -2464,7 +3576,7 @@
       return '<div class="cr-opt' + (o.on ? '' : ' off') + '"><button class="' + (o.on && primary ? 'primary' : '') + '" data-action="' + action + '"' + (o.on ? '' : ' disabled') + '>' + label + '</button><div class="small' + (o.on ? ' muted' : '') + '">' + esc(o.sub) + '</div></div>';
     };
     return head + (i.state === 'failed' ? '<div class="banner bad" style="margin-bottom:10px">' + esc(i.error) + '</div>' : '') +
-      '<div class="cr-opts">' + opt2(gen, 'Generate New', 'cr-generate', true) + opt2(dl, 'Download Existing', 'cr-download', true) + '</div>';
+      '<div class="cr-opts">' + opt2(gen, 'Generate New', 'cr-generate', true) + opt2(dl, '<span aria-hidden="true">⤓</span> Download Existing', 'cr-download', true) + '</div>';
   }
 
   var crTimer = null;
@@ -2574,7 +3686,7 @@
     TR.forget();
     if (document.activeElement) document.activeElement.blur();
     S.app = null; S.boot = null; S.model = null; S.cfg = null; S.findings = []; sideSeen = { findings: null };
-    S.issues = null; S.autoSummary = null; S.autoMode = false; S.team = null; S.selected = null; S.view = 'run';
+    S.issues = null; S.team = null; S.selected = null; S.view = 'run';
     S.connect = { code: 'SIGNED_OUT' };
     render();
   }
@@ -2601,12 +3713,17 @@
 
   var HELP_KEYS = [['J / ↓', 'Next case'], ['K / ↑', 'Previous case'], ['Enter', 'Open or close the case'], ['P', 'Pass'], ['F', 'Fail (then type a comment, Enter saves)'], ['N', 'NA / other'], ['1–9', 'Any status by position'], ['0', 'Clear the result (back to not run)'], ['C', 'Comment'], ['E', 'Edit the open case (Duplicate and Deprecate are next to it)'], ['U', 'Undo the last mark'], ['/', 'Search'], ['Esc', 'Close / leave a field']];
 
-  /** The ? and its tooltip (DESIGN.md › Tooltips): shown on hover and focus, pinned by a click or the ? key. */
-  function helpButton() {
+  /**
+   * The ? and its tooltip (DESIGN.md › Tooltips): shown on hover and focus, pinned by a click or the ? key.
+   * The keyboard shortcuts by default; o: { id, label (the button's), title, html } for other reference text
+   * (Automation's Full report). One per screen: setHelp() works on the first.
+   */
+  function helpButton(o) {
+    o = o || { id: 'keysTip', label: 'Keyboard shortcuts', title: 'Keyboard shortcuts',
+      html: '<div class="tip-keys">' + HELP_KEYS.map(function (k) { return '<kbd>' + esc(k[0]) + '</kbd><span>' + esc(k[1]) + '</span>'; }).join('') + '</div>' };
     return '<span class="help-wrap' + (S.helpOpen ? ' open' : '') + '">' +
-      '<button class="help-btn" data-action="help" aria-label="Keyboard shortcuts" aria-describedby="keysTip" aria-expanded="' + !!S.helpOpen + '">?</button>' +
-      '<div id="keysTip" role="tooltip" class="tip"><div class="tip-title">Keyboard shortcuts</div><div class="tip-keys">' +
-      HELP_KEYS.map(function (k) { return '<kbd>' + esc(k[0]) + '</kbd><span>' + esc(k[1]) + '</span>'; }).join('') + '</div></div></span>';
+      '<button class="help-btn" data-action="help" aria-label="' + esc(o.label) + '" aria-describedby="' + esc(o.id) + '" aria-expanded="' + !!S.helpOpen + '">?</button>' +
+      '<div id="' + esc(o.id) + '" role="tooltip" class="tip"><div class="tip-title">' + esc(o.title) + '</div>' + o.html + '</div></span>';
   }
   /** Pins the shortcuts open (or closes them) without redrawing the page. */
   function setHelp(open) {
@@ -2627,9 +3744,10 @@
     view: function (el) {
       var from = S.view;
       S.view = el.getAttribute('data-view');
-      if (S.view !== 'summary') S.autoMode = false;
       if (S.view === 'findings') S.suites = {}; // read the other suites afresh
       if (S.view === 'setup') S.setup = null;
+      if (S.view === 'automation') { S.auto.data = null; S.auto.error = ''; S.auto.detail = null; } // read afresh
+      if (S.view === 'run' || S.view === 'summary') S.autoCycle = null; // the automated results attached to the cycle, read afresh
       if (S.view !== from) closeBlocks(); // a form left open on the page you leave closes, and what was typed in it goes
       if (S.view === 'issues') S.issuesDue = true; // viewIssues asks GitHub once
       render();
@@ -2689,7 +3807,7 @@
       var to = el.getAttribute('data-change-to');
       S.ddOpen = null;
       S.ddQ = '';
-      if (to) { CHANGES[to]({ value: el.getAttribute('data-value') }); render(); return; } // e.g. switch the workbook
+      if (to) { CHANGES[to]({ value: el.getAttribute('data-value'), bind: el.getAttribute('data-dd') }); render(); return; } // e.g. switch the workbook
       ddSet(el.getAttribute('data-dd'), el.getAttribute('data-value'));
       render();
     },
@@ -2926,7 +4044,11 @@
         loadTab(cycleLabel(), true);
       });
     },
-    'setup-part': function (el) { S.form.setupPart = el.getAttribute('data-part'); render(); window.scrollTo(0, 0); },
+    'setup-part': function (el) {
+      S.form.setupPart = el.getAttribute('data-part');
+      if (S.form.setupPart === 'automation') { S.auto.setupGh = null; S.auto.data = null; S.auto.error = ''; } // GitHub access and the suites, read afresh
+      render(); window.scrollTo(0, 0);
+    },
     'book-delete': function () { deleteBookModal(); },
     'dl-menu': function (el) { var w = el.getAttribute('data-where'); S.dlMenu = S.dlMenu === w ? null : w; render(); },
     'complete-report': function () { S.dlMenu = null; render(); openCompleteReport(); },
@@ -3061,13 +4183,11 @@
         if (next) { switchBook(next); return; }
         TR.state.book = null;
         TR.store.set('book', '');
-        S.boot = null; S.model = null; S.cfg = null; S.setup = null; S.findings = []; S.issues = null; S.autoSummary = null;
+        S.boot = null; S.model = null; S.cfg = null; S.setup = null; S.findings = []; S.issues = null;
         S.view = 'run';
         render();
       });
     },
-    'pick-auto': function () { S.autoMode = true; S.selected = null; S.caseTool = null; render(); window.scrollTo(0, 0); },
-    'auto-refresh': function () { S.autoSummary = null; render(); },
     'findings-suite-reset': function () { S.form.findingsSuite = ''; render(); },
     'findings-show': function (el) { S.form.findingsShow = el.getAttribute('data-show'); render(); },
     'note-toggle': function () { var open = !val('noteOpen'); closeBlocks(); S.form.noteOpen = open; render(); var t = open && $('fText'); if (t) t.focus(); },
@@ -3143,7 +4263,7 @@
       });
     },
     'retry-connect': function () { S.connect = null; S.loading = true; render(); TR.reconnect(); start(); },
-    'forget-invite': function () { TR.forget(); S.connect = { code: 'NO_SERVER' }; render(); },
+    'forget-invite': function () { TR.forget(); S.pubAuto.unlock = {}; S.pubAuto.run = null; S.connect = { code: 'NO_SERVER' }; render(); },
     'sign-out': function () {
       askConfirm({
         title: 'Sign out of Test Run in this browser?',
@@ -3153,7 +4273,7 @@
     },
     'user-rename': function () {
       if (document.activeElement) document.activeElement.blur();
-      S.view = 'setup'; S.form.setupPart = 'sharing';
+      S.view = 'setup'; S.form.setupPart = 'access';
       render();
       window.scrollTo(0, 0);
       var n = $('appUser');
@@ -3165,7 +4285,7 @@
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
           items: ['Someone has to turn it back on at the laptop.'],
-          yes: 'Stop sharing', danger: true
+          yes: 'Stop Sharing', danger: true
         }, function () { teamCall('/api/team', { enabled: false }); }, function () { el.checked = true; });
         return;
       }
@@ -3212,7 +4332,7 @@
           title: 'Stop sharing?',
           banner: 'You are connected through it, so this browser loses Test Run.', bannerKind: 'warn',
           items: ['It has to be started again at the laptop.'],
-          yes: 'Stop sharing', danger: true
+          yes: 'Stop Sharing', danger: true
         }, go);
         return;
       }
@@ -3224,16 +4344,14 @@
       if (!name) { toast('Type their name first.'); var n = $('teamName'); if (n) n.focus(); return; }
       var role = val('team:role');
       if (role !== 'tester' && role !== 'viewer') { toast('Choose their access first.'); var sel = $('teamRole'); if (sel) sel.focus(); return; }
-      teamCall('/api/team/people', { name: name, role: role, books: val('team:books') ? [val('team:books')] : 'all' }, function (r) {
+      teamCall('/api/team/people', { name: name, role: role }, function (r) {
         clearForm('team:name');
         clearForm('team:role');
-        clearForm('team:books');
         deliverLink(name, r.link, r.linkWarning, 'Added. ');
       });
     },
     'publish-now': function () { publishNow(); },
-    'r-suite': function (el) { var w = currentReportSlug(); S.form['rSuite:' + w] = el.getAttribute('data-tab'); S.form.rAuto = false; render(); },
-    'r-auto': function () { S.form.rAuto = true; render(); },
+    'r-suite': function (el) { var w = currentReportSlug(); S.form['rSuite:' + w] = el.getAttribute('data-tab'); S.pubAuto.run = null; render(); },
     'publish-get': function (el) {
       askConfirm({
         title: 'Replace the workbooks here with the published ones?',
@@ -3245,6 +4363,7 @@
         TR.http('POST', '/api/publish/get-latest', {}).then(function (r) {
           if (r.repo != null) S.publish = r;
           if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+          S.publishSpace = null; // other workbooks now
           toast('Got the data published by ' + (r.result.by || 'someone') + ' at ' + r.result.at + '.', 'long');
           if (S.app) S.app.publishNotice = null;
           refreshApp().then(function () { boot(S.tab, cycleLabel()); });
@@ -3297,16 +4416,17 @@
       askConfirm({
         title: 'Make a new admin link?',
         banner: 'The old one stops working' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
-        yes: 'Make new link', danger: true
+        yes: 'Make New Link', danger: true
       }, go);
     },
     'admin-remove': function () {
       askConfirm({
         title: 'Remove your admin link?',
         banner: 'It stops working at once' + (me().admin ? ', including in this browser.' : '.'), bannerKind: 'bad',
-        yes: 'Remove admin link', danger: true
+        yes: 'Remove Admin Link', danger: true
       }, function () { teamCall('/api/team/admin', { action: 'remove' }, function () { toast('Admin link removed.'); }); });
     },
+    'team-runs': function (el) { teamCall('/api/team/people/automation', { id: el.getAttribute('data-id'), startRuns: el.checked }); },
     'team-copy': function (el) {
       var id = el.getAttribute('data-id');
       var p = S.team.people.filter(function (x) { return x.id === id; })[0];
@@ -3325,7 +4445,7 @@
         title: 'Make a new link for ' + esc(p.name) + '?',
         banner: 'Their current link stops working.', bannerKind: 'bad',
         items: ['The new link goes to your clipboard, to send to them.'],
-        yes: 'Make new link', danger: true
+        yes: 'Make New Link', danger: true
       }, function () {
         teamCall('/api/team/people/update', { id: id, rotate: true }, function (r) { deliverLink(p.name, r.link, r.linkWarning, 'New link made; the old one no longer works. '); });
       });
@@ -3380,8 +4500,382 @@
         toast('Setup saved.');
         refreshBoot(false); // stay on Setup
       });
+    },
+
+    // Summary › Manual | Automated (and the same switch on the published site)
+    'sum-view': function (el) { setSumView(el.getAttribute('data-v')); S.pubAuto.run = null; render(); },
+    'sum-cause': function (el) { var i = el.getAttribute('data-i'); S.sumOpen[i] = !S.sumOpen[i]; render(); },
+    /** A run from Summary › Automated: its run view in Automation (with a What changed card's filter). */
+    'sum-open': function (el) {
+      var A = S.auto;
+      S.view = 'automation';
+      A.data = null; A.error = ''; A.detail = null; A.screen = 'run'; A.runId = el.getAttribute('data-id'); A.wantFilter = el.getAttribute('data-f') || '';
+      A.moving = false; A.editing = false; S.helpOpen = false;
+      closeBlocks();
+      render();
+      window.scrollTo(0, 0);
+    },
+    'sum-excel': function (el) {
+      var d = S.autoCycle && S.autoCycle.data, r = d && d.latest;
+      if (!r) return;
+      var name = ((r.suiteName || 'Automated run') + ' - ' + auStamp(r.startedAt) + ' - results.xlsx').replace(/[\\/:*?"<>|]/g, '_');
+      TR.download('/api/automation/excel?id=' + enc(el.getAttribute('data-id')), name).then(function (x) { if (!x.ok) toast(x.error, 'bad'); });
+    },
+    'sum-full-report': function (el) {
+      var u = el.getAttribute('data-url') || '';
+      if (/^https:\/\//i.test(u)) window.open(u, '_blank', 'noopener');
+    },
+    // Published site › Automated
+    'pub-have-link': function () {
+      var i = $('inviteLink');
+      if (!i) return;
+      i.scrollIntoView({ block: 'center' });
+      i.focus();
+    },
+    'pub-retry': function () { S.pubAuto.unlock = {}; render(); },
+    'pub-open': function (el) {
+      var id = el.getAttribute('data-id'), f = el.getAttribute('data-f') || '';
+      var P = S.pubAuto, A = S.auto;
+      P.run = id; P.runLoading = true; A.detail = null; S.helpOpen = false;
+      render();
+      window.scrollTo(0, 0);
+      pubRunDetail(id).then(function (det) {
+        if (P.run !== id) return;
+        P.runLoading = false;
+        A.detail = det; A.open = { 0: true }; A.q = ''; A.allFiles = false; A.moving = false;
+        A.filter = f || (det.run.totals.failed ? 'failed' : 'all');
+        var firstFail = det.run.tests.filter(function (t) { return t.status === 'fail'; })[0];
+        A.sel = firstFail ? firstFail.id : '';
+        render();
+      }, function () {
+        if (P.run !== id) return;
+        P.run = null; P.runLoading = false;
+        toast('That run could not be opened in this browser.', 'bad');
+        render();
+      });
+    },
+    'pub-back': function () { S.pubAuto.run = null; S.auto.detail = null; render(); window.scrollTo(0, 0); },
+    'pub-csv': function (el) {
+      var id = el.getAttribute('data-id');
+      pubRunDetail(id).then(function (det) {
+        var r = det.run;
+        TR.saveBlob(new Blob([resultsCsv(r)], { type: 'text/csv;charset=utf-8' }), ((r.suiteName || 'Automated run') + ' - ' + auStamp(r.startedAt) + ' - results.csv').replace(/[\\/:*?"<>|]/g, '_'));
+      }, function () { toast('That run could not be opened in this browser.', 'bad'); });
+    },
+
+    // Automation
+    'au-reload': function () { S.auto.error = ''; S.auto.data = null; render(); },
+    'au-suite': function (el) {
+      var A = S.auto;
+      A.suite = el.getAttribute('data-id');
+      A.screen = 'runs'; A.runId = ''; A.detail = null; A.file = null; A.moving = false; A.editing = false;
+      clearForm('au:f:');
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-link': function () {
+      S.auto.screen = 'link'; S.auto.editing = false; S.auto.runId = ''; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh();
+      render(); window.scrollTo(0, 0);
+    },
+    'au-edit': function () {
+      S.auto.screen = 'link'; S.auto.editing = true; clearForm('au:l:'); clearForm('au:lk:');
+      S.auto.gh = auGhFresh();
+      render(); window.scrollTo(0, 0);
+      var s = auSuite();
+      if (s && s.workflowId) auGhCheck(); // a linked suite: its workflows are read again, so they can be changed
+    },
+    'au-gh-check': function () { auGhCheck(); },
+    'au-gh-import-latest': function () {
+      var A = S.auto, G = A.gh, body = auLinkBody(), a = auAttachChosen('lk');
+      if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n0 = $('auName'); if (n0) n0.focus(); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      G.importing = true; G.imported = null;
+      render();
+      TR.http('POST', '/api/automation/github/link', body).then(function (r) {
+        if (!r.ok) { G.importing = false; G.imported = { ok: false, text: r.error }; render(); return; }
+        A.editing = true; A.suite = r.suite.id; // saved: Save Suite now changes it
+        TR.http('POST', '/api/automation/github/import', { suite: r.suite.id, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (x) {
+          G.importing = false;
+          if (!x.ok) { G.imported = { ok: false, text: x.error }; auLoad(); return; }
+          var t = x.run.totals;
+          G.imported = { ok: true, text: '✓ Read ' + plural(t.total, 'test') + ' from run #' + x.githubRun.number + ' (' + auDate(x.run.startedAt, false) + '): ✓ ' + t.passed + ' ✗ ' + t.failed + ' – ' + t.skipped };
+          toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '” and imported its latest run into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+          auLoad();
+        });
+      });
+    },
+    'au-run': function () {
+      var A = S.auto, s = auSuite();
+      if (!s) return;
+      A.screen = 'start'; A.starting = false; A.targets = {};
+      clearForm('au:rn:'); clearForm('au:in:');
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:rn:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:rn:book'], function () { auDefaults('rn'); });
+      auRunFormLoad(s);
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-run-start': function () {
+      var A = S.auto, s = auSuite(), a = auAttachChosen('rn');
+      if (!s) return;
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      var inputs = {};
+      var missing = '';
+      (s.inputs || []).forEach(function (d) {
+        var v = auInputVal(d);
+        inputs[d.name] = d.type === 'boolean' ? !!v : String(v).trim();
+        if (d.required && d.type !== 'boolean' && !inputs[d.name] && !missing) missing = d.name;
+      });
+      if (missing) { toast('Fill in ' + missing + ': the workflow needs it.', 'bad'); return; }
+      A.starting = true;
+      render();
+      TR.http('POST', '/api/automation/github/run', { suite: s.id, branch: val('au:rn:branch', ''), inputs: inputs, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (r) {
+        A.starting = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.jobs = (A.jobs || []).filter(function (j) { return j.id !== r.job.id; }).concat([r.job]);
+        A.screen = 'running'; A.jobId = r.job.id; A.runForm = null;
+        clearForm('au:rn:'); clearForm('au:in:');
+        clearTimeout(A.jobsTimer);
+        A.jobsTimer = setTimeout(auJobsLoad, 2000);
+        render();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-job-open': function (el) { var A = S.auto; A.screen = 'running'; A.jobId = el.getAttribute('data-id'); render(); window.scrollTo(0, 0); },
+    'au-gh-log': function (el) {
+      var j = auJob(el.getAttribute('data-id') || S.auto.jobId);
+      if (j && j.runUrl) window.open(j.runUrl, '_blank', 'noopener');
+    },
+    'au-job-cancel': function (el) {
+      var j = auJob(el.getAttribute('data-id'));
+      if (!j) return;
+      askConfirm({
+        title: 'Cancel the run of “' + esc(j.suiteName) + '”?',
+        banner: 'You can start it again, but it begins from the start.', bannerKind: 'warn',
+        items: ['GitHub stops the run (' + esc(j.branch) + (j.env ? ' · ' + esc(j.env) : '') + ').', 'Results it uploads before stopping are still brought in; without them, nothing is added to ' + esc(attachText(j.attach)) + '.'],
+        yes: 'Cancel Run', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/job/cancel', { id: j.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          S.auto.jobs = (S.auto.jobs || []).map(function (x) { return x.id === r.job.id ? r.job : x; });
+          toast('Asked GitHub to cancel the run.');
+          render();
+          auJobsLoad();
+        });
+      });
+    },
+    'au-job-dismiss': function (el) {
+      var id = el.getAttribute('data-id');
+      TR.http('POST', '/api/automation/job/dismiss', { id: id }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        var A = S.auto;
+        A.jobs = (A.jobs || []).filter(function (j) { return j.id !== id; });
+        if (A.jobId === id) { A.jobId = ''; A.screen = 'runs'; }
+        render();
+      });
+    },
+    'au-im-src': function (el) { S.form['au:im:src'] = el.getAttribute('data-src'); S.auto.ghRunsFor = ''; render(); },
+    'au-gh-import': function () {
+      var A = S.auto, a = auAttachChosen('im'), runId = val('au:gh:run', '');
+      if (!runId) { toast('Choose the GitHub run to bring in.', 'bad'); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      A.busy = true;
+      render();
+      TR.http('POST', '/api/automation/github/import', { suite: A.suite, runId: Number(runId), book: a.book, tab: a.tab, cycle: a.cycle }).then(function (r) {
+        A.busy = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.screen = 'runs'; A.ghRunsFor = '';
+        clearForm('au:im:'); clearForm('au:gh:'); clearForm('au:f:');
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' from run #' + r.githubRun.number + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        auLoad();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-setup-remove': function (el) {
+      var A = S.auto, s = A.data && A.data.suites.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
+      if (!s) return;
+      var n = auRunsOf(s.id).length;
+      askConfirm({
+        title: 'Remove “' + esc(s.name) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
+        yes: 'Remove Suite', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          toast('Removed “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          if (A.suite === s.id) A.suite = '';
+          auLoad();
+        });
+      });
+    },
+
+    'au-import': function () {
+      var A = S.auto;
+      A.screen = 'import'; A.file = null; A.busy = false; A.targets = {};
+      clearForm('au:im:'); delete S.form['au:branch']; delete S.form['au:env'];
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:im:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:im:book'], function () { auDefaults('im'); });
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-back': function () {
+      var A = S.auto;
+      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false; A.jobId = ''; A.runForm = null;
+      A.gh = auGhFresh();
+      clearForm('au:l:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-open': function (el) {
+      var A = S.auto;
+      A.runId = el.getAttribute('data-id'); A.screen = 'run'; A.detail = null; S.helpOpen = false;
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-filter-reset': function (el) { delete S.form[el.getAttribute('data-dd')]; render(); },
+    'au-cause': function (el) { var i = el.getAttribute('data-i'); S.auto.open[i] = !S.auto.open[i]; render(); },
+    'au-all-files': function () { S.auto.allFiles = true; render(); },
+    'au-chip': function (el) { S.auto.filter = el.getAttribute('data-f'); render(); },
+    'au-filter': function (el) {
+      S.auto.filter = el.getAttribute('data-f');
+      render();
+      var t = $('auTests');
+      if (t) t.scrollIntoView({ block: 'start' });
+    },
+    'au-test': function (el) {
+      S.auto.sel = el.getAttribute('data-id');
+      render();
+      var p = $('auTestPanel');
+      if (p) p.scrollIntoView({ block: 'nearest' });
+    },
+    'au-full-report': function () {
+      var d = S.auto.detail;
+      if (d && d.run.source.runUrl) window.open(d.run.source.runUrl, '_blank', 'noopener');
+    },
+    'au-excel': function () {
+      var r = S.auto.detail && S.auto.detail.run;
+      if (!r) return;
+      var name = ((r.suiteName || 'Automated run') + ' - ' + auStamp(r.startedAt) + ' - results.xlsx').replace(/[\\/:*?"<>|]/g, '_');
+      TR.download('/api/automation/excel?id=' + enc(r.id), name).then(function (x) { if (!x.ok) toast(x.error, 'bad'); });
+    },
+    'au-file': function () {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = '.xml,.json,.zip,application/xml,text/xml,application/json,application/zip';
+      input.addEventListener('change', function () { auChoose(input.files); });
+      input.click();
+    },
+    'au-file-clear': function () { S.auto.file = null; render(); },
+    'au-import-save': function () {
+      var A = S.auto, f = A.file, a = auAttachChosen('im');
+      if (!f || !f.preview) { toast('Choose a results file first.', 'bad'); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      var q = '?suite=' + enc(A.suite) + '&book=' + enc(a.book) + '&tab=' + enc(a.tab) + '&cycle=' + enc(a.cycle) +
+        '&branch=' + enc(String(val('au:branch', '')).trim()) + '&env=' + enc(String(val('au:env', '')).trim());
+      A.busy = true;
+      render();
+      auUpload('/api/automation/import' + q, f.files).then(function (r) {
+        A.busy = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.file = null; A.screen = 'runs';
+        clearForm('au:im:'); delete S.form['au:branch']; delete S.form['au:env']; clearForm('au:f:');
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        auLoad();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-link-save': function () {
+      var A = S.auto;
+      var body = auLinkBody();
+      if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n = $('auName'); if (n) n.focus(); return; }
+      // checked on GitHub with a workflow chosen: saved with its workflow; else as a suite whose results are imported
+      TR.http('POST', body.workflowId ? '/api/automation/github/link' : '/api/automation/suites', body).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        clearForm('au:l:');
+        A.screen = 'runs'; A.editing = false; A.suite = r.suite.id;
+        toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '”.');
+        auLoad();
+      });
+    },
+    'au-suite-remove': function () {
+      var s = auSuite();
+      if (!s) return;
+      var n = auRunsOf(s.id).length;
+      askConfirm({
+        title: 'Unlink “' + esc(s.name) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
+        yes: 'Unlink Suite', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          clearForm('au:l:');
+          S.auto.screen = 'runs'; S.auto.editing = false; S.auto.suite = '';
+          toast('Unlinked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          auLoad();
+        });
+      });
+    },
+    'au-delete': function () {
+      var det = S.auto.detail;
+      if (!det) return;
+      var r = det.run;
+      var others = det.kept.filter(function (x) { return x.id !== r.id; });
+      askConfirm({
+        title: 'Delete “' + esc(auLabel(r)) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [
+          'Its results leave Test Run now.',
+          esc(r.attach.tab + ' › ' + cycleText(r.attach.cycle)) + (others.length ? ' keeps ' + plural(others.length, 'run') + ' (' + esc(others.map(function (x) { return auDate(x.startedAt); }).join(', ')) + ').' : ' keeps no runs.'),
+          r.source.runUrl ? 'The full report on GitHub isn\'t touched; GitHub keeps it until it expires.' : 'The results file it was imported from isn\'t touched.'
+        ],
+        yes: 'Delete Run', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/delete', { id: r.id }).then(function (x) {
+          if (!x.ok) { toast(x.error, 'bad'); return; }
+          S.auto.screen = 'runs'; S.auto.runId = ''; S.auto.detail = null;
+          toast('Deleted the run from ' + auDate(r.startedAt) + '.');
+          auLoad();
+        });
+      });
+    },
+    'au-move': function () {
+      var A = S.auto, r = A.detail && A.detail.run;
+      if (!r) return;
+      A.moving = !A.moving;
+      clearForm('au:mv:');
+      if (A.moving) {
+        A.targets = {};
+        S.form['au:mv:book'] = r.attach.book; S.form['au:mv:tab'] = r.attach.tab; S.form['au:mv:cycle'] = 'c:' + r.attach.cycle;
+        auTargets(r.attach.book, function () { auDefaults('mv'); });
+      }
+      render();
+    },
+    'au-move-cancel': function () { S.auto.moving = false; clearForm('au:mv:'); render(); },
+    'au-move-save': function () {
+      var A = S.auto, r = A.detail && A.detail.run, a = auAttachChosen('mv');
+      if (!r) return;
+      if (!a) { toast('Choose the workbook, test suite and test cycle to attach the run to.', 'bad'); return; }
+      if (a.book === r.attach.book && a.tab === r.attach.tab && a.cycle === r.attach.cycle) { A.moving = false; clearForm('au:mv:'); render(); return; }
+      TR.http('POST', '/api/automation/reattach', { id: r.id, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (x) {
+        if (!x.ok) { toast(x.error, 'bad'); return; }
+        A.moving = false; A.detail = null;
+        clearForm('au:mv:');
+        toast('Moved the run to ' + bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+        auLoad();
+      });
     }
   };
+
+  setInterval(function () {
+    var el = document.getElementById('auElapsed');
+    if (el) el.textContent = auClock(Date.now() - Number(el.getAttribute('data-since')));
+  }, 1000);
 
   function refreshBoot(goRun, cycle) {
     api('api_bootstrap').then(function (b) {
@@ -3403,8 +4897,6 @@
       TR.state.book = name;
       TR.store.set('book', name);
       S.addHere = null;
-      S.autoSummary = null;
-      S.autoMode = false;
       S.suites = {};
       S.selected = null;
       S.keep = {};
@@ -3427,8 +4919,6 @@
 
   /** Open another test case tab (a module) of this workbook. */
   function pickTab(name) {
-    if (S.autoMode && name === S.tab) { S.autoMode = false; render(); return; }
-    S.autoMode = false;
     if (!name || name === S.tab) return;
     S.tab = name;
     TR.store.set('tab:' + book(), S.tab);
@@ -3447,13 +4937,14 @@
     tab: function (el) { pickTab(el.value); },
     'findings-suite': function (el) { S.form.findingsSuite = el.value; render(); },
     'man-suite': function (el) { S.form['man:tab'] = el.value; render(); },
-    'r-book': function (el) { S.form.rBook = el.value; S.form.rAuto = false; render(); },
+    'r-book': function (el) { S.form.rBook = el.value; S.pubAuto.run = null; render(); },
     'r-cycle': function (el) {
       var w = currentReportSlug();
       var d = S.reports && S.reports.data[w];
       var sname = val('rSuite:' + w, '');
       var suite = d && (d.suites.filter(function (x) { return x.tab === sname; })[0] || d.suites[0]);
       if (suite) S.form['rCycle:' + w + ':' + suite.tab] = el.value;
+      S.pubAuto.run = null;
       render();
     },
     'publish-time': function (el) { if (/^\d{2}:\d{2}$/.test(el.value)) { pubDraft().time = el.value; render(); } },
@@ -3467,9 +4958,24 @@
     },
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCases; render(); },
     'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
-    'team-role': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), role: el.value }); },
-    'team-books': function (el) { teamCall('/api/team/people/update', { id: el.getAttribute('data-id'), books: el.value ? [el.value] : 'all' }); }
+    // Setup › Automation: runs kept per test suite and cycle
+    'au-keep': function (el) {
+      TR.http('POST', '/api/automation/settings', { keep: Number(el.value) }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        if (S.auto.data) S.auto.data.keep = r.keep;
+        toast('Saved. Test Run keeps the last ' + (r.keep === 1 ? 'run' : r.keep + ' runs') + ' for each test suite and cycle, from the next run that comes in.');
+        render();
+      });
+    },
+    // Setup › Access › Users: a row's dropdowns (their bind is u:<what>:<person id>)
+    'team-role': function (el) { teamCall('/api/team/people/update', { id: personOf(el), role: el.value }); },
+    'team-books': function (el) { teamCall('/api/team/people/update', { id: personOf(el), books: el.value && el.value !== 'all' ? [el.value] : 'all' }); },
+    'team-suites': function (el) {
+      if (el.value === 'multi') return; // several suites, set elsewhere: kept as they are
+      teamCall('/api/team/people/automation', { id: personOf(el), automationSuites: el.value === 'all' || el.value === 'none' ? el.value : [el.value.replace(/^s:/, '')] });
+    }
   };
+  function personOf(el) { return String(el.bind || '').split(':').slice(2).join(':'); }
 
   document.addEventListener('click', function (e) {
     var modal = $('modal');
@@ -3526,6 +5032,7 @@
   document.addEventListener('input', function (e) {
     var el = e.target;
     if (el.id === 'search') { S.filters.search = el.value; S.keep = {}; render(); return; }
+    if (el.id === 'auQ') { S.auto.q = el.value; render(); return; }
     if (el.hasAttribute('data-dd-q')) { S.ddQ = el.value; render(); return; }
     if (el.hasAttribute('data-bind') && el.type !== 'checkbox') S.form[el.getAttribute('data-bind')] = el.value;
     if (el.hasAttribute('data-live')) { render(); return; }
@@ -3564,6 +5071,7 @@
       if (e.key === 'Enter' && !e.shiftKey && (t.id === 'retireReason' || t.id === 'dupReason')) { e.preventDefault(); t.blur(); retireCase(t.id === 'dupReason' ? 'duplicate' : 'deprecated'); }
       return;
     }
+    if (S.view === 'automation' && (e.key === 'Enter' || e.key === ' ') && t.matches('tr[data-action="au-test"]')) { e.preventDefault(); ACTIONS['au-test'](t); return; }
     if (S.view !== 'run' || !S.model) return;
     var k = e.key;
     if ((k === 'Enter' || k === ' ') && t.classList && t.classList.contains('case')) { e.preventDefault(); select(t.getAttribute('data-key'), true); return; }
@@ -3583,6 +5091,24 @@
     if (k === 'c') { if ($('comment')) { e.preventDefault(); focusComment(); } return; }
     var o = S.model.statusOptions.filter(function (x) { return x.key === k.toLowerCase() || x.num === k; })[0];
     if (o) { e.preventDefault(); mark(S.selected, o.value); }
+  });
+
+  // Automation › Import results: results files dropped on the drop area
+  document.addEventListener('dragover', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (!d) return;
+    e.preventDefault();
+    d.classList.add('over');
+  });
+  document.addEventListener('dragleave', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (d && !d.contains(e.relatedTarget)) d.classList.remove('over');
+  });
+  document.addEventListener('drop', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (!d) return;
+    e.preventDefault();
+    auChoose(e.dataTransfer && e.dataTransfer.files);
   });
 
   window.__TR_STATE = S; // for the browser tests
