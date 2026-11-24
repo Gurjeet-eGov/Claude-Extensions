@@ -118,6 +118,7 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 - **Symbols:** ✓ pass, ✗ fail, – other (NA, Skipped, Blocked…), ○ not run, ⊘ retired. Defined once in `shared.js` (`SYM`, `CLS_LABEL`); use those, don't retype them.
 - **Shapes:** `.dot` (a 20px circle with the symbol; not run is a hollow ring), `.pill` (11px, tinted), `.bar` (8px progress bar in pass, fail and other segments over `--none-bg`), `.legend` (symbol, count and word).
 - **Status buttons** show the symbol and the value: "✓ Pass". The keys are listed under **?**, not on the buttons.
+- **Change since the previous run** (`.delta`, Automation): the earlier figure after the current one, "↑ from 84%" (12px, weight 650), `--pass` when it got better and `--fail` when worse, the earlier value in its title.
 
 ### Fields
 
@@ -212,6 +213,7 @@ For reference you glance at, such as the keyboard shortcuts behind a **?**. Not 
 - **Width:** 340px in the console; about 220px in an extension popup.
 - **A shortcut with no key** shows a greyed-out **NA** in the key's place (`kbd.na`: `--faint` text, a dashed border). No "not set" sentence.
 - **Markup:** the button has `aria-describedby` pointing at the tooltip, which has `role="tooltip"`; `aria-expanded` says whether it's pinned. Code: `helpButton()` in `client.js`, and the `.help-wrap` and `.tip` rules in `styles.css` (Bug Reporter has the same rules in `styles/common.css`).
+- **Other reference text** (Automation's Full report): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
 
 ### Menus
 

@@ -11,6 +11,7 @@
     { id: 'issues', label: 'Known issues' },
     { id: 'findings', label: 'Findings' },
     { id: 'summary', label: 'Summary' },
+    { id: 'automation', label: 'Automation' },
     { id: 'setup', label: 'Setup', owner: true }
   ];
 
@@ -54,7 +55,14 @@
     summary: null,
     setup: null,
     writes: 0,
-    selfDirty: false
+    selfDirty: false,
+    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'link'),
+    // the open run (?run=<id> in the address) and what the run view shows
+    auto: {
+      data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false,
+      detail: null, detailLoading: false, filter: 'failed', q: '', sel: '', open: {}, allFiles: false, moving: false,
+      file: null, busy: false, targets: {}, targetsLoading: {}
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -361,9 +369,11 @@
     if (!S.app || !S.boot || S.connect || S.reportsMode) return;
     try {
       var u = new URL(window.location.href);
+      var run = S.view === 'automation' && S.auto.screen === 'run' ? S.auto.runId : ''; // the run open in Automation
       if (!PARAMS.case && u.searchParams.has('case')) u.searchParams.delete('case'); // opened on it once; a refresh need not jump back
-      else if (u.searchParams.get('view') === S.view) return;
+      else if (u.searchParams.get('view') === S.view && (u.searchParams.get('run') || '') === run) return;
       u.searchParams.set('view', S.view);
+      if (run) u.searchParams.set('run', run); else u.searchParams.delete('run');
       window.history.replaceState(null, '', u.pathname + u.search + u.hash);
     } catch (e) { /* keep the address as it is */ }
   }
@@ -606,6 +616,7 @@
     if (S.app && S.app.publishNotice && isOwner()) banners += '<div class="banner"><span><b>' + esc(S.app.publishNotice.by || 'Someone') + '</b> published newer data to GitHub at ' + esc(S.app.publishNotice.at) + '.</span><span class="grow"></span><button data-action="publish-get">Get it</button></div>';
     if (S.excelOpen) banners += '<div class="banner warn"><b>This workbook is open in Excel.</b><span class="muted">Close it there while you test: saving from Excel would overwrite results marked here.</span></div>';
     if (S.view === 'setup' && isOwner()) return banners + viewSetup();
+    if (S.view === 'automation') return banners + viewAutomation(); // across workbooks: no test suite needed
     if (!S.tab) return banners + (isOwner()
       ? '<div class="empty card"><h3>No test case tab found</h3><p>Open Setup and mark which tabs hold test cases.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Open Setup</button></p></div>'
       : '<div class="empty card"><h3>No test case tab yet</h3><p>Your test lead has not set up this workbook yet.</p></div>');
@@ -643,6 +654,8 @@
   function ddSet(bind, v) {
     if (bind === 'filter:type') { S.filters.type = v; S.keep = {}; return; }
     S.form[bind] = v;
+    var au = /^au:(\w+):(book|tab)$/.exec(bind); // Automation's attach pickers: a new workbook or test suite resets what follows it
+    if (au) auPicked(au[1], au[2]);
   }
 
   /**
@@ -707,6 +720,9 @@
     S.covering = null; clearForm('cov:');
     S.form.noteOpen = false; ['fText', 'fIssue', 'fArea', 'fDetails', 'fTab'].forEach(function (k) { delete S.form[k]; });
     clearForm('ai'); // Add issue: aiOpen, aiUrl, aiCases, aiSuite, aiFail
+    if (S.auto.screen === 'import' || S.auto.screen === 'link') S.auto.screen = 'runs'; // Automation's Import results, Link a suite, Change cycle
+    S.auto.file = null; S.auto.moving = false; S.auto.editing = false;
+    clearForm('au:l:'); clearForm('au:im:'); clearForm('au:mv:'); delete S.form['au:branch']; delete S.form['au:env'];
     S.ddOpen = null; S.ddQ = '';
   }
 
@@ -1772,6 +1788,481 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Automation: automated suites, their runs, and each run's results
+  // (lib/automation/ on the server). Screens: suite and runs, run results, import results,
+  // link a suite. Starting runs on GitHub, the Summary's Automated view and the published
+  // site come later; their places are marked "later:".
+  // ---------------------------------------------------------------------------
+
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /** "24 Nov, 10:23" (or "24 Nov" without the time), in this computer's time. */
+  function auDate(iso, withTime) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '–';
+    var day = d.getDate() + ' ' + MONTHS[d.getMonth()];
+    return withTime === false ? day : day + ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function auStamp(iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + '-' + pad2(d.getMinutes()); }
+  /** A test's time ("30.0 s"), or a run's ("38 min"). */
+  function auSecs(ms) { return ms ? (ms / 1000).toFixed(1) + ' s' : '–'; }
+  function auLength(ms) {
+    if (!ms) return '';
+    if (ms < 60000) return Math.max(1, Math.round(ms / 1000)) + ' s';
+    var m = Math.round(ms / 60000);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+  }
+  function enc(v) { return encodeURIComponent(v == null ? '' : v); }
+  function bookTitle(b) { return String(b || '').replace(/\.xlsx$/i, ''); }
+  function cycleText(c) { return c ? 'Cycle ' + c : 'Status'; }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+  function auKeepText(n) { return n === 1 ? 'The last run is kept' : 'The last ' + n + ' runs are kept'; }
+  function attachText(a) { return bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle); }
+  function auCounts(t) { return { pass: t.passed, fail: t.failed, other: t.skipped, none: 0, total: t.total }; }
+  function auOptions(r) { var o = r.options || {}; return Object.keys(o).map(function (k) { return o[k]; }).filter(Boolean).join(' · '); }
+  function auHow(r) {
+    var s = r.source || {};
+    return s.kind === 'github' ? 'from GitHub' : 'imported' + (s.format === 'ctrf' ? ' (CTRF file)' : s.format === 'junit' ? ' (JUnit file)' : '');
+  }
+  function auCommit(r) { return r.branch || r.sha ? (r.branch || '–') + (r.sha ? ' @ ' + r.sha.slice(0, 7) : '') : ''; }
+  /** A run in a sentence: "24 Nov · master · net_two · smoke", or its date and time when nothing else tells it apart. */
+  function auLabel(r) {
+    var parts = [auDate(r.startedAt, false), r.branch, r.env, auOptions(r)].filter(Boolean);
+    return parts.length > 1 ? parts.join(' · ') : auDate(r.startedAt);
+  }
+  /** The previous run's figure beside this one: "↑ from 84%", green when it got better. */
+  function auFrom(cur, prev, unit, lowerIsBetter) {
+    if (prev == null || cur == null || prev === cur) return '';
+    var up = cur > prev, good = lowerIsBetter ? !up : up;
+    return '<span class="delta ' + (good ? 'good' : 'bad') + '" title="Previous run: ' + prev + (unit || '') + '">' + (up ? '↑' : '↓') + ' from ' + prev + (unit || '') + '</span>';
+  }
+  function auResult(t) {
+    return '<div class="stack-s">' + TR.bar(auCounts(t), true) + '<span class="small"><span class="sym-pass">' + TR.SYM.pass + '</span> ' + t.passed + ' &nbsp;<span class="sym-fail">' + TR.SYM.fail + '</span> ' + t.failed + ' &nbsp;<span class="sym-other">' + TR.SYM.other + '</span> ' + t.skipped + '</span></div>';
+  }
+  function auHist(list) {
+    var word = { pass: 'passed', fail: 'failed', other: 'skipped', none: 'not in that run' };
+    return '<span class="hist" aria-label="Last runs: ' + esc(list.map(function (c) { return word[c]; }).join(', ')) + '">' + list.map(function (c) { return TR.dot(c); }).join('') + '</span>';
+  }
+  function auKpi(v, l, extra, cls, title) {
+    return '<div class="card kpi' + (cls ? ' ' + cls : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '><div class="v">' + esc(v) + '</div><div class="l">' + esc(l) + (extra ? ' · ' + extra : '') + '</div></div>';
+  }
+  function auField(id, label, control, hint) {
+    return '<div><label class="note-label" for="' + id + '">' + label + '</label>' + control + (hint ? '<span class="small muted">' + hint + '</span>' : '') + '</div>';
+  }
+  function maskedHtml(s) { return esc(s).replace(/\*\*\*/g, '<span class="masked">***</span>'); }
+
+  function auLoad() {
+    var A = S.auto;
+    A.loading = true;
+    return TR.http('GET', '/api/automation').then(function (r) {
+      A.loading = false;
+      if (!r.ok) { A.error = r.error || 'The automated results could not be read.'; render(); return r; }
+      A.data = r;
+      A.error = '';
+      var ids = r.suites.map(function (s) { return s.id; });
+      if (ids.indexOf(A.suite) < 0) A.suite = ids[0] || '';
+      render();
+      return r;
+    });
+  }
+  function auSuite(id) {
+    var d = S.auto.data;
+    var want = id || S.auto.suite;
+    return d ? d.suites.filter(function (s) { return s.id === want; })[0] || null : null;
+  }
+  function auRunsOf(id) { return S.auto.data.runs.filter(function (r) { return r.suiteId === id; }); }
+  function auShownRuns(id) {
+    var env = val('au:f:env', ''), branch = val('au:f:branch', '');
+    return auRunsOf(id).filter(function (r) { return (!env || r.env === env) && (!branch || r.branch === branch); });
+  }
+  function distinctOf(list, k) {
+    var out = [];
+    list.forEach(function (r) { if (r[k] && out.indexOf(r[k]) < 0) out.push(r[k]); });
+    return out.sort();
+  }
+
+  /** A workbook's test suites and their cycles, for the attach pickers (read once per form). */
+  function auTargets(b, then) {
+    var A = S.auto;
+    if (!b) return;
+    if (A.targets[b]) { if (then) then(A.targets[b]); return; }
+    if (A.targetsLoading[b]) return;
+    A.targetsLoading[b] = true;
+    TR.http('GET', '/api/automation/targets?book=' + enc(b)).then(function (r) {
+      delete A.targetsLoading[b];
+      if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+      A.targets[b] = r;
+      if (then) then(r);
+      render();
+    });
+  }
+  /** Fill in a test suite and cycle that fit the chosen workbook: the one open in Run when it's there, else the first; its current cycle. */
+  function auDefaults(prefix) {
+    var bk = 'au:' + prefix + ':book', tk = 'au:' + prefix + ':tab', ck = 'au:' + prefix + ':cycle';
+    var b = S.form[bk];
+    var tg = b && S.auto.targets[b];
+    if (!tg) return;
+    var tabs = tg.tabs;
+    var here = b === book();
+    if (!tabs.some(function (t) { return t.name === S.form[tk]; })) S.form[tk] = here && tabs.some(function (t) { return t.name === S.tab; }) ? S.tab : tabs[0] ? tabs[0].name : '';
+    var t = tabs.filter(function (x) { return x.name === S.form[tk]; })[0];
+    if (!t) { delete S.form[ck]; return; }
+    var have = S.form[ck];
+    if (!(have && have.indexOf('c:') === 0 && t.cycles.indexOf(have.slice(2)) >= 0)) {
+      S.form[ck] = 'c:' + (here && t.name === S.tab && t.cycles.indexOf(cycleLabel()) >= 0 ? cycleLabel() : t.current);
+    }
+  }
+  /** A picked workbook or test suite: what depends on it starts again. */
+  function auPicked(prefix, what) {
+    if (what === 'book') { delete S.form['au:' + prefix + ':tab']; delete S.form['au:' + prefix + ':cycle']; auTargets(S.form['au:' + prefix + ':book'], function () { auDefaults(prefix); }); }
+    else delete S.form['au:' + prefix + ':cycle'];
+    auDefaults(prefix);
+  }
+  /** The chosen workbook › test suite › test cycle, or null while one is missing. */
+  function auAttachChosen(prefix) {
+    var b = S.form['au:' + prefix + ':book'], t = S.form['au:' + prefix + ':tab'], c = S.form['au:' + prefix + ':cycle'];
+    var tg = b && S.auto.targets[b];
+    var tab = tg && tg.tabs.filter(function (x) { return x.name === t; })[0];
+    if (!tab || !c || c.indexOf('c:') !== 0 || tab.cycles.indexOf(c.slice(2)) < 0) return null;
+    return { book: b, tab: t, cycle: c.slice(2) };
+  }
+  /** Workbook › Test suite › Test cycle, each a dropdown (a cycle's value is "c:<label>", so an unnamed Status column can be picked too). */
+  function auAttachPickers(prefix, required) {
+    var b = val('au:' + prefix + ':book', '');
+    var tg = b ? S.auto.targets[b] : null;
+    var tabs = tg ? tg.tabs : [];
+    var t = val('au:' + prefix + ':tab', '');
+    var tab = tabs.filter(function (x) { return x.name === t; })[0];
+    var keep = S.auto.data.keep;
+    return '<div class="stack-s"><label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label><div class="link-path">' +
+      dropdown({ bind: 'au:' + prefix + ':book', id: 'au_' + prefix + '_book', cls: 'top-dd', value: b, prefix: '<span class="dd-prefix">Workbook</span>', title: 'Workbook',
+        options: S.app.books.map(function (x) { return { value: x.name, label: bookTitle(x.name) }; }) }) +
+      dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading…' : 'Select',
+        options: tabs.map(function (x) { return { value: x.name, label: TR.tabLabel(x.name) }; }) }) +
+      dropdown({ bind: 'au:' + prefix + ':cycle', id: 'au_' + prefix + '_cycle', cls: 'top-dd', value: val('au:' + prefix + ':cycle', ''), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'Test cycle', disabled: !tab,
+        options: tab ? tab.cycles.map(function (c) { return { value: 'c:' + c, label: cycleText(c) }; }) : [] }) +
+      '</div><span class="small muted">Only people who can open this workbook can see the results. Test Run keeps the last ' + (keep === 1 ? 'run' : keep + ' runs') + ' for each test suite and cycle.</span></div>';
+  }
+  /** "Notifications › Cycle v2.12 already has 2 runs. Importing this one removes the oldest (20 Nov, 11:02)." */
+  function auFullWarning(prefix, suiteId, runId) {
+    var a = auAttachChosen(prefix);
+    if (!a) return '';
+    var d = S.auto.data;
+    var group = d.runs.filter(function (r) { return r.suiteId === suiteId && r.id !== runId && r.attach.book === a.book && r.attach.tab === a.tab && r.attach.cycle === a.cycle; });
+    if (group.length < d.keep) return '';
+    var goes = group.slice(d.keep - 1); // newest first: the oldest ones are pushed out
+    return '<div class="note warn">' + esc(a.tab + ' › ' + cycleText(a.cycle)) + ' already has ' + plural(group.length, 'run') + '. ' +
+      (prefix === 'mv' ? 'Moving this one there' : 'Importing this one') + ' removes the oldest (' + esc(goes.map(function (r) { return auDate(r.startedAt); }).join(', ')) + ').</div>';
+  }
+  function auRemovedText(removed, keep) {
+    if (!removed || !removed.length) return '';
+    return ' The run' + (removed.length > 1 ? 's' : '') + ' from ' + removed.map(function (r) { return auDate(r.startedAt); }).join(' and ') + (removed.length > 1 ? ' were' : ' was') + ' removed: ' + (keep === 1 ? '1 is' : keep + ' are') + ' kept.';
+  }
+
+  /** Send results files: one as it is (its name in ?name=), several as a form. */
+  function auUpload(path, files) {
+    if (files.length === 1) return TR.http('POST', path + (path.indexOf('?') >= 0 ? '&' : '?') + 'name=' + enc(files[0].name), files[0], true);
+    var fd = new FormData();
+    files.forEach(function (f) { fd.append('files', f, f.name); });
+    return TR.http('POST', path, fd, true);
+  }
+  /** Files picked or dropped on Import results: read at once (format and counts), kept on the page until Import Results. */
+  function auChoose(list) {
+    var files = Array.prototype.slice.call(list || []);
+    if (!files.length || S.auto.screen !== 'import') return;
+    var size = files.reduce(function (n, f) { return n + f.size; }, 0);
+    if (size > 20 * 1024 * 1024) { toast('That is too large: results files can be at most 20 MB together.', 'bad'); return; }
+    var mine = { files: files, label: files.length === 1 ? files[0].name : files.length + ' files', size: size, busy: true, preview: null, error: '' };
+    S.auto.file = mine;
+    render();
+    auUpload('/api/automation/preview?suite=' + enc(S.auto.suite), files).then(function (r) {
+      if (S.auto.file !== mine) return;
+      mine.busy = false;
+      if (!r.ok) mine.error = r.error;
+      else {
+        mine.preview = r;
+        if (!String(val('au:branch', '')).trim() && r.branch) S.form['au:branch'] = r.branch;
+        if (!String(val('au:env', '')).trim() && r.env) S.form['au:env'] = r.env;
+      }
+      render();
+    });
+  }
+
+  function viewAutomation() {
+    var A = S.auto;
+    if (!A.data) {
+      if (!A.loading && !A.error) auLoad();
+      return A.error ? '<div class="banner bad"><span>' + esc(A.error) + '</span><span class="grow"></span><button data-action="au-reload">Try Again</button></div>' : '<div class="loading">Loading the automated results…</div>';
+    }
+    if (A.screen === 'run' && A.runId) {
+      var det = auDetail();
+      return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run…</div>');
+    }
+    if (A.screen === 'link') return withRail(auRail(A.editing ? A.suite : 'new'), auLinkForm());
+    var s = auSuite();
+    if (!s) {
+      return withRail(auRail(''), '<div class="empty card"><h3>No automated suites yet</h3>' + (A.data.canAct
+        ? '<p>Link a suite to bring in its results: any framework that writes JUnit XML or CTRF JSON.</p><p style="margin-top:12px"><button class="primary" data-action="au-link">+ Link Suite</button></p>'
+        : '<p>Your test lead has not linked an automated suite yet, or not shared one with you.</p>') + '</div>');
+    }
+    if (A.screen === 'import' && A.data.canAct) return withRail(auRail(s.id), auImport(s));
+    return withRail(auRail(s.id), auRunsList(s));
+  }
+
+  /** Left: the linked suites, + Link Suite, and the Environment and Branch filters (DESIGN.md › Dropdowns › As a filter). */
+  function auRail(active) {
+    var d = S.auto.data;
+    var h = '<div class="rail-group subtabs" role="tablist" aria-label="Automated suites"><span class="rail-title">Automated suites</span>' +
+      d.suites.map(function (s) { return '<button role="tab" class="subtab" data-action="au-suite" data-id="' + esc(s.id) + '" aria-selected="' + (active === s.id) + '">' + esc(s.name) + '</button>'; }).join('') +
+      (d.canAct ? '<button class="ghost" data-action="au-link"' + (active === 'new' ? ' aria-pressed="true"' : '') + '>+ Link Suite</button>' : '') + '</div>';
+    if (active && active !== 'new' && S.auto.screen === 'runs') {
+      var runs = auRunsOf(active);
+      var envs = distinctOf(runs, 'env'), branches = distinctOf(runs, 'branch');
+      if (envs.length || val('au:f:env', '')) h += auFilter('au:f:env', 'Environment', envs);
+      if (branches.length || val('au:f:branch', '')) h += auFilter('au:f:branch', 'Branch', branches);
+    }
+    return h + '<p class="small muted rail-note">Each suite runs in its own repository\'s GitHub Actions. Test Run reads its results file (JUnit XML or CTRF JSON), whatever the framework.</p>';
+  }
+  /** A single-choice filter: nothing chosen = everything (the field reads Select); ↻ on its title's row clears it. */
+  function auFilter(bind, title, options) {
+    var on = !!val(bind, '');
+    var id = bind.replace(/\W/g, '_');
+    var low = title.toLowerCase();
+    return '<div class="rail-group"><div class="rail-head"><label class="rail-title" for="' + id + '">' + esc(title) + '</label>' +
+      '<button type="button" class="help-btn" data-action="au-filter-reset" data-dd="' + esc(bind) + '" title="Show every ' + low + '" aria-label="Reset the ' + low + ' filter"' + (on ? '' : ' disabled') + '>' + RESET_ICON + '</button></div>' +
+      dropdown({ bind: bind, id: id, value: val(bind, ''), options: options }) + '</div>';
+  }
+
+  /** The suite's card: name, repository, results format; its actions on the right. */
+  function auHead(s, actions) {
+    var d = S.auto.data;
+    var meta = [];
+    if (s.repo) meta.push('<a href="https://github.com/' + esc(s.repo) + '" target="_blank" rel="noopener">' + esc(s.repo) + ' ↗</a>');
+    if (s.workflow) meta.push('workflow ' + esc(s.workflow));
+    meta.push(s.format ? 'results: ' + esc(d.formats[s.format] || s.format) + (s.artifact ? ' in artifact <span class="mono">' + esc(s.artifact) + '</span>' : '') : 'no results imported yet');
+    if (s.casePattern) meta.push('case IDs <span class="mono">' + esc(s.casePattern) + '</span>');
+    // later: ▶ Run (GitHub Actions) joins these as the primary button, and Import Results becomes a default one
+    if (actions == null) actions = d.canAct ? '<button data-action="au-edit">✎ Edit</button><button class="primary" data-action="au-import">⤒ Import Results</button>' : '';
+    return '<section class="card card-pad"><div class="auto-head"><div class="grow"><h2>' + esc(s.name) + '</h2><p class="small muted">' + meta.join(' · ') + '</p></div>' +
+      (actions ? '<div class="row">' + actions + '</div>' : '') + '</div></section>';
+  }
+
+  /** Screen 1: the suite and its kept runs. */
+  function auRunsList(s) {
+    var d = S.auto.data;
+    var all = auRunsOf(s.id);
+    var rows = auShownRuns(s.id);
+    var h = auHead(s) + '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs</h2><p class="small muted">' + auKeepText(d.keep) + ' for each test suite and cycle.</p></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>What ran</th><th>Result</th><th class="num">Pass rate</th><th>Attached to</th><th><span class="sr">Open</span></th></tr></thead><tbody>';
+    if (!rows.length) h += '<tr><td colspan="6" class="no-data">' + (all.length ? 'No runs match the filters' : 'No runs yet' + (d.canAct ? '. Bring one in with ⤒ Import Results.' : '')) + '</td></tr>';
+    rows.forEach(function (r) {
+      var what = auCommit(r);
+      var sub = [r.env, auOptions(r)].filter(Boolean).join(' · ');
+      h += '<tr><td class="nowrap">' + esc(auDate(r.startedAt)) + '<div class="small muted">' + esc([r.by, auHow(r)].filter(Boolean).join(' · ')) + '</div></td>' +
+        '<td>' + (what ? '<span class="mono">' + esc(what) + '</span>' : '<span class="faint">–</span>') + (sub ? '<div class="small muted">' + esc(sub) + '</div>' : '') + '</td>' +
+        '<td style="min-width:150px">' + auResult(r.totals) + '</td>' +
+        '<td class="num nowrap">' + (r.passRate == null ? '–' : '<b>' + r.passRate + '%</b><div>' + auFrom(r.passRate, r.prev && r.prev.passRate, '%') + '</div>') + '</td>' +
+        '<td><span class="small">' + esc(attachText(r.attach)) + '</span></td>' +
+        '<td class="num"><button class="small-btn" data-action="au-open" data-id="' + esc(r.id) + '" aria-label="Open the run from ' + esc(auDate(r.startedAt)) + '">Open</button></td></tr>';
+    });
+    return '<div class="stack">' + h + '</tbody></table></div></section></div>';
+  }
+
+  /** One run with its comparison, causes and history (read once, when opened). */
+  function auDetail() {
+    var A = S.auto;
+    if (A.detail && A.detail.run.id === A.runId) return A.detail;
+    if (!A.detailLoading) {
+      A.detailLoading = true;
+      TR.http('GET', '/api/automation/run?id=' + enc(A.runId)).then(function (r) {
+        A.detailLoading = false;
+        if (!r.ok) { toast(r.error, 'bad'); A.runId = ''; A.screen = 'runs'; render(); return; }
+        A.detail = r;
+        A.suite = r.run.suiteId;
+        A.open = { 0: true };
+        A.filter = r.run.totals.failed ? 'failed' : 'all';
+        A.q = '';
+        A.allFiles = false;
+        A.moving = false;
+        var firstFail = r.run.tests.filter(function (t) { return t.status === 'fail'; })[0];
+        A.sel = firstFail ? firstFail.id : '';
+        render();
+      });
+    }
+    return null;
+  }
+
+  /** The tests the All tests list shows, for its chips and search. */
+  function auTestsShown(det) {
+    var A = S.auto, c = det.compare;
+    var sets = { newfail: c.newFailures, still: c.stillFailing, fixed: c.fixed };
+    var inSet = sets[A.filter] ? {} : null;
+    if (inSet) sets[A.filter].forEach(function (id) { inSet[id] = true; });
+    var q = String(A.q || '').trim().toLowerCase();
+    return det.run.tests.filter(function (t) {
+      if (A.filter === 'failed' && t.status !== 'fail') return false;
+      if (A.filter === 'skipped' && t.status !== 'other') return false;
+      if (A.filter === 'flaky' && !t.flaky) return false;
+      if (inSet && !inSet[t.id]) return false;
+      return !q || [t.title, t.file, t.suite, t.tags.join(' '), t.caseIds.join(' '), t.message].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  /** The Full report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
+  function auReportTip(r) {
+    var text = r.source && r.source.runUrl
+      ? 'The suite\'s own report, traces, videos and logs, on its GitHub Actions run. Kept by GitHub for up to 90 days, or until it\'s deleted there. The results on this page stay in Test Run.'
+      : 'This run was imported from a results file, so Test Run has no link to the suite\'s own report: it stays wherever the run was done. The results on this page stay in Test Run.';
+    return helpButton({ id: 'frTip', label: 'About the full report', title: 'Full report', html: '<span>' + esc(text) + '</span>' });
+  }
+
+  /** Screen 4: a run's results, the management view. */
+  function auRunView(det) {
+    var A = S.auto, r = det.run, t = r.totals, prev = det.previous;
+    var can = det.canAct && S.app.books.some(function (b) { return b.name === r.attach.book; });
+    var state = t.failed ? 'fail' : t.passed ? 'pass' : 'other';
+    var by = r.by ? (r.source.kind === 'github' ? 'started by ' : 'imported by ') + r.by : '';
+    var meta = [auDate(r.startedAt), auCommit(r), r.env, auOptions(r), by, auLength(r.durationMs)].filter(Boolean);
+    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
+      '<p class="small muted">' + esc(meta.join(' · ')) + '</p><span class="small">' + esc(attachText(r.attach)) + '</span></div></div>';
+    // Actions: back on the left; then Change Cycle…, Delete…, ⤓ Download, ↗ Full Report and its ? last
+    h += '<div class="run-actions"><button class="small-btn" data-action="au-back">‹ Runs</button><span class="grow"></span>' +
+      (can ? '<button class="small-btn" data-action="au-move" aria-expanded="' + !!A.moving + '">Change Cycle…</button><button class="small-btn danger-outline" data-action="au-delete">Delete…</button>' : '') +
+      '<button class="small-btn" data-action="au-excel" title="The results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>' +
+      (r.source.runUrl ? '<button class="small-btn" data-action="au-full-report" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div>';
+    if (A.moving && can) {
+      h += '<div class="item stack"><div class="tool-title">Change cycle</div><p class="small muted">Attach this run to another workbook, test suite or test cycle.</p>' + auAttachPickers('mv') + auFullWarning('mv', r.suiteId, r.id) +
+        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-move-cancel">Cancel</button><button class="primary" data-action="au-move-save">Save</button></div></div>';
+    }
+    var pt = prev ? prev.totals : null;
+    h += '<div class="kpis" style="margin-bottom:0">' +
+      auKpi(r.passRate == null ? '–' : r.passRate + '%', 'pass rate', auFrom(r.passRate, prev && prev.passRate, '%'), '', 'Passed out of passed and failed; skipped tests are left out') +
+      auKpi(t.passed, 'passed', auFrom(t.passed, pt && pt.passed), 'pass') + auKpi(t.failed, 'failed', auFrom(t.failed, pt && pt.failed, '', true), 'fail') +
+      auKpi(t.skipped, 'skipped') + auKpi(t.flaky, 'flaky', '', '', 'Passed on a retry') + '</div>' +
+      '<div class="progress-wrap">' + TR.bar(auCounts(t)) + '<div class="legend"><span><span class="sym-pass">' + TR.SYM.pass + '</span> <b>' + t.passed + '</b> passed</span><span><span class="sym-fail">' + TR.SYM.fail + '</span> <b>' + t.failed + '</b> failed</span><span><span class="sym-other">' + TR.SYM.other + '</span> <b>' + t.skipped + '</b> skipped</span></div>' +
+      '<span class="small muted">' + (prev ? 'previous run: ' + esc(auDate(prev.startedAt)) : 'no earlier run to compare with') + '</span></div></section>';
+
+    // What changed: each card sets the tests list below
+    var c = det.compare;
+    function card(n, l, sub, f) { return '<button data-action="au-filter" data-f="' + f + '"><span class="v">' + n + '</span><span class="l"><b>' + l + '</b>' + (sub ? ' · ' + sub : '') + '</span></button>'; }
+    h += '<section class="card card-pad stack"><h2>What changed since the previous run</h2>' + (prev
+      ? '<div class="changed">' + card(c.newFailures.length, 'new failures', 'passed last time', 'newfail') + card(c.stillFailing.length, 'still failing', '', 'still') + card(c.fixed.length, 'fixed', 'failed last time', 'fixed') + card(c.flaky.length, 'flaky', 'passed on a retry', 'flaky') + '</div>'
+      : '<p class="small muted">This is the first run of ' + esc(r.suiteName) + ' kept for ' + esc(bookTitle(r.attach.book) + ' › ' + r.attach.tab) + ', so there is nothing to compare it with yet.</p>') + '</section>';
+
+    // Failures by cause
+    var byId = {};
+    r.tests.forEach(function (x) { byId[x.id] = x; });
+    var name = function (x) { return (x.file ? x.file + ' › ' : x.suite ? x.suite + ' › ' : '') + x.title; };
+    h += '<section class="card card-pad stack"><div><h2>Failures by cause</h2><p class="small muted">Failure messages with the numbers, IDs and quoted values taken out, so tests that broke the same way sit together.</p></div><div>' +
+      (det.causes.length ? det.causes.map(function (g, i) {
+        var open = !!A.open[i];
+        var list = g.tests.slice(0, 8).map(function (id) { var x = byId[id]; return x ? '<button class="linkish" data-action="au-test" data-id="' + esc(id) + '">' + esc(name(x)) + '</button>' : ''; }).join('');
+        return '<div class="cause' + (open ? '' : ' collapsed') + '"><button class="cause-head" data-action="au-cause" data-i="' + i + '" aria-expanded="' + open + '"><span class="chev" aria-hidden="true">▾</span><span class="' + (g.other ? '' : 'mono') + '">' + esc(g.signature) + '</span>' +
+          '<span class="nowrap"><b>' + g.count + '</b> ' + (g.count === 1 ? 'test' : 'tests') + (g.newCount ? ' <span class="pill fail">' + g.newCount + ' new</span>' : '') + '</span></button>' +
+          '<div class="cause-body">' + list + (g.tests.length > 8 ? '<span class="muted">… ' + (g.tests.length - 8) + ' more</span>' : '') + '</div></div>';
+      }).join('') : '<p class="small muted">Nothing failed in this run.</p>') + '</div></section>';
+
+    // By test file
+    var files = A.allFiles ? det.files : det.files.slice(0, 10);
+    h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>By test file</h2></div><div class="table-wrap"><table><thead><tr><th>File</th><th class="num">Tests</th>' +
+      '<th class="num"><span aria-hidden="true">' + TR.SYM.pass + '</span><span class="sr">Passed</span></th><th class="num"><span aria-hidden="true">' + TR.SYM.fail + '</span><span class="sr">Failed</span></th><th class="num"><span aria-hidden="true">' + TR.SYM.other + '</span><span class="sr">Skipped</span></th><th>Result</th></tr></thead><tbody>' +
+      (files.length ? files.map(function (f) {
+        return '<tr><td class="mono">' + esc(f.file) + '</td><td class="num">' + f.total + '</td><td class="num">' + f.passed + '</td><td class="num">' + f.failed + '</td><td class="num">' + f.skipped + '</td><td style="min-width:120px">' + TR.bar({ pass: f.passed, fail: f.failed, other: f.skipped, none: 0, total: f.total }, true) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="no-data">No data available</td></tr>') +
+      (det.files.length > 10 && !A.allFiles ? '<tr><td colspan="6" class="small muted">… ' + plural(det.files.length - 10, 'more file') + ' <button class="linkish" data-action="au-all-files">Show All</button></td></tr>' : '') + '</tbody></table></div></section>';
+
+    // All tests, with search, chips and the test panel
+    var counts = { all: t.total, failed: t.failed, newfail: c.newFailures.length, still: c.stillFailing.length, fixed: c.fixed.length, flaky: t.flaky, skipped: t.skipped };
+    var chips = [['all', 'All'], ['failed', 'Failed'], ['newfail', 'New failures'], ['still', 'Still failing'], ['fixed', 'Fixed'], ['flaky', 'Flaky'], ['skipped', 'Skipped']]
+      .filter(function (x) { return x[0] === 'all' || x[0] === 'failed' || counts[x[0]] || A.filter === x[0]; });
+    var shown = auTestsShown(det);
+    var isNew = {}, isFixed = {};
+    c.newFailures.forEach(function (id) { isNew[id] = true; });
+    c.fixed.forEach(function (id) { isFixed[id] = true; });
+    var hist = det.history.byTest;
+    var LIMIT = 200;
+    h += '<section class="card card-pad stack" id="auTests"><h2>All tests</h2><div class="toolbar" style="margin:0"><label class="sr" for="auQ">Search tests</label><input id="auQ" type="search" placeholder="Search title, file or tag" value="' + esc(A.q) + '">' +
+      chips.map(function (x) { return '<button class="chip" data-action="au-chip" data-f="' + x[0] + '" aria-pressed="' + (A.filter === x[0]) + '">' + x[1] + ' <span class="n">' + counts[x[0]] + '</span></button>'; }).join('') + '</div>' +
+      '<div class="table-wrap"><table><thead><tr><th><span class="sr">Result</span></th><th>Test</th><th>Last ' + det.history.runs.length + ' run' + (det.history.runs.length === 1 ? '' : 's') + '</th><th class="num">Time</th></tr></thead><tbody>' +
+      (shown.length ? shown.slice(0, LIMIT).map(function (x) {
+        return '<tr class="test-row' + (x.id === A.sel ? ' sel' : '') + '" tabindex="0" data-action="au-test" data-id="' + esc(x.id) + '"><td>' + TR.dot(x.status) + '<span class="sr">' + TR.CLS_LABEL[x.status] + '</span></td>' +
+          '<td>' + esc(x.title) + (isNew[x.id] ? ' <span class="pill fail">new</span>' : '') + (isFixed[x.id] ? ' <span class="pill pass">fixed</span>' : '') + (x.flaky ? ' <span class="pill other">flaky</span>' : '') +
+          (x.file || x.suite ? '<div class="small muted mono">' + esc(x.file || x.suite) + '</div>' : '') + '</td><td>' + auHist(hist[x.id] || [x.status]) + '</td><td class="num nowrap">' + esc(auSecs(x.durationMs)) + '</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="no-data">Nothing matches</td></tr>') + '</tbody></table></div>' +
+      (shown.length > LIMIT ? '<p class="small muted">Showing ' + LIMIT + ' of ' + shown.length + '. Search to narrow them down.</p>' : '');
+    var sel = byId[A.sel];
+    if (sel) h += auTestPanel(sel, det);
+    return '<div class="stack">' + h + '</section></div>';
+  }
+
+  /** The test picked in All tests: its message, where it broke, and its last runs. */
+  function auTestPanel(x, det) {
+    var list = det.history.byTest[x.id] || [x.status];
+    var since = '';
+    if (x.status === 'fail' && list.length > 1) {
+      if (list[list.length - 2] !== 'fail') since = 'First failure: this run.';
+      else {
+        var k = list.length - 1;
+        while (k > 0 && list[k - 1] === 'fail') k--;
+        since = 'Failing since ' + auDate(det.history.runs[k].startedAt, false) + '.';
+      }
+    }
+    var info = [x.file ? '<span class="mono">' + esc(x.file) + '</span>' : '', x.suite && x.suite !== x.file ? esc(x.suite) : '', esc(auSecs(x.durationMs)),
+      x.retries ? plural(x.retries, 'retry', 'retries') : '', x.tags.length ? 'tags <span class="mono">' + esc(x.tags.join(' ')) + '</span>' : '',
+      x.caseIds.length ? 'manual case' + (x.caseIds.length > 1 ? 's' : '') + ' <b>' + esc(x.caseIds.join(', ')) + '</b>' : ''].filter(Boolean);
+    return '<div class="item stack" id="auTestPanel"><div class="row"><b class="grow">' + esc(x.title) + '</b>' + TR.dot(x.status) + '<span class="sr">' + TR.CLS_LABEL[x.status] + '</span></div>' +
+      '<div class="small muted">' + info.join(' · ') + '</div>' +
+      (x.message ? '<div><div class="field-label">Message</div><pre class="trace">' + maskedHtml(x.message) + '</pre>' + (x.masked ? '<span class="small muted">A token or password was masked before it was saved.</span>' : '') + '</div>' : '') +
+      (x.stack ? '<div><div class="field-label">Where</div><pre class="trace">' + maskedHtml(x.stack) + '</pre></div>' : '') +
+      '<div class="row"><span class="small muted">Last ' + plural(list.length, 'run') + '</span>' + auHist(list) + (since ? '<span class="small muted">' + since + '</span>' : '') + '</div></div>';
+  }
+
+  /** Screen 5: Import results, attached to a workbook › test suite › test cycle. */
+  function auImport(s) {
+    var A = S.auto, f = A.file;
+    var h = auHead(s, '<button class="ghost" data-action="au-back">Back</button>');
+    h += '<section class="card card-pad stack"><div><h2>Import results</h2><p class="small muted">For a run done outside Test Run: on a laptop, another CI, or a GitHub run started there. JUnit XML or CTRF JSON; several files, or a .zip of them, make one run.</p></div>';
+    if (f) {
+      var p = f.preview;
+      h += '<div class="item row"><span class="file-chosen grow">' + (p ? '<span class="sym-pass" aria-hidden="true">✓</span>' : f.error ? '<span class="sym-fail" aria-hidden="true">✗</span>' : '') +
+        '<span class="mono">' + esc(f.label) + '</span><span class="faint">' + fmtBytes(f.size) + '</span></span>' +
+        (p ? '<span class="small">' + esc(p.formatLabel) + ' · <b>' + p.totals.total + '</b> tests · <span class="sym-pass">' + TR.SYM.pass + '</span> ' + p.totals.passed + ' <span class="sym-fail">' + TR.SYM.fail + '</span> ' + p.totals.failed + ' <span class="sym-other">' + TR.SYM.other + '</span> ' + p.totals.skipped + (p.tool ? ' · from ' + esc(p.tool) : '') + '</span>'
+          : f.busy ? '<span class="small muted">Reading…</span>' : '') +
+        '<button class="link-btn danger" data-action="au-file-clear" aria-label="Remove ' + esc(f.label) + '">✕</button></div>';
+      if (f.error) h += '<div class="bad-text small">' + esc(f.error) + '</div>';
+      if (p && p.ignored && p.ignored.length) h += '<div class="note warn">Not results files, so left out: ' + esc(p.ignored.join(', ')) + '.</div>';
+    } else {
+      h += '<div class="drop" id="auDrop"><b>Drop the results file here</b><span class="small muted">or</span><button data-action="au-file">⤒ Choose Files…</button></div>';
+    }
+    h += '<div class="form-grid">' +
+      auField('auBranch', 'Branch <span class="faint">(optional)</span>', '<input id="auBranch" data-bind="au:branch" value="' + esc(val('au:branch', '')) + '">', 'Read from the file when it says') +
+      auField('auEnv', 'Environment <span class="faint">(optional)</span>', '<input id="auEnv" data-bind="au:env" value="' + esc(val('au:env', '')) + '">') + '</div>';
+    h += auAttachPickers('im', true) + auFullWarning('im', s.id, '');
+    var ready = f && f.preview && auAttachChosen('im') && !A.busy;
+    h += '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-import-save"' + (ready ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  /** Screen 6: Link a suite (or change one). The GitHub steps (check, workflow, artifact, try it) come with the GitHub link. */
+  function auLinkForm() {
+    var A = S.auto, s = A.editing ? auSuite() : null;
+    var v = function (k, dflt) { return val('au:l:' + k, dflt == null ? '' : dflt); };
+    var h = '<section class="card card-pad stack"><div><h2>' + (s ? 'Edit “' + esc(s.name) + '”' : 'Link a suite') + '</h2><p class="small muted">Once per repository. The suite\'s workflow must write a JUnit XML or CTRF JSON results file and upload it as an artifact.</p></div>';
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">1</span>Repository</div><div class="row"><label class="sr" for="auRepo">Repository link</label>' +
+      '<input id="auRepo" type="url" style="flex:1 1 360px" data-bind="au:l:repo" placeholder="https://github.com/owner/repo" value="' + esc(v('repo', s ? (s.repo ? 'https://github.com/' + s.repo : '') : '')) + '"></div>' +
+      '<div class="small muted">Where the suite lives on GitHub. Until Test Run connects to GitHub, its results come in with ⤒ Import Results.</div></div>';
+    // later: Check, then Workflow, Results artifact and Environment option, read from GitHub
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>Name</div><div class="form-grid narrow">' +
+      auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">') + '</div></div>';
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">3</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
+      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') +
+      auField('auMask', 'Extra masking', '<textarea id="auMask" class="mono" rows="2" data-bind="au:l:mask" placeholder="e.g. otp=\\d{6}">' + esc(v('mask', s ? s.masking.join('\n') : '')) + '</textarea>', 'One per line: a text, or a /pattern/. Tokens, passwords and Authorization headers are always masked.') + '</div></div>';
+    h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
+      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></section>';
+    return '<div class="stack">' + h + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
   // Setup
   // ---------------------------------------------------------------------------
 
@@ -2500,12 +2991,17 @@
 
   var HELP_KEYS = [['J / ↓', 'Next case'], ['K / ↑', 'Previous case'], ['Enter', 'Open or close the case'], ['P', 'Pass'], ['F', 'Fail (then type a comment, Enter saves)'], ['N', 'NA / other'], ['1–9', 'Any status by position'], ['0', 'Clear the result (back to not run)'], ['C', 'Comment'], ['E', 'Edit the open case (Duplicate and Deprecate are next to it)'], ['U', 'Undo the last mark'], ['/', 'Search'], ['Esc', 'Close / leave a field']];
 
-  /** The ? and its tooltip (DESIGN.md › Tooltips): shown on hover and focus, pinned by a click or the ? key. */
-  function helpButton() {
+  /**
+   * The ? and its tooltip (DESIGN.md › Tooltips): shown on hover and focus, pinned by a click or the ? key.
+   * The keyboard shortcuts by default; o: { id, label (the button's), title, html } for other reference text
+   * (Automation's Full report). One per screen: setHelp() works on the first.
+   */
+  function helpButton(o) {
+    o = o || { id: 'keysTip', label: 'Keyboard shortcuts', title: 'Keyboard shortcuts',
+      html: '<div class="tip-keys">' + HELP_KEYS.map(function (k) { return '<kbd>' + esc(k[0]) + '</kbd><span>' + esc(k[1]) + '</span>'; }).join('') + '</div>' };
     return '<span class="help-wrap' + (S.helpOpen ? ' open' : '') + '">' +
-      '<button class="help-btn" data-action="help" aria-label="Keyboard shortcuts" aria-describedby="keysTip" aria-expanded="' + !!S.helpOpen + '">?</button>' +
-      '<div id="keysTip" role="tooltip" class="tip"><div class="tip-title">Keyboard shortcuts</div><div class="tip-keys">' +
-      HELP_KEYS.map(function (k) { return '<kbd>' + esc(k[0]) + '</kbd><span>' + esc(k[1]) + '</span>'; }).join('') + '</div></div></span>';
+      '<button class="help-btn" data-action="help" aria-label="' + esc(o.label) + '" aria-describedby="' + esc(o.id) + '" aria-expanded="' + !!S.helpOpen + '">?</button>' +
+      '<div id="' + esc(o.id) + '" role="tooltip" class="tip"><div class="tip-title">' + esc(o.title) + '</div>' + o.html + '</div></span>';
   }
   /** Pins the shortcuts open (or closes them) without redrawing the page. */
   function setHelp(open) {
@@ -2528,6 +3024,7 @@
       S.view = el.getAttribute('data-view');
       if (S.view === 'findings') S.suites = {}; // read the other suites afresh
       if (S.view === 'setup') S.setup = null;
+      if (S.view === 'automation') { S.auto.data = null; S.auto.error = ''; S.auto.detail = null; } // read afresh
       if (S.view !== from) closeBlocks(); // a form left open on the page you leave closes, and what was typed in it goes
       if (S.view === 'issues') S.issuesDue = true; // viewIssues asks GitHub once
       render();
@@ -3275,6 +3772,181 @@
         toast('Setup saved.');
         refreshBoot(false); // stay on Setup
       });
+    },
+
+    // Automation
+    'au-reload': function () { S.auto.error = ''; S.auto.data = null; render(); },
+    'au-suite': function (el) {
+      var A = S.auto;
+      A.suite = el.getAttribute('data-id');
+      A.screen = 'runs'; A.runId = ''; A.detail = null; A.file = null; A.moving = false; A.editing = false;
+      clearForm('au:f:');
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-link': function () { S.auto.screen = 'link'; S.auto.editing = false; S.auto.runId = ''; clearForm('au:l:'); render(); window.scrollTo(0, 0); },
+    'au-edit': function () { S.auto.screen = 'link'; S.auto.editing = true; clearForm('au:l:'); render(); window.scrollTo(0, 0); },
+    'au-import': function () {
+      var A = S.auto;
+      A.screen = 'import'; A.file = null; A.busy = false; A.targets = {};
+      clearForm('au:im:'); delete S.form['au:branch']; delete S.form['au:env'];
+      var names = S.app.books.map(function (b) { return b.name; });
+      S.form['au:im:book'] = names.indexOf(book()) >= 0 ? book() : names[0] || '';
+      auTargets(S.form['au:im:book'], function () { auDefaults('im'); });
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-back': function () {
+      var A = S.auto;
+      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false;
+      clearForm('au:l:'); clearForm('au:mv:');
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-open': function (el) {
+      var A = S.auto;
+      A.runId = el.getAttribute('data-id'); A.screen = 'run'; A.detail = null; S.helpOpen = false;
+      render();
+      window.scrollTo(0, 0);
+    },
+    'au-filter-reset': function (el) { delete S.form[el.getAttribute('data-dd')]; render(); },
+    'au-cause': function (el) { var i = el.getAttribute('data-i'); S.auto.open[i] = !S.auto.open[i]; render(); },
+    'au-all-files': function () { S.auto.allFiles = true; render(); },
+    'au-chip': function (el) { S.auto.filter = el.getAttribute('data-f'); render(); },
+    'au-filter': function (el) {
+      S.auto.filter = el.getAttribute('data-f');
+      render();
+      var t = $('auTests');
+      if (t) t.scrollIntoView({ block: 'start' });
+    },
+    'au-test': function (el) {
+      S.auto.sel = el.getAttribute('data-id');
+      render();
+      var p = $('auTestPanel');
+      if (p) p.scrollIntoView({ block: 'nearest' });
+    },
+    'au-full-report': function () {
+      var d = S.auto.detail;
+      if (d && d.run.source.runUrl) window.open(d.run.source.runUrl, '_blank', 'noopener');
+    },
+    'au-excel': function () {
+      var r = S.auto.detail && S.auto.detail.run;
+      if (!r) return;
+      var name = ((r.suiteName || 'Automated run') + ' - ' + auStamp(r.startedAt) + ' - results.xlsx').replace(/[\\/:*?"<>|]/g, '_');
+      TR.download('/api/automation/excel?id=' + enc(r.id), name).then(function (x) { if (!x.ok) toast(x.error, 'bad'); });
+    },
+    'au-file': function () {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = '.xml,.json,.zip,application/xml,text/xml,application/json,application/zip';
+      input.addEventListener('change', function () { auChoose(input.files); });
+      input.click();
+    },
+    'au-file-clear': function () { S.auto.file = null; render(); },
+    'au-import-save': function () {
+      var A = S.auto, f = A.file, a = auAttachChosen('im');
+      if (!f || !f.preview) { toast('Choose a results file first.', 'bad'); return; }
+      if (!a) { toast('Choose the workbook, test suite and test cycle the results belong to.', 'bad'); return; }
+      var q = '?suite=' + enc(A.suite) + '&book=' + enc(a.book) + '&tab=' + enc(a.tab) + '&cycle=' + enc(a.cycle) +
+        '&branch=' + enc(String(val('au:branch', '')).trim()) + '&env=' + enc(String(val('au:env', '')).trim());
+      A.busy = true;
+      render();
+      auUpload('/api/automation/import' + q, f.files).then(function (r) {
+        A.busy = false;
+        if (!r.ok) { toast(r.error, 'bad'); render(); return; }
+        A.file = null; A.screen = 'runs';
+        clearForm('au:im:'); delete S.form['au:branch']; delete S.form['au:env']; clearForm('au:f:');
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        auLoad();
+        window.scrollTo(0, 0);
+      });
+    },
+    'au-link-save': function () {
+      var A = S.auto, s = A.editing ? auSuite() : null;
+      var body = {
+        id: s ? s.id : '',
+        name: String(val('au:l:name', s ? s.name : '')).trim(),
+        repo: String(val('au:l:repo', s && s.repo ? 'https://github.com/' + s.repo : '')).trim(),
+        casePattern: String(val('au:l:pattern', s ? s.casePattern : '')).trim(),
+        masking: String(val('au:l:mask', s ? s.masking.join('\n') : ''))
+      };
+      if (!body.name) { toast('Give the suite a name, as people should see it in Test Run.', 'bad'); var n = $('auName'); if (n) n.focus(); return; }
+      TR.http('POST', '/api/automation/suites', body).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        clearForm('au:l:');
+        A.screen = 'runs'; A.editing = false; A.suite = r.suite.id;
+        toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '”.');
+        auLoad();
+      });
+    },
+    'au-suite-remove': function () {
+      var s = auSuite();
+      if (!s) return;
+      var n = auRunsOf(s.id).length;
+      askConfirm({
+        title: 'Unlink “' + esc(s.name) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
+        yes: 'Unlink Suite', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
+          if (!r.ok) { toast(r.error, 'bad'); return; }
+          clearForm('au:l:');
+          S.auto.screen = 'runs'; S.auto.editing = false; S.auto.suite = '';
+          toast('Unlinked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          auLoad();
+        });
+      });
+    },
+    'au-delete': function () {
+      var det = S.auto.detail;
+      if (!det) return;
+      var r = det.run;
+      var others = det.kept.filter(function (x) { return x.id !== r.id; });
+      askConfirm({
+        title: 'Delete “' + esc(auLabel(r)) + '”?',
+        banner: 'This cannot be undone.', bannerKind: 'bad',
+        items: [
+          'Its results leave Test Run now.',
+          esc(r.attach.tab + ' › ' + cycleText(r.attach.cycle)) + (others.length ? ' keeps ' + plural(others.length, 'run') + ' (' + esc(others.map(function (x) { return auDate(x.startedAt); }).join(', ')) + ').' : ' keeps no runs.'),
+          r.source.runUrl ? 'The full report on GitHub isn\'t touched; GitHub keeps it until it expires.' : 'The results file it was imported from isn\'t touched.'
+        ],
+        yes: 'Delete Run', danger: true
+      }, function () {
+        TR.http('POST', '/api/automation/delete', { id: r.id }).then(function (x) {
+          if (!x.ok) { toast(x.error, 'bad'); return; }
+          S.auto.screen = 'runs'; S.auto.runId = ''; S.auto.detail = null;
+          toast('Deleted the run from ' + auDate(r.startedAt) + '.');
+          auLoad();
+        });
+      });
+    },
+    'au-move': function () {
+      var A = S.auto, r = A.detail && A.detail.run;
+      if (!r) return;
+      A.moving = !A.moving;
+      clearForm('au:mv:');
+      if (A.moving) {
+        A.targets = {};
+        S.form['au:mv:book'] = r.attach.book; S.form['au:mv:tab'] = r.attach.tab; S.form['au:mv:cycle'] = 'c:' + r.attach.cycle;
+        auTargets(r.attach.book, function () { auDefaults('mv'); });
+      }
+      render();
+    },
+    'au-move-cancel': function () { S.auto.moving = false; clearForm('au:mv:'); render(); },
+    'au-move-save': function () {
+      var A = S.auto, r = A.detail && A.detail.run, a = auAttachChosen('mv');
+      if (!r) return;
+      if (!a) { toast('Choose the workbook, test suite and test cycle to attach the run to.', 'bad'); return; }
+      if (a.book === r.attach.book && a.tab === r.attach.tab && a.cycle === r.attach.cycle) { A.moving = false; clearForm('au:mv:'); render(); return; }
+      TR.http('POST', '/api/automation/reattach', { id: r.id, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (x) {
+        if (!x.ok) { toast(x.error, 'bad'); return; }
+        A.moving = false; A.detail = null;
+        clearForm('au:mv:');
+        toast('Moved the run to ' + bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+        auLoad();
+      });
     }
   };
 
@@ -3417,6 +4089,7 @@
   document.addEventListener('input', function (e) {
     var el = e.target;
     if (el.id === 'search') { S.filters.search = el.value; S.keep = {}; render(); return; }
+    if (el.id === 'auQ') { S.auto.q = el.value; render(); return; }
     if (el.hasAttribute('data-dd-q')) { S.ddQ = el.value; render(); return; }
     if (el.hasAttribute('data-bind') && el.type !== 'checkbox') S.form[el.getAttribute('data-bind')] = el.value;
     if (el.hasAttribute('data-live')) { render(); return; }
@@ -3455,6 +4128,7 @@
       if (e.key === 'Enter' && !e.shiftKey && (t.id === 'retireReason' || t.id === 'dupReason')) { e.preventDefault(); t.blur(); retireCase(t.id === 'dupReason' ? 'duplicate' : 'deprecated'); }
       return;
     }
+    if (S.view === 'automation' && (e.key === 'Enter' || e.key === ' ') && t.matches('tr[data-action="au-test"]')) { e.preventDefault(); ACTIONS['au-test'](t); return; }
     if (S.view !== 'run' || !S.model) return;
     var k = e.key;
     if ((k === 'Enter' || k === ' ') && t.classList && t.classList.contains('case')) { e.preventDefault(); select(t.getAttribute('data-key'), true); return; }
@@ -3474,6 +4148,24 @@
     if (k === 'c') { if ($('comment')) { e.preventDefault(); focusComment(); } return; }
     var o = S.model.statusOptions.filter(function (x) { return x.key === k.toLowerCase() || x.num === k; })[0];
     if (o) { e.preventDefault(); mark(S.selected, o.value); }
+  });
+
+  // Automation › Import results: results files dropped on the drop area
+  document.addEventListener('dragover', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (!d) return;
+    e.preventDefault();
+    d.classList.add('over');
+  });
+  document.addEventListener('dragleave', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (d && !d.contains(e.relatedTarget)) d.classList.remove('over');
+  });
+  document.addEventListener('drop', function (e) {
+    var d = e.target.closest && e.target.closest('#auDrop');
+    if (!d) return;
+    e.preventDefault();
+    auChoose(e.dataTransfer && e.dataTransfer.files);
   });
 
   window.__TR_STATE = S; // for the browser tests

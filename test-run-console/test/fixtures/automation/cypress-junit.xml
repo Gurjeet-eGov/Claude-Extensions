@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="6.4810" tests="3" failures="1">
+  <testsuite name="Root Suite" timestamp="2026-11-21T09:30:00" tests="0" file="cypress/e2e/citizen/track.cy.js" time="0.0000" failures="0">
+  </testsuite>
+  <testsuite name="Track complaint" timestamp="2026-11-21T09:30:00" tests="3" time="6.4810" failures="1">
+    <testcase name="Track complaint shows the status timeline" time="2.1100" classname="shows the status timeline">
+    </testcase>
+    <testcase name="Track complaint status shows Resolved after the LME resolves" time="4.3710" classname="status shows Resolved after the LME resolves">
+      <failure message="Timed out retrying after 4000ms: expected '&lt;span.status&gt;' to have text 'Resolved', but the text was 'In progress'" type="AssertionError"><![CDATA[AssertionError: Timed out retrying after 4000ms: expected '<span.status>' to have text 'Resolved', but the text was 'In progress'
+    at Context.eval (webpack:///./cypress/e2e/citizen/track.cy.js:27:41)]]></failure>
+    </testcase>
+    <testcase name="Track complaint pending: rate the resolution" time="0.0000" classname="pending: rate the resolution">
+      <skipped/>
+    </testcase>
+  </testsuite>
+</testsuites>

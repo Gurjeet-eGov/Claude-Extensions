@@ -29,6 +29,8 @@ import { isWorkbookName } from './lib/books.mjs';
 import { randomBytes } from 'node:crypto';
 import { extensionIdFromKey } from './lib/extension-id.mjs';
 import { EvidenceStore, normalizeMedia, mediaLimits, evidenceType, MAX_FILE_BYTES, reportSeconds, writeCompleteZip, safeName, KINDS } from './lib/evidence.mjs';
+import { createAutomation } from './lib/automation/routes.mjs';
+import { normalizeAutomationSettings } from './lib/automation/store.mjs';
 
 const UI = join(ROOT, 'ui');
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js',
@@ -84,6 +86,7 @@ function normalizeApp(a = {}) {
     team: normalizeTeam(a.team),
     publish: normalizePublish(a.publish),
     media: normalizeMedia(a.media),
+    automation: normalizeAutomationSettings(a.automation), // { keep }: runs kept per suite and cycle, set by the host
   };
 }
 
@@ -183,6 +186,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   /** May this person open this workbook? Teammates can be given one workbook instead of all. */
   const mayOpen = (person, name) => isOwnerPerson(person) || !person || !Array.isArray(person.books) || person.books.includes(name);
   const booksFor = (person) => lib.list().filter((b) => mayOpen(person, b.name));
+  // Automated results (lib/automation/): suites, runs and their results, at /api/automation/*.
+  const automation = createAutomation({ sheetsDir, lib, callApi, mayOpen, isOwner: isOwnerPerson, keep: () => app.automation.keep, readBody });
 
   async function openBook(name, person) {
     if (name && !mayOpen(person, name) && lib.list().some((b) => b.name === name)) throw err('FORBIDDEN', 'This workbook is not shared with you. Ask your test lead.');
@@ -1105,7 +1110,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         if (p) {
           person = p === app.team.admin
             ? { role: 'owner', name: app.user, id: 'admin', admin: true, local: false } // the owner's admin link
-            : { role: p.role, name: p.name, id: p.id, local: false, books: Array.isArray(p.books) ? p.books : null };
+            : { role: p.role, name: p.name, id: p.id, local: false, books: Array.isArray(p.books) ? p.books : null, automationSuites: p.automationSuites, startRuns: p.startRuns };
           const now = stamp();
           if (p.lastSeen !== now) { p.lastSeen = now; saveApp(); }
         }
@@ -1192,6 +1197,11 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const buf = await downloadCopy(name, person.name);
         return send(200, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buf, { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}` });
       }
+      if (path === '/api/automation' || path.startsWith('/api/automation/')) {
+        // its own bodies: results files (raw or multipart, up to 20 MB) and small JSON
+        const r = await automation.handle(req.method, path, url, req, person);
+        return r.json ? json(r.code, r.json) : send(r.code, r.type, r.body, r.headers);
+      }
       if (req.method !== 'POST') return json(405, { ok: false, code: 'METHOD', error: 'Use POST.' });
 
       if (path === '/api/books/import') {
@@ -1254,6 +1264,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const name = String(body.name || '');
         await serial(async () => lib.remove(name));
         evidence.removeBook(name);
+        automation.removeBook(name); // automated runs attached to it go too
         const rep = reports.get(name);
         if (rep && rep.file) { try { unlinkSync(rep.file); } catch { /* gone */ } }
         reports.delete(name);
@@ -1324,6 +1335,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   };
   server.on('close', () => { stopSharing({ forget: false }); pub.timers.forEach(clearInterval); clearInterval(reportTimer); });
   server.evidence = evidence;
+  server.automation = automation;
   server.reports = { info: reportInfo, start: startReport, expire: expireReports, wait: () => reportChain };
   return server;
 }

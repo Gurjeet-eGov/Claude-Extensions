@@ -1,0 +1,17 @@
+{
+  "reportFormat": "CTRF",
+  "specVersion": "0.0.0",
+  "results": {
+    "tool": { "name": "pytest", "version": "8.3" },
+    "summary": { "tests": 6, "passed": 3, "failed": 1, "skipped": 1, "pending": 1, "other": 0, "start": 1795446720000, "stop": 1795446758000 },
+    "tests": [
+      { "name": "sends an SMS on create @NOTIF/01", "status": "passed", "duration": 120, "suite": "tests/test_sms.py::TestSms", "filePath": "tests/test_sms.py", "tags": ["smoke", "NOTIF/01"] },
+      { "name": "retries a failed SMS", "status": "passed", "duration": 340, "suite": ["SMS", "Retries"], "filePath": "tests/test_sms.py", "retries": 2, "flaky": true },
+      { "name": "delivery report", "status": "failed", "duration": 410, "suite": "tests/test_sms.py::TestSms", "filePath": "tests/test_sms.py", "message": "Request failed with status 500 for https://admin:s3cret@sms.example.com/report?api_key=ABCD1234", "trace": "Traceback (most recent call last):\n  File \"tests/test_sms.py\", line 25, in test_delivery_report\n    assert r.status_code == 200\nAssertionError: assert 500 == 200", "tags": ["NOTIF/02"] },
+      { "name": "OTP template", "status": "skipped", "duration": 0, "message": "needs the SMS gateway" },
+      { "name": "email digest", "status": "pending", "duration": 0 },
+      { "name": "push to app", "status": "passed", "duration": 77, "suite": "tests/test_push.py::TestPush", "filePath": "tests/test_push.py" }
+    ],
+    "environment": { "appName": "notifications", "branchName": "develop", "commit": "c81e09d", "testEnvironment": "staging" }
+  }
+}
