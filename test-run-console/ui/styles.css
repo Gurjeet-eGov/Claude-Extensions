@@ -809,6 +809,7 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 .job-line { align-items: center; gap: 10px; }
 .job-line .grow { min-width: 0; }
 .keep-dd { width: 90px; }
+.every-dd { width: 210px; }
 .stack > .seg { align-self: flex-start; } /* Import results: Results File | GitHub Run, as wide as its buttons */
 .run-inputs label.check { align-self: flex-start; margin-top: 4px; }
 .secrets-note { flex: 1 1 260px; }

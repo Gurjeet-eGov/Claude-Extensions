@@ -248,7 +248,23 @@ test('who may: viewers, testers without Start runs, suites not shared, workbooks
     assert.equal((await s.req('POST', '/api/automation/settings', { keep: 3 })).keep, 3);
     assert.equal((await s.req('GET', '/api/automation')).keep, 3);
     assert.equal(JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8')).automation.keep, 3, 'kept in app.json');
+    // how often GitHub is asked about a running run: 5 minutes by default, 1 while debugging, nothing else
+    assert.equal((await s.req('GET', '/api/automation')).checkEvery, 5, 'default 5 minutes');
+    assert.equal((await s.req('POST', '/api/automation/settings', { checkEvery: 1 }, KEYS.tester)).status, 403);
+    assert.equal((await s.req('POST', '/api/automation/settings', { checkEvery: 3 })).code, 'BAD_INPUT');
+    assert.equal((await s.req('POST', '/api/automation/settings', { checkEvery: 1 })).checkEvery, 1);
+    assert.equal((await s.req('GET', '/api/automation')).checkEvery, 1);
+    assert.deepEqual(JSON.parse(readFileSync(join(s.sheets, '.testrun', 'app.json'), 'utf8')).automation, { keep: 3, checkEvery: 1 }, 'both kept in app.json');
+    assert.equal((await s.req('POST', '/api/automation/settings', {})).code, 'BAD_INPUT');
   } finally { s.close(); }
+});
+
+test('the check pace: 5 minutes unless set to 1; anything else falls back to 5', async () => {
+  const { normalizeAutomationSettings } = await import('../lib/automation/store.mjs');
+  assert.equal(normalizeAutomationSettings({}).checkEvery, 5);
+  assert.equal(normalizeAutomationSettings({ checkEvery: 1 }).checkEvery, 1);
+  assert.equal(normalizeAutomationSettings({ checkEvery: 3 }).checkEvery, 5);
+  assert.equal(normalizeAutomationSettings({ checkEvery: '1' }).checkEvery, 1);
 });
 
 test('GitHub access problems are reported in plain words', async () => {

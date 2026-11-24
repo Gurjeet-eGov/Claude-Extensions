@@ -90,6 +90,7 @@ export function createAutomation(ctx) {
       suites: store.suites().filter((s) => canSeeSuite(person, s.id)).map((s) => suiteOut(s, person)),
       runs,
       keep: keep(),
+      checkEvery: normalizeAutomationSettings({ checkEvery: ctx.checkEvery ? ctx.checkEvery() : undefined }).checkEvery,
       canAct: canAct(person),
       isOwner: !!isOwner(person),
       formats: FORMAT_LABEL,

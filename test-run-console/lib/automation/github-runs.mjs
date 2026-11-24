@@ -13,7 +13,8 @@
 //   GET  /api/automation/job?id=     one of them
 //   POST /api/automation/job/cancel {id}    POST /api/automation/job/dismiss {id}
 //   GET  /api/automation/github/status      (the host) which GitHub access Test Run has
-//   POST /api/automation/settings {keep}    (the host) runs kept per test suite and cycle
+//   POST /api/automation/settings {keep?, checkEvery?}  (the host) runs kept per test suite and cycle;
+//        minutes between looks at a run Test Run follows (1 or 5)
 //
 // A started run is a job, kept in sheets/.testrun/automation/jobs.json so it survives a restart:
 // { id, suiteId, attach, branch, inputs, by, githubRunId, state, … }. state: waiting (started,
@@ -30,7 +31,7 @@ import { maySeeSuite, mayStartRuns } from '../team.mjs';
 import { canAct } from './access.mjs';
 import { splitRepo } from '../github.mjs';
 import { parseResults, buildRun, passRate } from './results.mjs';
-import { cleanRepo, normalizeInputs, normalizeAutomationSettings } from './store.mjs';
+import { cleanRepo, normalizeInputs, normalizeAutomationSettings, CHECK_EVERY } from './store.mjs';
 
 const err = (code, message, extra) => Object.assign(new Error(message), { code }, extra || {});
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
@@ -171,7 +172,8 @@ class JobFile {
 
 /**
  * ctx: { sheetsDir, store (AutomationStore), github (lib/github.mjs client), checkAttach(q, person),
- *        keep(), setKeep(n), mayOpen(person, book), isOwner(person), jsonBody(req), log, pollMs (5000),
+ *        keep(), setKeep(n), checkEvery() (minutes: 1 or 5), setCheckEvery(n), mayOpen(person, book),
+ *        isOwner(person), jsonBody(req), log, pollMs (fixed ms, for tests: overrides checkEvery),
  *        findTimeoutMs (how long to look for a started run, 3 min), now() (ms) }
  */
 export function createGithubRuns(ctx) {
@@ -179,7 +181,12 @@ export function createGithubRuns(ctx) {
   const github = ctx.github;
   const log = ctx.log || (() => {});
   const now = ctx.now || (() => Date.now());
-  const pollMs = ctx.pollMs || 5000;
+  // How often GitHub is asked about a run Test Run follows: the host's setting, 5 minutes
+  // normally or 1 while debugging. Finding a run just started is quicker (every 10 s, for up
+  // to findTimeoutMs), so ▶ Run shows it within moments.
+  const pollMs = () => ctx.pollMs || normalizeAutomationSettings({ checkEvery: ctx.checkEvery ? ctx.checkEvery() : undefined }).checkEvery * 60000;
+  const FIND_MS = 10000;
+  const nextDelay = () => (jobs.list.some((j) => ACTIVE.has(j.state) && !j.githubRunId) ? Math.min(pollMs(), FIND_MS) : pollMs());
   const findTimeoutMs = ctx.findTimeoutMs || 3 * 60000;
   const isOwner = ctx.isOwner || ((p) => !!p && p.role === 'owner');
   const keep = () => normalizeAutomationSettings({ keep: ctx.keep ? ctx.keep() : undefined }).keep;
@@ -487,7 +494,7 @@ export function createGithubRuns(ctx) {
     jobs.list.push(job);
     prune();
     jobs.save();
-    schedule(Math.min(pollMs, 1500));
+    schedule(Math.min(pollMs(), 1500));
     return job;
   }
 
@@ -530,7 +537,7 @@ export function createGithubRuns(ctx) {
       if (e.status === 404) { finish(job, 'failed', `The run is not on GitHub any more (deleted there?).`); return; }
       job.lastError = ghProblem(e, full, 'follow the run').message;
       job.misses = (job.misses || 0) + 1;
-      if (job.misses * pollMs > 15 * 60000) finish(job, 'failed', `Test Run lost touch with GitHub while following the run: ${job.lastError}`);
+      if (job.misses * pollMs() > 15 * 60000 && job.misses >= 3) finish(job, 'failed', `Test Run lost touch with GitHub while following the run: ${job.lastError}`);
       return;
     }
     job.misses = 0;
@@ -588,7 +595,7 @@ export function createGithubRuns(ctx) {
       if (prune()) jobs.save();
     } finally {
       ticking = false;
-      if (!stopped && jobs.list.some((j) => ACTIVE.has(j.state))) schedule(pollMs);
+      if (!stopped && jobs.list.some((j) => ACTIVE.has(j.state))) schedule(nextDelay());
     }
   }
 
@@ -600,7 +607,7 @@ export function createGithubRuns(ctx) {
   }
 
   // runs that were going when Test Run stopped are followed again
-  if (jobs.list.some((j) => ACTIVE.has(j.state))) schedule(Math.min(pollMs, 1000));
+  if (jobs.list.some((j) => ACTIVE.has(j.state))) schedule(Math.min(pollMs(), 1000));
 
   async function cancel(body, person) {
     const job = findJob(String(body.id || ''));
@@ -618,7 +625,7 @@ export function createGithubRuns(ctx) {
       }
     }
     jobs.save();
-    schedule(Math.min(pollMs, 1000));
+    schedule(Math.min(pollMs(), 1000));
     return job;
   }
 
@@ -664,9 +671,20 @@ export function createGithubRuns(ctx) {
     const body = await jsonBody(req);
     if (path === '/api/automation/settings') {
       if (!isOwner(person)) return forbid('Only the host changes the automation settings.');
-      const n = Math.round(Number(body.keep));
-      if (!(n >= 1 && n <= 20)) return fail('BAD_INPUT', 'Keep between 1 and 20 runs.');
-      return okJson({ keep: ctx.setKeep ? ctx.setKeep(n) : n });
+      const out = {};
+      if (body.keep != null) {
+        const n = Math.round(Number(body.keep));
+        if (!(n >= 1 && n <= 20)) return fail('BAD_INPUT', 'Keep between 1 and 20 runs.');
+        out.keep = ctx.setKeep ? ctx.setKeep(n) : n;
+      }
+      if (body.checkEvery != null) {
+        const m = Number(body.checkEvery);
+        if (!CHECK_EVERY.includes(m)) return fail('BAD_INPUT', 'Check every 1 or 5 minutes.');
+        out.checkEvery = ctx.setCheckEvery ? ctx.setCheckEvery(m) : m;
+        schedule(Math.min(pollMs(), 1000)); // the new pace applies to runs already being followed
+      }
+      if (!Object.keys(out).length) return fail('BAD_INPUT', 'Nothing to change.');
+      return okJson(out);
     }
     if (path === '/api/automation/github/check' || path === '/api/automation/github/artifacts' || path === '/api/automation/github/link') {
       // linking: who may link suites; changing a linked one: who may run it

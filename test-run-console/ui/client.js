@@ -2782,7 +2782,8 @@
     } else if (active) {
       h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up…' : 'Asking GitHub for the new run…') + '</p>';
     }
-    h += active ? '<p class="small muted">The results are imported by themselves when the run ends. Leaving this page doesn\'t stop the run; the full log is on GitHub.</p>'
+    var every = (S.auto.data && S.auto.data.checkEvery) || 5;
+    h += active ? '<p class="small muted">Test Run checks on the run every ' + (every === 1 ? 'minute' : every + ' minutes') + ' (Setup › Automation), and imports the results by itself when it ends. Leaving this page doesn\'t stop the run; the live log is on GitHub.</p>'
       : '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Back</button><button data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button></div>';
     return '<div class="stack">' + head + h + '</section></div>';
   }
@@ -2885,6 +2886,9 @@
       '<span class="kv-k">GitHub access</span><span class="stack-s">' + access + (g && !g.ok ? '<span class="small muted">On this laptop, run <span class="mono">gh auth login</span>, then open this page again.</span>' : '') + '</span>' +
       '<label class="kv-k" for="auKeep">Runs kept</label><span class="row">' + dropdown({ bind: 'set:au:keep', id: 'auKeep', cls: 'keep-dd', change: 'au-keep', value: String(keep), title: 'Runs kept', options: keeps }) +
       '<span class="small muted">for each test suite and cycle; the oldest goes when a new one comes in</span></span>' +
+      '<label class="kv-k" for="auEvery">Check running runs every</label><span class="row">' + dropdown({ bind: 'set:au:every', id: 'auEvery', cls: 'every-dd', change: 'au-check-every', value: String(A.data.checkEvery || 5), title: 'Check running runs every',
+        options: [{ value: '5', label: '5 minutes', hint: 'default' }, { value: '1', label: '1 minute', hint: 'while debugging' }] }) +
+      '<span class="small muted">how often Test Run asks GitHub how a run is doing. 1 minute uses five times more of GitHub\'s 5,000 requests an hour.</span></span>' +
       '<span class="kv-k">Masking</span><span class="stack-s"><span class="small">Always: tokens, passwords, Authorization headers, JWTs</span><span class="small muted">Extra rules are set on each suite, in its ✎ Edit' +
       (masks.length ? ': ' + esc(masks.map(function (s) { return s.name + ' (' + plural(s.masking.length, 'rule') + ')'; }).join(', ')) : '; none yet') + '.</span></span>' +
       '<span class="kv-k">Space on GitHub Pages</span><span class="small">Shown in <button class="linkish" data-action="setup-part" data-part="publish">Setup › Publish</button>, automation results included.</span>' +
@@ -4959,6 +4963,14 @@
     'ai-suite': function (el) { S.form.aiSuite = el.value; delete S.form.aiCases; render(); },
     'media-keep': function (el) { setMedia({ keepMinutes: Number(el.value) }); },
     // Setup › Automation: runs kept per test suite and cycle
+    'au-check-every': function (el) {
+      TR.http('POST', '/api/automation/settings', { checkEvery: Number(el.value) }).then(function (r) {
+        if (!r.ok) { toast(r.error, 'bad'); return; }
+        if (S.auto.data) S.auto.data.checkEvery = r.checkEvery;
+        toast('Saved. Test Run checks on running runs every ' + (r.checkEvery === 1 ? 'minute' : r.checkEvery + ' minutes') + '.');
+        render();
+      });
+    },
     'au-keep': function (el) {
       TR.http('POST', '/api/automation/settings', { keep: Number(el.value) }).then(function (r) {
         if (!r.ok) { toast(r.error, 'bad'); return; }

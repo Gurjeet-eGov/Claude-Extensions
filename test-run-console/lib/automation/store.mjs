@@ -21,9 +21,17 @@ const err = (code, message) => Object.assign(new Error(message), { code });
 const clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
 
 /** app.json's automation block: { keep } (host only). */
+/** How often (minutes) Test Run asks GitHub about a run it follows: 5 normally, 1 while debugging. */
+export const CHECK_EVERY = [1, 5];
+export const DEFAULT_CHECK_EVERY = 5;
+
 export function normalizeAutomationSettings(a = {}) {
   const keep = Math.round(Number(a && a.keep));
-  return { keep: keep >= 1 && keep <= 20 ? keep : DEFAULT_KEEP };
+  const every = Number(a && a.checkEvery);
+  return {
+    keep: keep >= 1 && keep <= 20 ? keep : DEFAULT_KEEP,
+    checkEvery: CHECK_EVERY.includes(every) ? every : DEFAULT_CHECK_EVERY,
+  };
 }
 
 /** A GitHub repository link (or owner/name) -> 'owner/name'; '' for none; throws for anything else. */
