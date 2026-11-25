@@ -11,7 +11,8 @@
 //
 // Runs move on only when told (setRun), unless the fake was made with autoAdvance: then a run
 // started here is queued for a moment, goes through its steps, and finishes with a results
-// artifact (made by results(run)), as a real one would.
+// artifact (made by results(run)), as a real one would; with reportUrl(run), also a report-link
+// artifact saying where the suite published its report (reportLinkZip).
 import JSZip from 'jszip';
 import YAML from 'yaml';
 import { createGithub, GithubError } from '../lib/github.mjs';
@@ -22,6 +23,9 @@ export async function zipOf(files) {
   for (const [name, content] of Object.entries(files)) zip.file(name, content);
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
+
+/** A report-link artifact's zip: report-url.txt holding the report's address (text: the whole file, as given). */
+export const reportLinkZip = (text, name = 'report-url.txt') => zipOf({ [name]: text });
 
 const fail = (status, message, body) => { throw new GithubError(message, { status, body: body || { message } }); };
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -41,7 +45,7 @@ function dispatchInputs(yaml) {
 
 /**
  * o: { login ('test-user'), now () => ms, autoAdvance: { queuedMs, stepMs, steps: [names], results(run) -> zip bytes,
- *      artifact ('test-results'), conclusion(run) }, returnsRunDetails (dispatch answers with the run, as newer GitHub may),
+ *      artifact ('test-results'), conclusion(run), reportUrl(run) -> the report's address ('' for no report-link) }, returnsRunDetails (dispatch answers with the run, as newer GitHub may),
  *      issues: { url: { title, state, labels, priority } } }
  */
 export function makeFakeGithub(o = {}) {
@@ -73,7 +77,10 @@ export function makeFakeGithub(o = {}) {
     return repo;
   }
 
-  /** Add a run (one done before, say). r: { workflowId, event, branch, status, conclusion, createdAt (ms), actor, jobs, artifacts: [{ name, bytes, expired }] } */
+  /**
+   * Add a run (one done before, say). r: { workflowId, event, branch, status, conclusion, createdAt (ms), actor, jobs,
+   * artifacts: [{ name, bytes, expired }] } (a report-link artifact: { name: 'report-link', bytes: await reportLinkZip(url) })
+   */
   function addRun(full, r = {}) {
     const repo = repos.get(full);
     const id = r.id || ++nextId;
@@ -141,9 +148,15 @@ export function makeFakeGithub(o = {}) {
       return;
     }
     const conclusion = a.conclusion ? a.conclusion(r) : 'failure';
+    // the artifacts are made first, so a run is never seen finished without them
+    const results = a.results ? await a.results(r) : null;
+    const report = a.reportUrl ? a.reportUrl(r) : '';
+    const link = report ? await reportLinkZip(`${report}\n`) : null;
+    if (r.status === 'completed') return; // finished meanwhile, by another look at it
     r.status = 'completed'; r.conclusion = conclusion;
     r.jobs = [{ name: jobName, status: 'completed', conclusion, steps: steps.map((name, i) => ({ name, status: 'completed', conclusion: i === steps.length - 2 ? conclusion : 'success' })) }];
-    if (a.results) addArtifact(repo.full, r.id, a.artifact || 'test-results', await a.results(r));
+    if (results) addArtifact(repo.full, r.id, a.artifact || 'test-results', results);
+    if (link) addArtifact(repo.full, r.id, 'report-link', link);
   }
 
   async function transport({ method = 'GET', path, query, body, binary }) {

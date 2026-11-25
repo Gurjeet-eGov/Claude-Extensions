@@ -299,6 +299,7 @@ export async function runWorkbook(run) {
     ['Run', localStamp(run.startedAt)],
     ['Duration (s)', Math.round((run.durationMs || 0) / 100) / 10],
     ['Source', src.kind === 'github' ? `GitHub Actions${src.runUrl ? ` (${src.runUrl})` : ''}` : `Imported file: ${src.fileName || ''}`],
+    ...(src.reportUrl ? [['Published report', src.reportUrl]] : []),
     ['Results format', FORMAT_LABEL[src.format] || ''],
     ['Framework', src.tool || ''],
     ['Branch', run.branch || ''],

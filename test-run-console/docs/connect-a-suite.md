@@ -13,6 +13,7 @@ CMS-Automation is a working example:
   - `CONFIG_ENV`: the deployment's `config.env` (its address, tenant and so on);
   - `SECRETS_ENV`: the `secrets.env` (logins and passwords).
 - **The run uploads its results** as a JUnit file, `results.xml`, in an artifact named **`test-results`**, kept 90 days. That is the file Test Run reads.
+- **Once it has published its report**, the run uploads the report's address as **`report-link`** ([Report link](#report-link-optional)), so **↗ Git Report** opens that report.
 
 ## A workflow to copy
 
@@ -61,6 +62,25 @@ What matters to Test Run:
 - **The upload**: named `test-results`, with `if: always()` so failed runs upload too, kept 90 days (`retention-days`).
 
 Then, on GitHub, in the repository's **Settings → Environments**: **New environment** for each deployment, and add its secrets (here `CONFIG_ENV` and `SECRETS_ENV`).
+
+## Report link (optional)
+
+If your workflow publishes its own report (on GitHub Pages, say), Test Run can open it. After your publish step, write the report's address to `report-url.txt`, one line, and upload it as an artifact named **`report-link`**:
+
+```yaml
+      # after your publish step (here it has id: publish)
+      - name: Write the report's address
+        if: steps.publish.outcome == 'success'
+        run: echo "https://your-org.github.io/your-repo/report/" > report-url.txt
+      - uses: actions/upload-artifact@v4
+        if: steps.publish.outcome == 'success'
+        with:
+          name: report-link
+          path: report-url.txt
+          retention-days: 90
+```
+
+**↗ Git Report** on the run then opens that report. Without it, Git Report opens the run on GitHub. Test Run keeps the address only when it is an `https://` or `http://` link of at most 500 characters; anything else is left out, and the results still come in.
 
 ## Link it in Test Run
 

@@ -24,6 +24,11 @@
 // cancelled | failed. The run is found after starting it from the workflow's workflow_dispatch
 // runs on that branch, created since just before it was started, that weren't there before,
 // started by the same GitHub account when that's known: whether or not GitHub's answer names it.
+//
+// A run may also say where the suite published its own report: an artifact named report-link
+// holding report-url.txt, one line, the report's address. A run brought in keeps it (source.reportUrl,
+// an http(s) address only), and ↗ Git Report opens it instead of the run on GitHub. Without one, or
+// with one that can't be read, the import goes on as before.
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
@@ -32,7 +37,7 @@ import JSZip from 'jszip';
 import { maySeeSuite, mayStartRuns } from '../team.mjs';
 import { canAct } from './access.mjs';
 import { splitRepo } from '../github.mjs';
-import { parseResults, buildRun, passRate } from './results.mjs';
+import { parseResults, buildRun, passRate, cleanReportUrl } from './results.mjs';
 import { cleanRepo, normalizeInputs, normalizeAutomationSettings, CHECK_EVERY, MAX_EXCLUDE_ENVIRONMENTS, MAX_ENVIRONMENT_NAME } from './store.mjs';
 
 const err = (code, message, extra) => Object.assign(new Error(message), { code }, extra || {});
@@ -43,6 +48,9 @@ const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024; // a results artifact is small; a 
 const CHECK_ARTIFACT_BYTES = 50 * 1024 * 1024; // larger ones aren't downloaded just to look inside
 const MAX_ENTRIES = 2000;
 const MAX_RESULT_BYTES = 200 * 1024 * 1024;
+export const REPORT_LINK = 'report-link'; // the artifact that says where the suite's own report is
+const MAX_REPORT_LINK_BYTES = 64 * 1024; // a zip of one short line; anything bigger isn't read
+const isReportLink = (a) => String((a && a.name) || '').toLowerCase() === REPORT_LINK;
 
 // ---------------------------------------------------------------------------
 // Workflow files
@@ -154,6 +162,21 @@ export async function resultFilesIn(zipBuf, label = 'artifact') {
     out.push({ name: `${label} › ${e.name}`, buf });
   }
   return out;
+}
+
+/**
+ * The first non-empty line, trimmed, of report-url.txt (in any folder) inside a report-link artifact's
+ * zip: '' when there is no such file, or it is empty or too large. Throws BAD_FORMAT for an unreadable zip.
+ */
+export async function reportUrlIn(zipBuf) {
+  let zip;
+  try { zip = await JSZip.loadAsync(zipBuf); } catch (e) { throw err('BAD_FORMAT', `The ${REPORT_LINK} artifact isn't a readable .zip (${e.message}).`); }
+  const e = Object.values(zip.files).find((x) => !x.dir && !/(^|\/)__MACOSX\//.test(x.name) && /(^|\/)report-url\.txt$/i.test(x.name));
+  if (!e) return '';
+  const size = e._data && e._data.uncompressedSize; // JSZip's own record of the file's size, so a huge one isn't unpacked
+  if (typeof size === 'number' && size > MAX_REPORT_LINK_BYTES) return '';
+  const text = await e.async('string');
+  return text.split(/\r?\n/).map((x) => x.trim()).find(Boolean) || '';
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +403,7 @@ export function createGithubRuns(ctx) {
     const full = `${owner}/${repo}`;
     let list;
     try { list = ((await github.listArtifacts(owner, repo, ghRun.id)) || {}).artifacts || []; } catch (e) { throw ghProblem(e, full, 'list the run\'s artifacts'); }
-    const named = suite.artifact ? list.filter((a) => a.name === suite.artifact) : list;
+    const named = suite.artifact ? list.filter((a) => a.name === suite.artifact) : list.filter((a) => !isReportLink(a));
     const live = named.filter((a) => !a.expired);
     if (!named.length) {
       throw err('NO_RESULTS', list.length
@@ -407,6 +430,7 @@ export function createGithubRuns(ctx) {
       throw e;
     }
     if (!parsed.startedAt && ghRun.run_started_at) parsed.startedAt = ghRun.run_started_at;
+    const reportUrl = await reportLinkOf(owner, repo, ghRun, list);
     const inputs = o.inputs || {};
     const env = suite.envInput && inputs[suite.envInput] ? inputs[suite.envInput] : '';
     const options = {};
@@ -421,12 +445,34 @@ export function createGithubRuns(ctx) {
     const run = buildRun(parsed, {
       suite, attach,
       // expiresAt: when GitHub deletes the results artifact (its retention-days), for the Full report's ?
-      source: { kind: 'github', repo: full, workflow: suite.workflow || String(suite.workflowId), runId: String(ghRun.id), runUrl: ghRun.html_url, fileName: used ? used.name : '', expiresAt: used ? used.expires_at : '' },
+      source: { kind: 'github', repo: full, workflow: suite.workflow || String(suite.workflowId), runId: String(ghRun.id), runUrl: ghRun.html_url, reportUrl, fileName: used ? used.name : '', expiresAt: used ? used.expires_at : '' },
       branch: o.branch || ghRun.head_branch || '', sha: ghRun.head_sha || '', env, options, by: o.by,
     });
     const { meta, removed } = store.add(run, keep());
     store.noteFormat(suite.id, parsed.format);
     return { meta, removed, artifact: used ? used.name : '', summary: { format: parsed.format, formatLabel: parsed.formatLabel, tool: parsed.tool, totals: parsed.totals, files: parsed.files, ignored: parsed.ignored } };
+  }
+
+  /**
+   * Where the suite published its own report for this run: the address in its report-link artifact
+   * (report-url.txt), when it is an http(s) address (cleanReportUrl), else ''. list: the run's artifacts.
+   * Never throws: a missing, expired, unreadable or bad link is logged and left out.
+   */
+  async function reportLinkOf(owner, repo, ghRun, list) {
+    const a = (list || []).find((x) => isReportLink(x) && !x.expired);
+    if (!a) return '';
+    const where = `${owner}/${repo} run ${ghRun.id}`;
+    if ((a.size_in_bytes || 0) > MAX_REPORT_LINK_BYTES) { log(`${REPORT_LINK} of ${where} is ${a.size_in_bytes} bytes: too large for a link, left out`); return ''; }
+    let line;
+    try {
+      line = await reportUrlIn(await github.downloadArtifact(owner, repo, a.id));
+    } catch (e) {
+      log(`${REPORT_LINK} of ${where} could not be read, left out: ${(e && e.message) || e}`);
+      return '';
+    }
+    const url = cleanReportUrl(line);
+    if (!url) log(`${REPORT_LINK} of ${where} ${line ? 'is not an http(s) address of at most 500 characters' : 'has no address in report-url.txt'}, left out`);
+    return url;
   }
 
   /** Import from GitHub: a finished run of the suite's workflow (the latest without runId), attached where asked. */

@@ -7,6 +7,7 @@ Test Run keeps the results of automated tests next to the manual runs, whatever 
 - [What Test Run needs from a suite](#what-test-run-needs-from-a-suite)
 - [The workflow, step by step](#the-workflow-step-by-step)
 - [Snippets per framework](#snippets-per-framework)
+- [Report link (optional)](#report-link-optional)
 - [Linking the suite in Test Run](#linking-the-suite-in-test-run)
 - [Running it from Test Run](#running-it-from-test-run)
 - [Runs started elsewhere](#runs-started-elsewhere)
@@ -21,7 +22,7 @@ Four things, all in the suite's own repository:
 3. **A `workflow_dispatch` trigger**, so Test Run can start the workflow. Its `inputs` become Test Run's run form: a `choice` becomes a dropdown, a `boolean` a checkbox, a `string` or `number` a text field, an `environment` a dropdown of the repository's environments (less those the host leaves out in **Setup → Automation → Exclude environments**: `github-pages` by default, which GitHub makes by itself when Pages is switched on). Each branch can have its own form: the run form shows the fields of the workflow file on the branch you run.
 4. **Secrets in GitHub**, never in Test Run: put passwords and tokens in the repository's **Settings → Environments** (one environment per deployment, say `net_two`, `staging`) and pick the environment from an input. Test Run never sees them.
 
-What Test Run keeps of each test: its title, file, suite, tags, status, time and retries, and for failures the message and the top of the stack (tokens, passwords and `Authorization` headers masked). No screenshots. The full report stays on the GitHub run; Test Run links to it (**↗ Git Report**). The **?** next to it says how long GitHub keeps it: "Available until 8 Dec 2026.", the date GitHub gave for the results artifact when the run came in (set it with `retention-days`, at most 90). When no date is known (a results file, or a run brought in before Test Run kept the date), it says the artifacts are on GitHub for a limited time after the run, at most 90 days.
+What Test Run keeps of each test: its title, file, suite, tags, status, time and retries, and for failures the message and the top of the stack (tokens, passwords and `Authorization` headers masked). No screenshots. The full report stays on the GitHub run; Test Run links to it (**↗ Git Report**: the suite's own published report when the run gives one, see [Report link](#report-link-optional), else the run on GitHub). The **?** next to it says how long GitHub keeps it: "Available until 8 Dec 2026.", the date GitHub gave for the results artifact when the run came in (set it with `retention-days`, at most 90). When no date is known (a results file, or a run brought in before Test Run kept the date), it says the artifacts are on GitHub for a limited time after the run, at most 90 days.
 
 ## The workflow, step by step
 
@@ -152,6 +153,25 @@ gotestsum --junitfile results/junit.xml ./...
 **Anything else**: if it writes JUnit XML (most CI tools do) or CTRF JSON, it works. To check a file before linking, use **⤒ Import Results** on any suite: it reads the file and shows the counts before keeping anything.
 
 **Case IDs.** To link automated tests to manual cases (for the Auto ✓ / ✗ marks), put the manual case's ID in the test's title or tags, like `@CMS/02`, and give the suite a case-ID pattern (`CMS/\d+`) when linking.
+
+## Report link (optional)
+
+If the workflow publishes its own report (on GitHub Pages, say), **↗ Git Report** can open it instead of the run on GitHub. After your publish step, write the report's address to `report-url.txt`, one line, and upload it as an artifact named **`report-link`** (only runs that published have it):
+
+```yaml
+      # after your publish step (here it has id: publish)
+      - name: Write the report's address
+        if: steps.publish.outcome == 'success'
+        run: echo "https://your-org.github.io/your-repo/report/" > report-url.txt
+      - uses: actions/upload-artifact@v4
+        if: steps.publish.outcome == 'success'
+        with:
+          name: report-link
+          path: report-url.txt
+          retention-days: 90
+```
+
+When a run comes in (followed from **▶ Run**, **⤒ Import Results → GitHub Run**, or Link a suite's **⤒ Import Results**), Test Run reads the first line of `report-url.txt` and keeps it with the run, on the run page, in Summary › Automated and on the published site. It keeps only an `https://` or `http://` address of at most 500 characters, with no spaces; anything else is left out and the results still come in. Without a `report-link`, Git Report opens the run on GitHub.
 
 ## Linking the suite in Test Run
 

@@ -95,10 +95,11 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       await page.locator('[data-action=au-open]').first().click();
       await page.locator('h2', { hasText: 'CMS Automation · 2 failed' }).waitFor();
       assert.match(page.url(), /[?&]run=\d{8}-\d{6}-[0-9a-f]{6}/, 'a refresh comes back to it');
-      // ‹ Back above the title, then the actions row, in order, ? last
-      await page.locator('.run-back', { hasText: '‹ Back' }).waitFor();
+      // one row above the title: ‹ Back first, then the actions in order, ? last
+      await page.locator('.run-actions > [data-action=au-back]', { hasText: '‹ Back' }).waitFor();
       const order = await page.locator('.run-actions > button, .run-actions > .help-wrap > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['Change Cycle', 'Delete', '⤓ Download', '?']);
+      assert.deepEqual(order.map((x) => x.trim()), ['‹ Back', 'Change Cycle', 'Delete', '⤓ Download', '?']);
+      assert.ok(await page.locator('.run-actions + .auto-head h2', { hasText: 'CMS Automation · 2 failed' }).count(), 'the row sits above the title');
       await page.locator('.kpi', { hasText: 'pass rate' }).locator('.delta', { hasText: '↓ from 75%' }).waitFor();
       await page.locator('.changed button', { hasText: 'new failures' }).locator('.v', { hasText: '1' }).waitFor();
       assert.equal(await page.locator('.cause').count(), 2);
@@ -248,9 +249,10 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       await p.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18' }).waitFor();
       await p.locator('[data-action=pub-open][aria-label^="Open the run"]').first().click();
       await p.locator('h2', { hasText: 'CMS Automation · 2 failed' }).waitFor();
-      await p.locator('.run-back', { hasText: '‹ Back' }).waitFor();
+      await p.locator('.run-actions > [data-action=pub-back]', { hasText: '‹ Back' }).waitFor();
       const order = await p.locator('main .stack .run-actions > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download'], 'read only: no Change Cycle or Delete');
+      assert.deepEqual(order.map((x) => x.trim()), ['‹ Back', '⤓ Download'], 'read only: no Change Cycle or Delete');
+      assert.ok(await p.locator('main .stack .run-actions + .auto-head h2', { hasText: 'CMS Automation · 2 failed' }).count(), 'the row sits above the title');
       const dl = p.waitForEvent('download');
       await p.locator('main .stack .run-actions [data-action=pub-csv]').click();
       const csv = readFileSync(await (await dl).path(), 'utf8');

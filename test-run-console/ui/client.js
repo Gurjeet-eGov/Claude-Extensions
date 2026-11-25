@@ -736,7 +736,7 @@
     if (!d) return tools() + '<div class="empty card"><h3>No automated run for this cycle</h3><p>No automated run you can open is attached to ' + esc(where) + '. Pick another test suite or cycle above.</p></div>';
     var r = d.latest;
     var actions = '<div class="run-actions"><button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The automated results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' +
-      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div>';
+      auGitReport(r, 'sum-full-report') + auReportTip(r) + '</div>';
     return tools(actions) + autoSummaryHtml(d, { open: 'pub-open', unlockedFor: pubWho(token) });
   }
 
@@ -1994,7 +1994,7 @@
     var r = d.latest;
     var tools = '<div class="report-tools no-print">' + sumSwitch(true) + '<span class="updated grow">Updated on: ' + esc(d.generatedAt) + '</span>' +
       '<div class="run-actions"><button class="small-btn" data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>' +
-      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div></div>' +
+      auGitReport(r, 'sum-full-report') + auReportTip(r) + '</div></div>' +
       '<div class="print-only print-title">' + esc(bookTitle(book())) + ' · ' + esc(TR.tabLabel(S.tab)) + ' · cycle ' + esc(cycleLabel() || '–') + ' · automated · updated on ' + esc(d.generatedAt) + '</div>';
     return tools + autoSummaryHtml(d, { open: 'sum-open', keep: d.keep });
   }
@@ -2437,6 +2437,18 @@
     if (!until) return 'Available on GitHub for a limited time after the run, at most 90 days.';
     return Date.parse(src.expiresAt) < Date.now() ? 'Was available until ' + until + '.' : 'Available until ' + until + '.';
   }
+  /** Where ↗ Git Report goes: the suite's own published report when the run gave one (report-link), else the run on GitHub; '' for neither. */
+  function auReportUrl(src) {
+    var web = function (u) { return typeof u === 'string' && /^https?:\/\//i.test(u); };
+    return src && web(src.reportUrl) ? src.reportUrl : src && web(src.runUrl) ? src.runUrl : '';
+  }
+  /** ↗ Git Report, when the run has somewhere to open. action: au-full-report (the run's page) or sum-full-report (Summary › Automated, with data-url). */
+  function auGitReport(r, action) {
+    var src = r.source || {}, u = auReportUrl(src);
+    if (!u) return '';
+    return '<button class="small-btn" data-action="' + action + '"' + (action === 'sum-full-report' ? ' data-url="' + esc(u) + '"' : '') +
+      ' title="' + (u === src.reportUrl ? 'Opens the suite\'s published report' : 'Opens the run on GitHub') + '">↗ Git Report</button>';
+  }
   /** The Git report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
   function auReportTip(r) {
     var text = r.source && r.source.runUrl
@@ -2453,21 +2465,21 @@
     var state = t.failed ? 'fail' : t.passed ? 'pass' : 'other';
     var by = r.by ? (r.source.kind === 'github' ? 'started by ' : 'imported by ') + r.by : '';
     var meta = [auDate(r.startedAt), auCommit(r), r.env, auOptions(r), by, auLength(r.durationMs)].filter(Boolean);
-    // Back sits above the title; the actions row follows it
-    var h = '<section class="card card-pad stack">' + (o.published ? '<button class="small-btn run-back" data-action="pub-back">‹ Back</button>' : '<button class="small-btn run-back" data-action="au-back">‹ Back</button>') +
-      '<div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
-      '<p class="small muted">' + esc(meta.join(' · ')) + '</p><span class="small">' + esc(attachText(r.attach)) + '</span></div></div>';
-    // Actions, on the right: Change Cycle, Delete, ⤓ Download, ↗ Git Report and its ? last
-    h += '<div class="run-actions"><span class="grow"></span>' +
+    // One row above the title: ‹ Back on the left; Change Cycle, Delete, ⤓ Download, ↗ Git Report and its ? on the right
+    var h = '<section class="card card-pad stack"><div class="run-actions">' +
+      (o.published ? '<button class="small-btn" data-action="pub-back">‹ Back</button>' : '<button class="small-btn" data-action="au-back">‹ Back</button>') + '<span class="grow"></span>' +
       (can ? '<button class="small-btn" data-action="au-move" aria-expanded="' + !!A.moving + '">Change Cycle</button><button class="small-btn danger-outline" data-action="au-delete">Delete</button>' : '') +
       (o.published
         ? '<button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>'
         : '<button class="small-btn" data-action="au-excel" title="The results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>') +
-      (r.source.runUrl ? '<button class="small-btn" data-action="au-full-report" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div>';
+      auGitReport(r, 'au-full-report') + auReportTip(r) + '</div>';
+    // Change Cycle opens its form under the row it is in
     if (A.moving && can) {
       h += '<div class="item stack"><div class="tool-title">Change cycle</div><p class="small muted">Attach this run to another workbook, test suite or test cycle.</p>' + auAttachPickers('mv') + auFullWarning('mv', r.suiteId, r.id) +
         '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-move-cancel">Cancel</button><button class="primary" data-action="au-move-save">Save</button></div></div>';
     }
+    h += '<div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
+      '<p class="small muted">' + esc(meta.join(' · ')) + '</p><span class="small">' + esc(attachText(r.attach)) + '</span></div></div>';
     var pt = prev ? prev.totals : null;
     h += '<div class="kpis" style="margin-bottom:0">' +
       auKpi(r.passRate == null ? '–' : r.passRate + '%', 'pass rate', auFrom(r.passRate, prev && prev.passRate, '%'), '', 'Passed out of passed and failed; skipped tests are left out') +
@@ -4656,7 +4668,7 @@
     },
     'sum-full-report': function (el) {
       var u = el.getAttribute('data-url') || '';
-      if (/^https:\/\//i.test(u)) window.open(u, '_blank', 'noopener');
+      if (/^https?:\/\//i.test(u)) window.open(u, '_blank', 'noopener');
     },
     // Published site › Automated
     'pub-have-link': function () {
@@ -4908,8 +4920,8 @@
       if (p) p.scrollIntoView({ block: 'nearest' });
     },
     'au-full-report': function () {
-      var d = S.auto.detail;
-      if (d && d.run.source.runUrl) window.open(d.run.source.runUrl, '_blank', 'noopener');
+      var d = S.auto.detail, u = d ? auReportUrl(d.run.source) : '';
+      if (u) window.open(u, '_blank', 'noopener');
     },
     'au-excel': function () {
       var r = S.auto.detail && S.auto.detail.run;

@@ -5,7 +5,7 @@
 //
 // A test:  { id, title, file, suite, tags[], caseIds[], status: 'pass'|'fail'|'other',
 //            durationMs, retries, flaky, message, stack, masked? }
-// A run:   { id, suiteId, suiteName, source: { kind, fileName, format, tool, repo, workflow, runId, runUrl, expiresAt },
+// A run:   { id, suiteId, suiteName, source: { kind, fileName, format, tool, repo, workflow, runId, runUrl, reportUrl, expiresAt },
 //            branch, sha, env, options, by, startedAt, importedAt, durationMs,
 //            attach: { book, tab, cycle }, totals: { passed, failed, skipped, flaky, total }, tests[] }
 import { createHash, randomBytes } from 'node:crypto';
@@ -561,6 +561,24 @@ export function cleanAttach(a) {
   return { book: clip(a.book, 260), tab: clip(a.tab, 160), cycle: clip(a.cycle, 60) };
 }
 
+export const MAX_REPORT_URL = 500;
+// eslint-disable-next-line no-control-regex
+const SPACE_OR_CONTROL = /[\s\u0000-\u001f\u007f-\u009f]/;
+
+/**
+ * The suite's own published report, as a run's report-link artifact names it: kept only when it is an
+ * absolute http(s) address of at most 500 characters, with no spaces or control characters and no
+ * user name or password in it. Anything else is ''.
+ */
+export function cleanReportUrl(v) {
+  const s = typeof v === 'string' ? v : '';
+  if (!s || s.length > MAX_REPORT_URL || SPACE_OR_CONTROL.test(s) || !/^https?:\/\//i.test(s)) return '';
+  let u;
+  try { u = new URL(s); } catch { return ''; }
+  if ((u.protocol !== 'https:' && u.protocol !== 'http:') || !u.hostname || u.username || u.password) return '';
+  return s;
+}
+
 /** A date as ISO text, or '' when it isn't one. */
 const isoOrEmpty = (v) => { const t = Date.parse(String(v || '')); return Number.isNaN(t) ? '' : new Date(t).toISOString(); };
 
@@ -587,6 +605,7 @@ export function buildRun(parsed, o = {}) {
       workflow: clip(src.workflow, 140),
       runId: clip(src.runId, 40),
       runUrl: /^https:\/\//i.test(String(src.runUrl || '')) ? clip(src.runUrl, 400) : '',
+      reportUrl: cleanReportUrl(src.reportUrl), // the suite's published report, when the run gave one ('' otherwise)
       expiresAt: isoOrEmpty(src.expiresAt), // when GitHub deletes the run's results artifact ('' when not known)
     },
     branch: clip(o.branch || parsed.branch, 120),

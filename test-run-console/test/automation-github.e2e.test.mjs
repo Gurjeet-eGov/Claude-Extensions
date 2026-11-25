@@ -1,7 +1,8 @@
 // Automation with GitHub Actions in Chromium, against the fake GitHub (never the real one): Link a
 // suite's GitHub steps (Check, workflow, results artifact, ⤒ Import Results), ▶ Run with the
 // workflow's own options, the Running view (and the count on the Automation tab) until the results
-// come in by themselves (a branch with another form swaps the fields), Import results › GitHub Run,
+// come in by themselves (a branch with another form swaps the fields; its report-link makes ↗ Git Report
+// open the suite's published report), Import results › GitHub Run,
 // and Setup › Automation (Exclude environments, and the hint when none is left). Skipped when
 // Playwright is not installed, like the other browser tests.
 import test from 'node:test';
@@ -22,9 +23,10 @@ for (const dir of [process.env.PLAYWRIGHT_DIR, join(homedir(), 'Documents/Citize
 
 const BOOK = 'CMS Sign Off (sample).xlsx';
 const REPO = 'qa-team/cms-automation';
+const REPORT = 'https://qa-team.github.io/cms-automation/report/';
 
 test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwright not found (set PLAYWRIGHT_DIR)' }, async (t) => {
-  const fake = makeFakeGithub({ login: 'host-gh', autoAdvance: { queuedMs: 600, stepMs: 400, results: () => zipOf({ 'results/junit.xml': sampleJunit(new Date().toISOString()) }) } });
+  const fake = makeFakeGithub({ login: 'host-gh', autoAdvance: { queuedMs: 600, stepMs: 400, results: () => zipOf({ 'results/junit.xml': sampleJunit(new Date().toISOString()) }), reportUrl: () => REPORT } });
   fake.addRepo(REPO, {
     defaultBranch: 'master', branches: ['master', 'develop', 'simple-run-form'], environments: ['net_two', 'github-pages'],
     workflows: [{ id: 101, name: 'Integration tests', path: '.github/workflows/integration.yml', yaml: SAMPLE_WORKFLOW, byBranch: { 'simple-run-form': SIMPLE_WORKFLOW } }],
@@ -102,6 +104,9 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       await toast('Imported 5 tests into CMS 2.20.1 › Cycle v2.12 from GitHub Actions.');
       assert.equal(await page.locator('.nav [data-view=automation] .count').count(), 0, 'nothing going any more');
       await page.locator('.run-actions button', { hasText: '↗ Git Report' }).waitFor();
+      const order = await page.locator('.run-actions > button, .run-actions > .help-wrap > button').allTextContents();
+      assert.deepEqual(order.map((x) => x.trim()), ['‹ Back', 'Change Cycle', 'Delete', '⤓ Download', '↗ Git Report', '?']);
+      assert.equal(await page.locator('.run-actions [data-action=au-full-report]').getAttribute('title'), 'Opens the suite\'s published report', 'the run gave its report-link');
       assert.match(await page.locator('#frTip').textContent(), /Available until \d{1,2} [A-Z][a-z]{2} \d{4}\./, 'the date GitHub gave for the results artifact');
     });
 

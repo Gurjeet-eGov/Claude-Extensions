@@ -845,5 +845,3 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 /* Link a suite: the bottom row, De-link on the left; ⤒ Import Results, Cancel and Save on the right */
 .au-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 12px; }
 .au-foot .grow { flex: 1 1 auto; }
-/* A run's results: Back above the title */
-.run-back { align-self: flex-start; }

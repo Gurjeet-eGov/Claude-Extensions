@@ -4,7 +4,8 @@
 // a run that ends without its results artifact, cancelling, a restart that picks a run up again,
 // Import from GitHub, Setup › Automation, and who may do what. Also: the run form read from the
 // branch being run, the environments the host excludes, the artifact's expiry date, the environment
-// field picked by itself, and the example workflow in docs/connect-a-suite.md.
+// field picked by itself, the example workflow in docs/connect-a-suite.md, and a run's report-link
+// (the suite's own published report, for ↗ Git Report).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
@@ -13,8 +14,11 @@ import { tmpdir } from 'node:os';
 import { createServer } from '../server.mjs';
 import { buildSampleXlsx } from '../dev/sample-workbook.mjs';
 import { hashKey, newKey } from '../lib/team.mjs';
-import { makeFakeGithub, SAMPLE_WORKFLOW, SIMPLE_WORKFLOW, zipOf, sampleJunit } from '../dev/fake-github.mjs';
-import { parseWorkflowInputs } from '../lib/automation/github-runs.mjs';
+import { makeFakeGithub, SAMPLE_WORKFLOW, SIMPLE_WORKFLOW, zipOf, sampleJunit, reportLinkZip } from '../dev/fake-github.mjs';
+import { parseWorkflowInputs, reportUrlIn } from '../lib/automation/github-runs.mjs';
+import { cleanReportUrl } from '../lib/automation/results.mjs';
+import { publishedMeta, runDetailData } from '../lib/automation/summary.mjs';
+import { sealRun, openRun, newIdentity, recipientOf } from '../lib/automation/seal.mjs';
 import YAML from 'yaml';
 
 const BOOK = 'CMS Sign Off (sample).xlsx';
@@ -505,4 +509,104 @@ test('the guide\'s example workflow (docs/connect-a-suite.md) reads as a run for
   // the guide is linked from the console's docs and the README
   assert.match(readFileSync(new URL('../docs/automation.md', import.meta.url), 'utf8'), /\(connect-a-suite\.md\)/);
   assert.match(readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /\(docs\/connect-a-suite\.md\)/);
+});
+
+const REPORT = 'https://gurjeet-egov.github.io/CMS-Automation/digit-3.0-naipepea/nai-pepea/';
+
+test('a report address is kept only as an http(s) link of at most 500 characters, without spaces, control characters or a login', () => {
+  for (const ok of [REPORT, 'http://reports.example.org/run/42', 'HTTPS://Example.com/a?b=1#c']) assert.equal(cleanReportUrl(ok), ok, ok);
+  const long = `https://example.com/${'a'.repeat(481)}`;
+  assert.equal(long.length, 501);
+  for (const bad of ['javascript:alert(1)', 'not a url', 'https://example.com/a report/', 'https://example.com/a\tb', 'https://example.com/\u0007', 'ftp://example.com/r',
+    'data:text/html,<b>x</b>', '//example.com/r', 'https:example.com', 'https://', 'https://user:pw@example.com/r', ' https://example.com/r', long, '', null, undefined, 42, { href: REPORT }]) {
+    assert.equal(cleanReportUrl(bad), '', String(bad));
+  }
+  assert.equal(cleanReportUrl(long.slice(0, 500)), long.slice(0, 500), '500 characters is fine');
+});
+
+test('report-url.txt in a report-link zip: the first non-empty line, trimmed, in any folder', async () => {
+  assert.equal(await reportUrlIn(await reportLinkZip(`\n  ${REPORT}  \r\nhttps://second.example.com/\n`)), REPORT);
+  assert.equal(await reportUrlIn(await zipOf({ 'out/site/report-url.txt': `${REPORT}\n` })), REPORT, 'any path ending in report-url.txt');
+  assert.equal(await reportUrlIn(await zipOf({ 'url.txt': REPORT })), '', 'no report-url.txt');
+  assert.equal(await reportUrlIn(await reportLinkZip('\n \n')), '', 'nothing in it');
+  assert.equal(await reportUrlIn(await reportLinkZip(`${REPORT}\n${'x'.repeat(70000)}`)), '', 'too large to be a link: not unpacked');
+  await assert.rejects(reportUrlIn(Buffer.from('not a zip')), { code: 'BAD_FORMAT' });
+});
+
+test('a run\'s report-link: kept with the run (Import, Link a suite, a run followed), in the run route, Summary › Automated and what a publish locks; a bad or missing one never stops the import', async () => {
+  const s = await start();
+  try {
+    const suite = await linked(s);
+    const cycle = () => s.req('GET', `/api/automation/cycle?book=${encodeURIComponent(BOOK)}&tab=${encodeURIComponent(TAB)}&cycle=v2.12`);
+    const withLink = async (number, link, extra = {}) => s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number, artifacts: [
+      { name: 'test-results', bytes: await results('2026-11-23T08:00:00Z') }, { name: extra.name || 'report-link', bytes: extra.bytes || await reportLinkZip(`${link}\n`), expired: !!extra.expired }] });
+
+    // ⤒ Import Results (the latest finished run): the name matched without regard to case
+    const r1 = await withLink(501, REPORT, { name: 'Report-Link' });
+    const im = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });
+    assert.equal(im.ok, true, im.error);
+    assert.deepEqual([im.run.source.reportUrl, im.run.source.runUrl], [REPORT, `https://github.com/${REPO}/actions/runs/${r1.id}`]);
+    assert.equal(im.run.totals.total, 5, 'the results come from test-results, not report-link');
+    const run = (await s.req('GET', `/api/automation/run?id=${im.run.id}`)).run;
+    assert.equal(run.source.reportUrl, REPORT, 'the run route has it');
+    const cyc = await cycle();
+    assert.deepEqual([cyc.latest.source.reportUrl, cyc.runs[0].source.reportUrl], [REPORT, REPORT], 'Summary › Automated has it');
+    assert.equal((await s.req('GET', '/api/automation')).runs[0].source.reportUrl, REPORT, 'the Automation list has it');
+
+    // what a publish locks (server.mjs › automationFiles): meta.age (the summary and the cycle's row) and run.age (the run view)
+    const store = s.server.automation.store;
+    const m = store.meta(im.run.id);
+    const full = store.run(im.run.id);
+    const me = await newIdentity();
+    const opened = await openRun(await sealRun({ meta: publishedMeta(store, m, full, null, []), detail: runDetailData(store, m, full, null) }, [await recipientOf(me)]), me);
+    assert.deepEqual([opened.meta.summary.source.reportUrl, opened.meta.brief.source.reportUrl, opened.detail.run.source.reportUrl], [REPORT, REPORT, REPORT]);
+
+    // bad links are left out; the results still come in
+    let n = 510;
+    for (const bad of ['javascript:alert(1)', 'not a url', `https://example.com/${'a'.repeat(500)}`, 'https://example.com/a report/']) {
+      const r = await withLink(++n, bad);
+      const x = await s.req('POST', '/api/automation/github/import', { suite: suite.id, runId: r.id, ...ATTACH });
+      assert.equal(x.ok, true, x.error);
+      assert.deepEqual([x.run.source.reportUrl, x.run.totals.total], ['', 5], bad);
+    }
+    // an unreadable zip, an expired artifact, a GitHub error downloading it: left out too
+    const r2 = await withLink(++n, REPORT, { bytes: Buffer.from('not a zip') });
+    const r3 = await withLink(++n, REPORT, { expired: true });
+    const r4 = await withLink(++n, REPORT);
+    s.fake.failNext('GET', new RegExp(`artifacts/${(await s.fake.github.listArtifacts('qa-team', 'cms-automation', r4.id)).artifacts.find((a) => a.name === 'report-link').id}/zip$`), 500, 'Server Error');
+    for (const r of [r2, r3, r4]) {
+      const x = await s.req('POST', '/api/automation/github/import', { suite: suite.id, runId: r.id, ...ATTACH });
+      assert.equal(x.ok, true, x.error);
+      assert.equal(x.run.source.reportUrl, '');
+    }
+    // no report-link at all (a run that didn't publish): no reportUrl, imported as before
+    s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number: ++n, artifacts: [{ name: 'test-results', bytes: await results('2026-11-23T08:00:00Z') }] });
+    const plain = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });
+    assert.equal(plain.ok, true, plain.error);
+    assert.equal(plain.run.source.reportUrl, '');
+    assert.equal((await s.req('GET', `/api/automation/run?id=${plain.run.id}`)).run.source.reportUrl, '');
+    assert.equal((await cycle()).latest.source.reportUrl, '');
+
+    // a run started from Test Run and followed until it ends keeps it too
+    const go = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'master', inputs: {}, ...ATTACH });
+    const ours = s.fake.runs(REPO).at(-1);
+    s.fake.addArtifact(REPO, ours.id, 'test-results', await results('2026-11-24T10:00:00Z'));
+    s.fake.addArtifact(REPO, ours.id, 'report-link', await reportLinkZip(`${REPORT}\n`));
+    s.fake.setRun(REPO, ours.id, { status: 'completed', conclusion: 'success' });
+    await s.gh.tick();
+    const j = (await s.req('GET', `/api/automation/job?id=${go.job.id}`)).job;
+    assert.equal(j.state, 'imported', j.message);
+    assert.equal((await s.req('GET', `/api/automation/run?id=${j.importedRunId}`)).run.source.reportUrl, REPORT);
+  } finally { s.close(); }
+});
+
+test('Link a suite\'s ⤒ Import Results keeps the report link of the latest run', async () => {
+  const s = await start();
+  try {
+    s.fake.addRun(REPO, { workflowId: WF, event: 'schedule', number: 601, artifacts: [{ name: 'test-results', bytes: await results('2026-11-23T08:00:00Z') }, { name: 'report-link', bytes: await reportLinkZip(REPORT) }] });
+    const suite = await linked(s);
+    const im = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });
+    assert.equal(im.ok, true, im.error);
+    assert.equal(im.run.source.reportUrl, REPORT);
+  } finally { s.close(); }
 });

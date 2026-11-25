@@ -114,6 +114,8 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 - A choice that needs more words keeps the symbol first: "⤓ Download Existing".
 - Used on Summary, the published reports page and the Complete Report popup.
 
+**↗ Git Report** (Automation's run page, Summary › Automated, and both on the published site) opens the suite's own published report when the run gives one (its `report-link` artifact), else the run on GitHub; its title says which ("Opens the suite's published report", "Opens the run on GitHub"). It shows only when the run has one of the two; the Git report **?** comes last either way. On a run's page, **‹ Back** and the actions share one row above the title: Back on the left, the actions on the right.
+
 ### Status
 
 - **Symbols:** ✓ pass, ✗ fail, – other (NA, Skipped, Blocked…), ○ not run, ⊘ retired. Defined once in `shared.js` (`SYM`, `CLS_LABEL`); use those, don't retype them.
