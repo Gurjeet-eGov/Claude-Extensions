@@ -26,7 +26,7 @@
     byKey: {},
     view: 'run',
     loading: true,
-    filters: { show: 'todo', tiers: [], type: [], search: '' }, // type: the test types ticked; none = all
+    filters: { show: 'all', tiers: [], type: [], search: '' }, // Run opens on Test Status › All; type: the test types ticked, none = all
     keep: {},
     collapsed: {},
     selected: null,

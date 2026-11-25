@@ -58,7 +58,7 @@ Five screens: **Run**, **Known issues**, **Findings**, **Summary** and **Setup**
 - **Top right, for everyone signed in:** your name. Hover over it to see your role (Host, Admin, Update status or View only) and **Sign out**, which forgets the access link in this browser; you need the link again to come back. On the laptop itself you are always the host, so it offers **Change your name** instead.
 - **Test suites and cycles.** Under the screen names, the **Test suites** row has a button for each test case tab of the workbook (a module, say PGR or Trade License) and **Test cycle** picks the cycle. The row, with the progress bar, stays in view while you scroll.
 - **Run.** Cases are grouped into *test paths*, by Feature then Sub feature.
-  - The filters sit in a column on the left that stays in view: Search, Show (To do, Failed, All, Retired) and Test type. **Collapse**, **Expand** and **?** (shortcuts) are at the top right of the list.
+  - The filters sit in a column on the left that stays in view: Search, Test Status (All, To do, Failed, Deprecated; Run opens on All) and Test type. **Collapse**, **Expand** and **?** (shortcuts) are at the top right of the list.
   - Each case is one line: a status dot, the ID, the scenario, its test type as a tag, and badges.
   - **+ Add a test case here**, at the end of each section, adds a scenario you found while testing, with the section's feature and sub feature filled in. It goes after the last row of the workbook, with the next ID.
   - Click a case to see its pre condition, test data and expected result as bullets.
