@@ -2134,8 +2134,11 @@
   function auKpi(v, l, extra, cls, title) {
     return '<div class="card kpi' + (cls ? ' ' + cls : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '><div class="v">' + esc(v) + '</div><div class="l">' + esc(l) + (extra ? ' · ' + extra : '') + '</div></div>';
   }
-  function auField(id, label, control, hint) {
-    return '<div><label class="note-label" for="' + id + '">' + label + '</label>' + control + (hint ? '<span class="small muted">' + hint + '</span>' : '') + '</div>';
+  /** A form field: its name (with an optional circled i holding reference text), the control, a short hint under it. */
+  function auField(id, label, control, hint, info) {
+    var name = '<label class="note-label" for="' + id + '">' + label + '</label>';
+    if (info) name = '<span class="kv-label">' + name + infoTip(id + 'Tip', label.replace(/<[^>]*>/g, '').trim(), info) + '</span>';
+    return '<div>' + name + control + (hint ? '<span class="small muted">' + hint + '</span>' : '') + '</div>';
   }
   function maskedHtml(s) { return esc(s).replace(/\*\*\*/g, '<span class="masked">***</span>'); }
 
@@ -2227,21 +2230,24 @@
     return { book: b, tab: t, cycle: c.slice(2) };
   }
   /** Workbook › Test suite › Test cycle, each a dropdown (a cycle's value is "c:<label>", so an unnamed Status column can be picked too). */
-  function auAttachPickers(prefix, required) {
+  function auAttachPickers(prefix, required, bare) {
     var b = val('au:' + prefix + ':book', '');
     var tg = b ? S.auto.targets[b] : null;
     var tabs = tg ? tg.tabs : [];
     var t = val('au:' + prefix + ':tab', '');
     var tab = tabs.filter(function (x) { return x.name === t; })[0];
     var keep = S.auto.data.keep;
-    return '<div class="stack-s"><label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label><div class="link-path">' +
+    return '<div class="stack-s">' + (bare ? '' : '<label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label>') + '<div class="link-path">' +
       dropdown({ bind: 'au:' + prefix + ':book', id: 'au_' + prefix + '_book', cls: 'top-dd', value: b, prefix: '<span class="dd-prefix">Workbook</span>', title: 'Workbook',
         options: auAllowedBooks(prefix).map(function (x) { return { value: x, label: bookTitle(x) }; }) }) +
       dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading…' : 'Select',
         options: tabs.map(function (x) { return { value: x.name, label: TR.tabLabel(x.name) }; }) }) +
       dropdown({ bind: 'au:' + prefix + ':cycle', id: 'au_' + prefix + '_cycle', cls: 'top-dd', value: val('au:' + prefix + ':cycle', ''), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'Test cycle', disabled: !tab,
         options: tab ? tab.cycles.map(function (c) { return { value: 'c:' + c, label: cycleText(c) }; }) : [] }) +
-      '</div><span class="small muted">Only people who can open this workbook can see the results. Test Run keeps the last ' + (keep === 1 ? 'run' : keep + ' runs') + ' for each test suite and cycle.</span></div>';
+      '</div>' + (bare ? '' : '<span class="small muted">' + auAttachNote(keep) + '</span>') + '</div>';
+  }
+  function auAttachNote(keep) {
+    return 'Only people who can open this workbook can see the results. Test Run keeps the last ' + (keep === 1 ? 'run' : keep + ' runs') + ' for each test suite and cycle.';
   }
   /** "Notifications › Cycle v2.12 already has 2 runs. Importing this one removes the oldest (20 Nov, 11:02)." */
   function auFullWarning(prefix, suiteId, runId) {
@@ -2602,16 +2608,20 @@
       (G.checkError ? '<div class="check-line bad">' + esc(G.checkError) + '</div>'
         : c ? '<div class="check-line ok">✓ ' + esc(c.repo.fullName) + ' · ' + (c.repo.private ? 'private' : 'public') + ' · ' + plural(c.counts.total, 'workflow') + ', ' + c.counts.dispatch + ' you can start by hand</div>'
           : '<div class="small muted">Any repository Test Run\'s GitHub access can read. Check it to pick its workflow, so ▶ Run can start it; without that, results come in with ⤒ Import Results.</div>') + '</div>';
-    // 2 · Name, workflow and results
-    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>' + (c ? 'Workflow and results' : 'Name') + '</div><div class="form-grid' + (c ? '' : ' narrow') + '">' +
+    // 2 · Name, workflow and results: greyed out under a spinner while GitHub is read
+    var reading = G.checking || G.artsLoading;
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">2</span>' + (c ? 'Workflow and results' : 'Name') + '</div>' +
+      '<div class="spin-wrap' + (reading ? ' busy' : '') + '"' + (reading ? ' aria-busy="true"' : '') + '><div class="form-grid' + (c ? '' : ' narrow') + '">' +
       auField('auName', 'Name in Test Run', '<input id="auName" data-bind="au:l:name" placeholder="e.g. CMS Automation" value="' + esc(v('name', s ? s.name : '')) + '">') +
       auField('au_l_books', 'Workbooks', dropdown({ bind: 'au:l:books', id: 'au_l_books', values: auLinkBooks(), title: 'Workbooks',
-        options: S.app.books.map(function (b) { return { value: b.name, label: bookTitle(b.name) }; }) }), 'Its results show only in these workbooks');
+        options: S.app.books.map(function (b) { return { value: b.name, label: bookTitle(b.name) }; }) }), '', 'Its results show only in these workbooks.');
     var wf = c ? auLinkWorkflow() : null;
     if (c) {
       var can = c.workflows.filter(function (w) { return w.dispatch && w.active; });
+      var notListed = c.workflows.filter(function (w) { return !(w.dispatch && w.active); }).map(function (w) { return w.name; });
       h += auField('au_l_wf', 'Workflow', dropdown({ bind: 'au:l:wf', id: 'au_l_wf', value: v('wf', ''), title: 'Workflow', placeholder: can.length ? 'Select' : 'None can be started by hand',
-        disabled: !can.length, options: can.map(function (w) { return { value: String(w.id), label: w.name, hint: w.path.split('/').pop() }; }) }), 'Its Run workflow options become the run form');
+        disabled: !can.length, options: can.map(function (w) { return { value: String(w.id), label: w.name, hint: w.path.split('/').pop() }; }) }), '',
+        'Only workflows you can start by hand (they have a Run workflow button on GitHub) are listed, since Test Run starts runs the same way.' + (notListed.length ? ' Not listed: ' + notListed.join(', ') + '.' : ''));
       var arts = G.arts && G.artsFor === v('wf', '') ? G.arts : null;
       var artOpts = arts ? arts.artifacts.map(function (a) { return { value: a.name, label: a.name, hint: a.results ? a.results.formatLabel + ' · ' + plural(a.results.tests, 'test') : a.note }; }) : [];
       var artHint = !wf ? 'Choose the workflow first' : G.artsLoading ? 'Looking inside the latest run’s artifacts…' : G.artsError ? '' : arts && arts.run ? 'From the latest run (' + auDate(arts.run.createdAt, false) + '), or type the name it will have' : 'No finished run yet: type the artifact’s name (test-results by default)';
@@ -2619,20 +2629,19 @@
         G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : artHint);
       var envOpts = [{ value: '', label: 'None' }].concat(wf ? wf.inputs.map(function (x) { return { value: x.name, label: x.name, hint: x.description }; }) : []);
       h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), 'Runs are grouped by it, and the run form names its GitHub environment');
-      var no = c.workflows.length - can.length;
-      if (no) h += '<p class="small muted wide">' + plural(no, 'workflow') + ' can\'t be started by hand (no <span class="mono">workflow_dispatch</span>): ' + esc(c.workflows.filter(function (w) { return !(w.dispatch && w.active); }).map(function (w) { return w.name; }).join(', ')) + '.</p>';
     }
-    h += '</div></div>';
-    // 3 · Extras
-    h += '<div class="subsection"><div class="step-title"><span class="step-n">3</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
-      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', 'Finds manual case IDs in test titles or tags') + '</div></div>';
-    // 4 · Try it: saves the suite and brings the latest run in
+    h += '</div>' + (reading ? '<div class="spin-overlay" role="status"><span class="spinner" aria-hidden="true"></span><span class="sr">Reading the repository on GitHub</span></div>' : '') + '</div></div>';
+    // 3 · Attach Workbook: where the latest run's results go (Import Latest Run saves the suite, then brings it in)
+    var n = 3;
     if (wf) {
       var im = G.imported;
-      h += '<div class="subsection"><div class="step-title"><span class="step-n">4</span>Try it</div>' + auAttachPickers('lk', true) +
+      h += '<div class="subsection"><div class="step-title"><span class="step-n">' + (n++) + '</span>Attach Workbook' + infoTip('auAttachTip', 'Attach Workbook', auAttachNote(S.auto.data.keep)) + '</div>' + auAttachPickers('lk', true, true) +
         '<div class="row"><button data-action="au-gh-import-latest"' + (G.importing || !auAttachChosen('lk') ? ' disabled' : '') + '>' + (G.importing ? 'Importing…' : 'Import Latest Run') + '</button>' +
         (im ? '<span class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</span>' : '<span class="small muted">Saves the suite, then brings in the latest finished run.</span>') + '</div></div>';
     }
+    // 4 · Extras
+    h += '<div class="subsection"><div class="step-title"><span class="step-n">' + n + '</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
+      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', '', 'Finds manual case IDs in test titles or tags.') + '</div></div>';
     h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
       '<button class="ghost" data-action="au-link-close">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></div>';
     return h;

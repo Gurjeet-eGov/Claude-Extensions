@@ -586,6 +586,7 @@ button.dd-free { color: var(--accent); font-weight: 600; }
 /* Waiting on GitHub: the table greyed out under a spinner (Known issues) */
 .spin-wrap { position: relative; }
 .spin-wrap.busy .table-wrap { opacity: .4; pointer-events: none; filter: grayscale(.4); transition: opacity .2s; }
+.spin-wrap.busy > .form-grid { opacity: .4; pointer-events: none; filter: grayscale(.4); transition: opacity .2s; } /* Link a suite: fields greyed while GitHub is read */
 .spin-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .spin-page { display: flex; justify-content: center; padding: 72px 0; }
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--accent-weak); border-top-color: var(--accent); animation: spin .8s linear infinite; }
