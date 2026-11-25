@@ -2041,6 +2041,8 @@
     var r = d.latest;
     var tools = '<div class="report-tools no-print">' + sumSwitch(true) + '<span class="updated grow">Updated on: ' + esc(d.generatedAt) + '</span>' +
       '<button data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button><button data-action="print">Print / PDF</button>' +
+      // Publish, as on the Manual summary: the host only, between Print / PDF and Git Report
+      (isOwner() ? '<button data-action="publish-now" title="Publish the reports to the GitHub Pages site (Setup → Publish)"' + (S.publishBusy ? ' disabled' : '') + '>Publish</button>' : '') +
       auGitReport(r, 'sum-full-report', '') + auReportTip(r) + '</div>' +
       '<div class="print-only print-title">' + esc(bookTitle(book())) + ' · ' + esc(TR.tabLabel(S.tab)) + ' · cycle ' + esc(cycleLabel() || '–') + ' · automated · updated on ' + esc(d.generatedAt) + '</div>';
     return tools + autoSummaryHtml(d, { open: 'sum-open', keep: d.keep });

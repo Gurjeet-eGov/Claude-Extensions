@@ -159,6 +159,14 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       await toast('Saved. The run form leaves out github-pages.');
     });
 
+    await t.test('Summary › Automated: Publish (the host) sits between Print / PDF and ↗ Git Report', async () => {
+      await page.goto(`${base}?view=summary`);
+      await page.locator('.seg.same button', { hasText: 'Automated' }).click();
+      await page.locator('h2', { hasText: 'Latest run · CMS Automation' }).waitFor();
+      const order = await page.locator('.report-tools > button, .report-tools > .help-wrap > button').allTextContents();
+      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', 'Print / PDF', 'Publish', '↗ Git Report', '?']);
+    });
+
     await t.test('no page errors', () => { assert.deepEqual(errors, []); });
   } finally {
     await browser.close();

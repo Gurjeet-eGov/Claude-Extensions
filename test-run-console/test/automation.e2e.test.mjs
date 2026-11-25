@@ -214,7 +214,7 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       assert.equal(await page.locator('[data-action=sum-open][aria-label^="Open the run"]').count(), 2, 'the runs kept for the cycle');
       await page.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18 · automation passing on 1, failing on 1.' }).waitFor();
       const order = await page.locator('.report-tools > button, .report-tools > .help-wrap > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', 'Print / PDF', '?'], 'Download and Print / PDF as on Manual, then ? last (no Git Report for an imported run)');
+      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', 'Print / PDF', 'Publish', '?'], 'Download, Print / PDF and Publish (the host) as on Manual, then ? last (no Git Report for an imported run)');
       assert.equal(await page.locator('.report-tools .small-btn').count(), 0, 'the same size as Manual\'s');
       const dl = page.waitForEvent('download');
       await page.locator('.report-tools [data-action=sum-excel]').click();
