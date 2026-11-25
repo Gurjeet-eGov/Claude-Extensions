@@ -2,8 +2,9 @@
 # GitHub Pages, at https://<owner>.github.io/<repo>/test-run/, with the data the
 # host published from Test Run: the branch test-run-data (one commit, replaced at
 # each publish) holds reports/, which anyone can read there, even when no Test Run
-# is running, and automation/: automated results locked with age, which only
-# invited people open, in their browser, with their own invite link. Until that branch exists, the reports
+# is running, and automation/: everyone.json, the automated figures anyone sees, and
+# the runs themselves locked with age, which only invited people open, in their
+# browser, with their own invite link. Until that branch exists, the reports
 # come from master's test-run-console/published/reports, where they were before.
 # With an access link, the page talks to the Test Run server on the host's
 # laptop, and finds its current address in the gist the server keeps.
