@@ -12,6 +12,7 @@ import { isStatic } from '../lib/static-files.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
 import { buildComment, RESULTS } from '../lib/comment.js';
 import { costOfUsageRecord, formatUsd } from '../lib/pricing.js';
+import { enhanceAll } from '../lib/dropdown.js';
 import { testRunStatus, testRunBase, isLocalBase, canNote, listSuites, pickSuite, listCases, caseLabel, matchCase, consoleLink, noteBugInTestRun, buildBugNote, whereLabel } from '../lib/testrun.js';
 
 const $ = (id) => document.getElementById(id);
@@ -999,6 +1000,7 @@ function fillTrSuites(want) {
   $('trSuite').innerHTML = tabs.map((s) => `<option value="${esc(s.tab)}"${s === pick ? ' selected' : ''}>${esc(s.tab)}</option>`).join('');
   $('trSuite').disabled = tabs.length < 2;
 }
+const NO_CASE = '<option value="">None (add it as a finding)</option>';
 function trCase() {
   return matchCase(S.trCases?.cases, $('trCase').value);
 }
@@ -1011,13 +1013,14 @@ function trHint(text, bad = false) {
 async function loadTrCases() {
   const suite = trSuite();
   S.trCases = { cases: [], cycle: '' };
-  $('trCases').innerHTML = '';
+  $('trCase').innerHTML = NO_CASE;
   if (!suite) return;
   const seq = (S.trSeq = (S.trSeq || 0) + 1);
   const res = await listCases(S.settings, S.testRun.base, suite);
   if (seq !== S.trSeq) return; // another suite was picked meanwhile
   S.trCases = res;
-  $('trCases').innerHTML = res.cases.map((c) => `<option value="${esc(caseLabel(c))}">${esc(c.status || 'not run')}</option>`).join('');
+  // one line per case, its status at the right end of the row (lib/dropdown.js draws the list)
+  $('trCase').innerHTML = NO_CASE + res.cases.map((c) => `<option value="${esc(caseLabel(c))}" data-side="${esc(c.status || 'not run')}">${esc(caseLabel(c))}</option>`).join('');
   updateTrHint();
 }
 
@@ -1055,7 +1058,7 @@ function trPicked() {
 }
 $('trBook').addEventListener('change', () => { fillTrSuites(null); trPicked(); });
 $('trSuite').addEventListener('change', trPicked);
-$('trCase').addEventListener('input', updateTrHint);
+$('trCase').addEventListener('change', updateTrHint);
 
 async function noteInTestRun(filed) {
   $('trSummary').classList.add('hidden');
@@ -1516,4 +1519,5 @@ function showUpdated(u) {
   renderRecActions();
 }
 
+enhanceAll(); // every <select> on the page drawn as DESIGN.md's dropdown (5 rows, search when long)
 load().catch((e) => fail(`Could not load the report: ${e.message}`));

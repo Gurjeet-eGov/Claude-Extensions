@@ -362,3 +362,175 @@ kbd.na {
   border-bottom-width: 1px;
   color: var(--faint);
 }
+
+/* Dropdowns (DESIGN.md › Dropdowns, the console's .multi rules): drawn by lib/dropdown.js over each
+   <select>. Every list shows 5 rows and scrolls; more than 8 options get a search box. */
+.multi {
+  position: relative;
+  min-width: 0;
+}
+.multi.inline {
+  display: inline-block;
+}
+.multi.inline button.multi-btn {
+  width: auto;
+  min-height: 26px;
+  padding: 3px 8px;
+}
+/* the value and (invisibly) every option share one grid cell: the field fits the longest */
+.multi.inline .dd-box {
+  display: inline-grid;
+}
+.multi.inline .dd-box > *,
+.dd-sizer > span {
+  grid-area: 1 / 1;
+}
+.dd-sizer {
+  display: contents;
+}
+.dd-sizer > span {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+}
+.multi.grow {
+  flex: 1;
+}
+button.multi-btn {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  color: var(--text);
+  font-weight: 400;
+  padding: 5px 10px;
+}
+button.multi-btn:hover {
+  background: var(--surface);
+}
+.multi.open button.multi-btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button.multi-btn[disabled] {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+button.multi-btn > .grow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.multi-btn > svg {
+  flex: none;
+  color: var(--muted);
+}
+.dd-ph,
+button.multi-btn[disabled] .dd-ph {
+  color: var(--faint);
+}
+.multi-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 100%;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16); /* the console's menu shadow */
+}
+.multi.inline .multi-pop {
+  right: auto;
+  width: max-content; /* a small inline field's list fits its longest option */
+  max-width: 320px;
+}
+.dd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.dd-list > * {
+  flex: none;
+}
+input.dd-search {
+  width: 100%;
+  flex: none;
+}
+button.dd-item {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-weight: 400;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  white-space: normal;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+button.dd-item:hover,
+button.dd-item:focus-visible {
+  background: var(--accent-weak);
+  outline: none;
+}
+button.dd-item.on {
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-weight: 650;
+}
+.dd-text {
+  flex: 1;
+  min-width: 0;
+}
+/* one line per option, cut with … (the whole text is in its title) */
+button.dd-item .dd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.dd-side {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.dd-none {
+  padding: 4px 6px;
+}
+/* an <optgroup>'s label: a micro heading above its options */
+.dd-group {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+/* a card or box around an open list lets it spill over what's below */
+.card:has(.multi-pop),
+.tr-box:has(.multi-pop) {
+  overflow: visible;
+}
