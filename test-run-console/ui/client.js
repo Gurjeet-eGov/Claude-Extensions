@@ -3052,14 +3052,15 @@
         options: [{ value: '5', label: '5 minutes', hint: 'default' }, { value: '1', label: '1 minute', hint: 'while debugging' }] }) + '</span>' +
       auExcludeField() +
       '</div></section>';
-    // + Add sits at the right of the card's title, whether or not suites are linked yet; a suite's name opens it to change
-    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Workbooks</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">De-link</span></th></tr></thead><tbody>' +
+    // + Add sits at the right of the card's title, whether or not suites are linked yet; ✎ Edit on a row opens it to change
+    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Workbooks</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Actions</span></th></tr></thead><tbody>' +
       (suites.length ? suites.map(function (s) {
         var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
-        return '<tr><td><button class="linkish" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”">' + esc(s.name) + '</button>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td>' +
+        return '<tr><td><b>' + esc(s.name) + '</b>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td>' +
           '<td class="small">' + (s.books ? (s.books.length ? s.books.map(function (b) { return esc(bookTitle(b)); }).join('<br>') : '<span class="faint">None</span>') : '<span class="muted">All workbooks</span>') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
           '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
-          '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">De-link</button></td></tr>';
+          '<td class="num"><span class="row-actions"><button class="small-btn" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”"><span aria-hidden="true">✎</span> Edit</button>' +
+          '<button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">De-link</button></span></td></tr>';
       }).join('') : '<tr><td colspan="6" class="no-data">No suites linked yet. + Add links one: any framework whose workflow writes JUnit XML or CTRF JSON.</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
@@ -3378,7 +3379,7 @@
         return '<span class="pill outline cycle-chip">' + esc(name) +
           (canRename ? '<button class="chip-edit" data-action="cycle-rename" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Rename the cycle ' + esc(name) + '" title="Rename this cycle">✎</button>' : '') + (canRemove ? '<button class="chip-x" data-action="cycle-remove" data-tab="' + esc(t.name) + '" data-header="' + esc(name) + '" aria-label="Remove the cycle ' + esc(name) + '" title="Remove this cycle and its results">×</button>' : '') + '</span>';
       }).join(' ') : '<span class="faint">none yet</span>') + '</div>';
-    if (!t.saved) return h + '<p class="small faint">Save first to start cycles here.</p></div>';
+    if (!t.saved) return h + '<p class="note info fit">Save the setup first, with <b>Save</b> at the bottom of the page. Then you can start test cycles here.</p></div>';
     h += '<div class="row"><label class="sr" for="newCycle' + ti + '">New cycle name</label><input id="newCycle' + ti + '" data-bind="newCycle:' + ti + '" placeholder="New cycle, e.g. v2.20.1" value="' + esc(val('newCycle:' + ti)) + '">' +
       '<button data-action="start-cycle" data-tab="' + esc(t.name) + '" data-index="' + ti + '">Start new cycle</button><span class="small faint">Adds the two columns next to the latest cycle, with its dropdown and formatting.</span></div>';
     if (t.columns.release) {
@@ -3623,7 +3624,7 @@
     // Adding workbooks lives here for now (it was at the top right).
     if (isOwner()) h += '<section class="section card card-pad"><div class="row"><div class="grow"><h2>Workbooks</h2><p class="small muted">Add one or more <b>.xlsx</b> workbooks, for example one per environment. Switch between them with <b>Workbook</b> at the top right.</p></div>' +
       '<button data-action="import" title="Add one or more .xlsx workbooks"' + dis + '><span aria-hidden="true">⤒</span> Import</button></div></section>';
-    if (!S.cfg) h += '<div class="banner"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read, then save. Settings are kept beside the workbook in <span class="mono">sheets/.testrun/</span>; the workbook itself does not change.</div></div>';
+    if (!S.cfg) h += '<div class="banner section"><div><b>Welcome.</b> Check how each tab of <b>' + esc(S.boot.sheetName) + '</b> was read (open <b>Columns</b> on a tab to see), then <b>Save</b> at the bottom.</div></div>';
     d.tabs.forEach(function (t, ti) {
       var headers = (t.top && t.top[t.headerRow - 1]) || [];
       h += '<section class="section card card-pad stack"><div class="row"><h2 title="' + esc(t.name) + '">' + esc(TR.tabLabel(t.name)) + '</h2><span class="small muted">' + t.rows + ' rows</span>' +
@@ -3633,8 +3634,11 @@
       if (t.role === 'ignore') { h += '<p class="small faint">Not used by the console.</p></section>'; return; }
       h += cycleSetup(t, ti);
       var mapped = S.boot.fields.filter(function (f) { return t.columns[f]; }).length;
-      var openCols = !t.saved || val('colsOpen:' + ti);
-      h += '<details class="columns"' + (openCols ? ' open' : '') + ' data-cols="' + ti + '"><summary><b>Columns</b> <span class="small muted">' + mapped + ' of ' + S.boot.fields.length + ' fields found · header row ' + esc(t.headerRow) + '</span></summary><div class="stack" style="margin-top:10px">';
+      // Folded by default, a new workbook too; a tab whose columns weren't read well opens by itself and says why
+      var problem = !headers.length ? 'No headers in row ' + t.headerRow : !t.columns.scenario ? 'No Scenario column' : '';
+      var openCols = val('colsOpen:' + ti, !!problem);
+      h += '<details class="columns"' + (openCols ? ' open' : '') + ' data-cols="' + ti + '"><summary><b>Columns</b> <span class="small muted">' + mapped + ' of ' + S.boot.fields.length + ' fields found · header row ' + esc(t.headerRow) + '</span>' +
+        (problem ? ' <span class="pill other">– ' + esc(problem) + '</span>' : '') + '</summary><div class="stack" style="margin-top:10px">';
       h += '<div class="row"><label for="hr' + ti + '">Header row</label><input id="hr' + ti + '" type="text" inputmode="numeric" size="3" data-setup-tab="' + ti + '" data-key="headerRow" value="' + esc(t.headerRow) + '"' + dis + '>' +
         '<button class="ghost" data-action="redetect" data-index="' + ti + '"' + dis + '>Detect columns again</button>' +
         '<span class="grow"></span><label class="check"><input type="checkbox" data-setup-tab="' + ti + '" data-key="fillDown"' + (t.fillDown ? ' checked' : '') + dis + '> Blank Feature / Sub feature continues the row above</label></div>';
@@ -3656,10 +3660,12 @@
       }
       h += '</div></details></section>';
     });
-    // Delete asks first (it cannot be undone), so it can sit with Cancel and Save.
-    h += '<div class="row section"><span class="grow"></span>' +
+    // A bar that stays at the bottom of the window, so Save is in reach however many tabs the workbook has.
+    // All on the right: what is unsaved, then Delete (it asks first: it cannot be undone), Cancel and Save.
+    h += '<div class="setup-bar" role="group" aria-label="Workbook setup actions"><span class="grow"></span>' +
+      (S.cfg ? '' : '<span class="small muted bar-note">Not saved yet. Save to start test cycles.</span>') +
       '<button class="danger-outline" data-action="book-delete" title="Delete ' + esc(book().replace(/\.xlsx$/i, '')) + ' for everyone, with its setup, findings and known issues (asks first)">Delete</button>' +
-      (S.cfg ? '<button data-action="view" data-view="run">Cancel</button>' : '') + '<button class="primary" data-action="save-setup"' + dis + '>Save</button></div>';
+      (S.cfg ? '<button class="ghost" data-action="view" data-view="run">Cancel</button>' : '') + '<button class="primary" data-action="save-setup"' + dis + '>Save</button></div>';
     return h;
   }
 

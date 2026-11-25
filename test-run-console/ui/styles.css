@@ -326,6 +326,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .summary-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .summary-head h1 { font-size: 22px; }
 .section { margin-top: 18px; }
+.banner.section { margin-bottom: 0; } /* a banner between cards (Setup › Workbook's Welcome) is spaced like them */
 .section > h2 { margin-bottom: 8px; }
 
 /* Modal and toasts */
@@ -849,3 +850,24 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 /* Link a suite: the bottom row, De-link on the left; ⤒ Import Results, Cancel and Save on the right */
 .au-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 12px; }
 .au-foot .grow { flex: 1 1 auto; }
+
+/* A table row's own buttons (Setup › Automation › Linked suites: ✎ Edit, De-link), side by side at the right */
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+
+/* A note that is as wide as its text, not the whole card */
+.note.fit { align-self: flex-start; margin: 0; }
+
+/* Setup › Workbook: Delete, Cancel and Save stay at the bottom of the window while the tabs scroll, all at the right */
+.setup-bar {
+  position: sticky; bottom: 0; z-index: 15;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 14px; padding: 10px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .10);
+}
+.setup-bar .grow { flex: 1 1 auto; }
+.setup-bar button { min-width: 84px; justify-content: center; }
+@media (max-width: 760px) {
+  .setup-bar .bar-note { order: -1; flex-basis: 100%; text-align: right; } /* the "not saved yet" line goes above the buttons */
+}
+@media print { .setup-bar { display: none; } }
