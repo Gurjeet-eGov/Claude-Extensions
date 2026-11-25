@@ -221,7 +221,7 @@ For reference you glance at, such as the keyboard shortcuts behind a **?**. Not 
 - **Width:** 340px in the console; about 220px in an extension popup.
 - **A shortcut with no key** shows a greyed-out **NA** in the key's place (`kbd.na`: `--faint` text, a dashed border). No "not set" sentence.
 - **Markup:** the button has `aria-describedby` pointing at the tooltip, which has `role="tooltip"`; `aria-expanded` says whether it's pinned. Code: `helpButton()` in `client.js`, and the `.help-wrap` and `.tip` rules in `styles.css` (Bug Reporter has the same rules in `styles/common.css`).
-- **Other reference text** (Automation's Full report, Setup › Publish's "Published workbooks are public"): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
+- **Other reference text** (Automation's Git report, Setup › Publish's "Published workbooks are public"): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
 - **Info** (`infoTip()` in `client.js`, `.info-wrap`, `.info-btn`): a setting's explanation, instead of a line of muted text beside its field. A 16px circle right after the setting's name, 1px `--accent` border, a bold 10px `--accent` **i**; hover fills `--accent-weak`. Its tooltip opens on hover and keyboard focus only (no pinning), left-aligned under the i, 300px wide, text only. Several can share a screen (Setup › Automation: Runs kept, Check running runs every, Exclude environments).
 
 ### Menus
@@ -246,10 +246,10 @@ Two exceptions, drawn as inline SVG outlines with `stroke="currentColor"` becaus
 ## Writing
 
 - **Sentence case** for text, labels and headings.
-- **Button labels in Title Case** (DIGIT's rule), as in the case tools: "Save Comment", "Mark Duplicate", "Clear Status". One word where it is clear: "Save", "+ Add". Older sentence-case buttons are listed under Known gaps.
+- **Button labels in Title Case** (DIGIT's rule), as in the case tools: "Mark Duplicate", "Clear Status". One word where it is clear: "+ Add", "Back". **Save is always just "Save"**, whatever it saves (a comment, a suite, Publish's choices). Older sentence-case buttons are listed under Known gaps.
 - **Buttons say what they do**, as a verb: "Publish now", not "OK".
 - **"+ "** starts a label that adds something: "+ Add issue", "+ New test case".
-- **"…"** ends a label that asks for more before acting: "Duplicate of…", "Already covered…". It also marks work in progress: "Saving…". Exception: Automation's **▶ Run** has no "…", though it opens the run form first.
+- **No "…" at the end** of a label, a button, a busy word ("Checking", "Importing"), a loading line, a placeholder or a message. The only "…" is a name cut short to fit, such as a long workbook name in the top-right **Workbook** box (`TR.tabLabel`). A "…" inside a sentence that shows a pattern ("“Updated: …”") is fine.
 - **Tool labels** carry their symbol: "✎ Edit", "⧉ Mark Duplicate", "↺ Clear Status", "⊘ Deprecated".
 - **Messages** say what happened and what to do, with no "Error:" prefix: "Test Run is not answering. Is it still running in the terminal?", "View only: you need edit access to mark results."
 - **Separators:** "·" between items on a line ("John Doe · 20 Nov"); "–" for an empty value; curly quotes around names.

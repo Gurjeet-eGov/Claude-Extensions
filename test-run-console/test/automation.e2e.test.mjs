@@ -49,7 +49,7 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
   const toast = (text) => page.locator('.toast', { hasText: text }).first().waitFor();
 
   try {
-    await t.test('no suites yet: + Link Suite, then Save Suite', async () => {
+    await t.test('no suites yet: + Link Suite, then Save', async () => {
       await page.goto(`${base}?view=automation`);
       await page.locator('.empty h3', { hasText: 'No automated suites yet' }).waitFor();
       await page.locator('.empty [data-action=au-link]').click();
@@ -57,10 +57,10 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       await page.locator('#auRepo').fill('https://github.com/Gurjeet-eGov/CMS-Automation');
       await page.locator('#auName').fill('CMS Automation');
       await page.locator('#auPattern').fill('CMS/(\\d+');
-      await page.getByRole('button', { name: 'Save Suite' }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
       await page.locator('.toast.bad', { hasText: 'case-ID pattern' }).waitFor();
       await page.locator('#auPattern').fill('CMS/\\d+');
-      await page.getByRole('button', { name: 'Save Suite' }).click();
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
       await toast('Linked “CMS Automation”.');
       await page.locator('.subtab[aria-selected=true]', { hasText: 'CMS Automation' }).waitFor();
       await page.locator('.auto-head a', { hasText: 'Gurjeet-eGov/CMS-Automation ↗' }).waitFor();
@@ -80,7 +80,7 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       assert.equal(await page.locator('#au_im_cycle > .grow').textContent(), 'Cycle v2.12');
       assert.ok(await page.getByRole('button', { name: 'Import Results', exact: true }).isDisabled(), 'no file yet');
       const chooser = page.waitForEvent('filechooser');
-      await page.getByRole('button', { name: '⤒ Choose Files…' }).click();
+      await page.getByRole('button', { name: '⤒ Choose Files' }).click();
       await (await chooser).setFiles(FIXTURE.pathname);
       await page.locator('.item', { hasText: 'playwright-junit.xml' }).locator('text=JUnit XML · 5 tests').waitFor();
       await page.locator('#auBranch').fill('master');
@@ -95,9 +95,10 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       await page.locator('[data-action=au-open]').first().click();
       await page.locator('h2', { hasText: 'CMS Automation · 2 failed' }).waitFor();
       assert.match(page.url(), /[?&]run=\d{8}-\d{6}-[0-9a-f]{6}/, 'a refresh comes back to it');
-      // the actions row, in order, ? last
+      // ‹ Back above the title, then the actions row, in order, ? last
+      await page.locator('.run-back', { hasText: '‹ Back' }).waitFor();
       const order = await page.locator('.run-actions > button, .run-actions > .help-wrap > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['‹ Runs', 'Change Cycle…', 'Delete…', '⤓ Download', '?']);
+      assert.deepEqual(order.map((x) => x.trim()), ['Change Cycle', 'Delete', '⤓ Download', '?']);
       await page.locator('.kpi', { hasText: 'pass rate' }).locator('.delta', { hasText: '↓ from 75%' }).waitFor();
       await page.locator('.changed button', { hasText: 'new failures' }).locator('.v', { hasText: '1' }).waitFor();
       assert.equal(await page.locator('.cause').count(), 2);
@@ -126,15 +127,15 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       assert.deepEqual(wb.worksheets.map((w) => w.name), ['Summary', 'Results']);
     });
 
-    await t.test('Change Cycle… attaches the run elsewhere; Delete… asks first, then it goes', async () => {
-      await page.getByRole('button', { name: 'Change Cycle…' }).click();
+    await t.test('Change Cycle attaches the run elsewhere; Delete asks first, then it goes', async () => {
+      await page.getByRole('button', { name: 'Change Cycle' }).click();
       await page.locator('#au_mv_tab').click();
       await page.locator('.multi-pop .dd-item', { hasText: 'CMS 2.20.1 Features' }).click();
       assert.equal(await page.locator('#au_mv_cycle > .grow').textContent(), 'Cycle v2.20');
       await page.locator('.item [data-action=au-move-save]').click();
       await toast('Moved the run to CMS Sign Off (sample) › CMS 2.20.1 Features › Cycle v2.20.');
       await page.locator('.auto-head .small', { hasText: 'CMS 2.20.1 Features › Cycle v2.20' }).waitFor();
-      await page.getByRole('button', { name: 'Delete…' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
       const box = page.locator('.modal-box.confirm');
       await box.locator('h2', { hasText: `Delete “${NOW} · master · net_two”?` }).waitFor();
       await box.locator('.banner.bad', { hasText: 'This cannot be undone.' }).waitFor();
@@ -208,7 +209,7 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       assert.equal(await page.locator('[data-action=sum-open][aria-label^="Open the run"]').count(), 2, 'the runs kept for the cycle');
       await page.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18 · automation passing on 1, failing on 1.' }).waitFor();
       const order = await page.locator('.report-tools .run-actions > button, .report-tools .run-actions > .help-wrap > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', '?'], 'Download, then ? last (no Full Report for an imported run)');
+      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', '?'], 'Download, then ? last (no Git Report for an imported run)');
       const dl = page.waitForEvent('download');
       await page.locator('.report-tools [data-action=sum-excel]').click();
       assert.match((await dl).suggestedFilename(), /^CMS Automation - .* - results\.xlsx$/);
@@ -247,8 +248,9 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       await p.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18' }).waitFor();
       await p.locator('[data-action=pub-open][aria-label^="Open the run"]').first().click();
       await p.locator('h2', { hasText: 'CMS Automation · 2 failed' }).waitFor();
+      await p.locator('.run-back', { hasText: '‹ Back' }).waitFor();
       const order = await p.locator('main .stack .run-actions > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['‹ Summary', '⤓ Download'], 'read only: no Change Cycle or Delete');
+      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download'], 'read only: no Change Cycle or Delete');
       const dl = p.waitForEvent('download');
       await p.locator('main .stack .run-actions [data-action=pub-csv]').click();
       const csv = readFileSync(await (await dl).path(), 'utf8');

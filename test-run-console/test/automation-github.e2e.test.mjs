@@ -1,5 +1,5 @@
 // Automation with GitHub Actions in Chromium, against the fake GitHub (never the real one): Link a
-// suite's GitHub steps (Check, workflow, results artifact, Import Latest Run), ▶ Run with the
+// suite's GitHub steps (Check, workflow, results artifact, ⤒ Import Results), ▶ Run with the
 // workflow's own options, the Running view (and the count on the Automation tab) until the results
 // come in by themselves (a branch with another form swaps the fields), Import results › GitHub Run,
 // and Setup › Automation (Exclude environments, and the hint when none is left). Skipped when
@@ -45,7 +45,7 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
   page.on('pageerror', (e) => errors.push(e.message));
   const toast = (text) => page.locator('.toast', { hasText: text }).first().waitFor();
   try {
-    await t.test('Link a suite: Check, the workflow and its results artifact, Import Latest Run, Save Suite', async () => {
+    await t.test('Link a suite: Check, the workflow and its results artifact, ⤒ Import Results, Save', async () => {
       await page.goto(`${base}?view=automation`);
       await page.locator('.empty [data-action=au-link]').click();
       await page.locator('#auRepo').fill(`https://github.com/${REPO}`);
@@ -56,10 +56,10 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       assert.equal(await page.locator('#au_l_env > .grow').textContent(), 'environment', 'an input called environment is guessed');
       await page.locator('#auName').fill('CMS Automation');
       await page.locator('#au_lk_cycle > .grow', { hasText: 'Cycle v2.12' }).waitFor();
-      await page.getByRole('button', { name: 'Import Latest Run' }).click();
+      await page.locator('.au-foot [data-action=au-gh-import-latest]').click();
       await page.locator('.check-line.ok', { hasText: '✓ Read 5 tests from run #211' }).waitFor();
       await toast('Linked “CMS Automation” and imported its latest run into CMS 2.20.1 › Cycle v2.12.');
-      await page.getByRole('button', { name: 'Save Suite' }).click();
+      await page.locator('.au-foot [data-action=au-link-save]').click();
       await toast('Saved “CMS Automation”.');
       await page.locator('.auto-head', { hasText: 'workflow Integration tests' }).waitFor();
       const actions = (await page.locator('.auto-head .row button').allTextContents()).map((x) => x.trim());
@@ -101,7 +101,7 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       await page.locator('h2', { hasText: 'CMS Automation · 1 failed' }).waitFor({ timeout: 15000 });
       await toast('Imported 5 tests into CMS 2.20.1 › Cycle v2.12 from GitHub Actions.');
       assert.equal(await page.locator('.nav [data-view=automation] .count').count(), 0, 'nothing going any more');
-      await page.locator('.run-actions button', { hasText: '↗ Full Report' }).waitFor();
+      await page.locator('.run-actions button', { hasText: '↗ Git Report' }).waitFor();
       assert.match(await page.locator('#frTip').textContent(), /Available until \d{1,2} [A-Z][a-z]{2} \d{4}\./, 'the date GitHub gave for the results artifact');
     });
 

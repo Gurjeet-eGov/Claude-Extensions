@@ -534,6 +534,7 @@ button.info-btn:hover, button.info-btn:focus-visible { background: var(--accent-
 /* A setting's name with its i (Setup › Automation); .kv-top lines it up with the field's first line, not the middle */
 .kv-label { display: inline-flex; align-items: center; gap: 6px; }
 .kv-label label { font-size: inherit; color: inherit; font-weight: inherit; }
+.kv-label label.note-label { font-size: 12.5px; color: var(--text); font-weight: 700; } /* a form field's name with an i stays bold */
 .kv-grid > .kv-top { align-self: start; min-height: 30px; }
 .kv-grid.kv-wide { grid-template-columns: 220px 1fr; } /* names with an i: room for "Check running runs every" on one line */
 /* A card's title with its action at the right end (Linked suites' + Add, Publish to GitHub's ?) */
@@ -840,3 +841,9 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 .stack > .seg { align-self: flex-start; } /* Import results: Results File | GitHub Run, as wide as its buttons */
 .run-inputs label.check { align-self: flex-start; margin-top: 4px; }
 .secrets-note { flex: 1 1 260px; }
+
+/* Link a suite: the bottom row, De-link on the left; ⤒ Import Results, Cancel and Save on the right */
+.au-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 12px; }
+.au-foot .grow { flex: 1 1 auto; }
+/* A run's results: Back above the title */
+.run-back { align-self: flex-start; }

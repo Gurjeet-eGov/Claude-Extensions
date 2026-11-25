@@ -394,7 +394,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     Object.assign(tunnel, { running: false, url: mode() === 'fixed' ? tunnel.url : '', stop: null });
     if (!app.team.enabled || !app.team.sharing) { tunnel.error = ''; return; }
     if (Date.now() - tunnel.startedAt > 120000) tunnel.retries = 0; // it had been up a while: retry quickly
-    tunnel.error = `The tunnel dropped (cloudflared exited${code != null ? ` with code ${code}` : ''}). Reconnecting by itself…`;
+    tunnel.error = `The tunnel dropped (cloudflared exited${code != null ? ` with code ${code}` : ''}). Reconnecting by itself.`;
     log(`Test Run: ${tunnel.error}`);
     scheduleRestart();
   }

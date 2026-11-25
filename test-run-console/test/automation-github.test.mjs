@@ -122,7 +122,7 @@ test('link a suite: the repository checked, its workflows with their inputs, the
     const moved = await s.req('POST', '/api/automation/suites', { id: suite.id, name: 'CMS Automation', repo: 'qa-team/elsewhere' });
     assert.deepEqual([moved.suite.workflowId, moved.suite.inputs, moved.suite.artifact], [0, [], '']);
 
-    // Import Latest Run: the latest finished run, attached where asked (required), only once
+    // ⤒ Import Results (Link a suite): the latest finished run, attached where asked (required), only once
     await linked(s, suite.id);
     assert.equal((await s.req('POST', '/api/automation/github/import', { suite: suite.id })).code, 'NO_ATTACH');
     const im = await s.req('POST', '/api/automation/github/import', { suite: suite.id, ...ATTACH });

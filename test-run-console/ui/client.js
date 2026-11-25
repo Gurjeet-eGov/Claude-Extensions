@@ -603,10 +603,10 @@
       (why || (conn.hasKey && c) ? '<div class="access-note">' + (why ? '<span class="' + (c.code === 'BAD_LINK' ? 'bad-text' : '') + '">' + esc(why) + '</span>' : '') +
         (c && c.code === 'UNREACHABLE' ? '<button class="linkish" data-action="retry-connect">Try again</button>' : '') +
         (conn.hasKey && c ? '<button class="linkish" data-action="forget-invite">Forget the access link kept in this browser</button>' : '') + '</div>' : '') + '</div>';
-    if (!S.reports) { loadReports(); return h + '<div class="loading section">Loading the published reports…</div>'; }
+    if (!S.reports) { loadReports(); return h + '<div class="loading section">Loading the published reports</div>'; }
     var pk = reportPick();
     if (!pk) return h + '<div class="section">' + emptyReport() + '</div>';
-    if (!pk.d) return h + '<div class="loading section">Loading ' + esc(pk.w.title) + '…</div>';
+    if (!pk.d) return h + '<div class="loading section">Loading ' + esc(pk.w.title) + '</div>';
     if (pk.d.error) return h + '<div class="banner bad section">' + esc(pk.d.error) + '</div>';
     // Manual | Automated: Manual is public; Automated opens with the visitor's invite link
     var aIdx = pubAutoIndex();
@@ -723,20 +723,20 @@
     }
     var u = P.unlock[pk.w.slug];
     if (!u || u.token !== token) u = pubUnlock(pk.w.slug, token);
-    if (u.state === 'unlocking') return tools() + spin('Unlocking the automated results with your invite link…');
+    if (u.state === 'unlocking') return tools() + spin('Unlocking the automated results with your invite link');
     if (u.state === 'error') return tools() + '<div class="banner bad"><span>The automated results could not be unlocked in this browser.</span><span class="grow"></span><button data-action="pub-retry">Try Again</button></div>';
     if (!u.opened.length) {
       return tools() + '<div class="empty card"><h3>These results are locked</h3><p>Your invite link doesn\'t open “' + esc(pk.w.title) + '”. Ask the host for access to this workbook, or for a new link.</p></div>';
     }
     if (P.run) {
-      if (P.runLoading || !S.auto.detail || !pubOpened(P.run)) return tools() + spin('Opening the run…');
+      if (P.runLoading || !S.auto.detail || !pubOpened(P.run)) return tools() + spin('Opening the run');
       return tools() + auRunView(S.auto.detail, { published: true });
     }
     var d = pubAutoData(u, pk.suite.tab, pk.cyc);
     if (!d) return tools() + '<div class="empty card"><h3>No automated run for this cycle</h3><p>No automated run you can open is attached to ' + esc(where) + '. Pick another test suite or cycle above.</p></div>';
     var r = d.latest;
     var actions = '<div class="run-actions"><button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The automated results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' +
-      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div>';
+      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div>';
     return tools(actions) + autoSummaryHtml(d, { open: 'pub-open', unlockedFor: pubWho(token) });
   }
 
@@ -777,7 +777,7 @@
         (pubd ? '<p>This copy has published data: <b>' + esc(pubd.workbooks.map(function (n) { return n.replace(/\.xlsx$/i, ''); }).join(', ')) + '</b>, published by ' + esc(pubd.by || 'someone') + ' at ' + esc(pubd.at) + '.</p><p style="margin-top:12px"><button class="primary" data-action="start-from-published">Start from the published data</button></p><p class="small faint" style="margin-top:14px">Or start fresh:</p>' : '') +
         '<p>Put your test case <b>.xlsx</b> files in<br><span class="mono">' + esc(S.app.sheetsDir) + '</span><br>or import one here. They stay on this computer; only what you publish goes to GitHub.</p><p style="margin-top:14px"><button class="' + (pubd ? '' : 'primary') + '" data-action="import">Import a workbook</button></p></div>';
     }
-    if (!S.boot) return '<div class="loading">Loading the workbook…</div>';
+    if (!S.boot) return '<div class="loading">Loading the workbook</div>';
     var banners = '';
     if (S.readOnly) banners += me().role === 'viewer'
       ? '<div class="banner"><b>View only.</b><span class="muted">You can follow the run and the summary. Results are marked by testers.</span></div>'
@@ -789,7 +789,7 @@
     if (!S.tab) return banners + (isOwner()
       ? '<div class="empty card"><h3>No test case tab found</h3><p>Open Setup and mark which tabs hold test cases.</p><p style="margin-top:12px"><button class="primary" data-action="view" data-view="setup">Open Setup</button></p></div>'
       : '<div class="empty card"><h3>No test case tab yet</h3><p>Your test lead has not set up this workbook yet.</p></div>');
-    if (S.loading && !S.model) return '<div class="loading">Loading ' + esc(S.tab) + '…</div>';
+    if (S.loading && !S.model) return '<div class="loading">Loading ' + esc(S.tab) + '</div>';
     if (!S.model) return '';
     var m = S.model;
     if (!m.configured && isOwner()) banners += '<div class="banner"><span>Columns for this tab were detected automatically.</span><span class="grow"></span><button data-action="view" data-view="setup">Check Setup</button></div>';
@@ -976,7 +976,7 @@
     var counts = TR.counts(liveCases().map(clsOf));
     var showN = { todo: counts.none, failed: counts.fail, all: liveCases().length, retired: nRetired };
     // Left: the filters, in view while scrolling. Right of the list: collapse, expand, help.
-    var rail = '<div class="rail-group"><label class="rail-title" for="search">Search</label><input type="search" id="search" placeholder="ID, scenario, feature…  ( / )" value="' + esc(f.search) + '"></div>' +
+    var rail = '<div class="rail-group"><label class="rail-title" for="search">Search</label><input type="search" id="search" placeholder="ID, scenario, feature  ( / )" value="' + esc(f.search) + '"></div>' +
       '<div class="rail-group" role="group" aria-label="Test status"><span class="rail-title">Test Status</span>' +
       ['all', 'todo', 'failed'].concat(nRetired || f.show === 'retired' ? ['retired'] : []).map(function (s) {
         var label = { todo: 'To do', failed: 'Failed', all: 'All', retired: 'Deprecated' }[s];
@@ -1146,7 +1146,7 @@
       issueChips(c.issues, !S.readOnly) + '</div>';
     if (cur().hasComment) {
       a += '<div><label for="comment" class="note-label">Comment <span class="faint">' + (failing ? '(what went wrong)' : '(optional)') + '</span></label><textarea id="comment" data-comment rows="' + rowsFor(d.comment != null ? d.comment : c.comments[ci], 2, 8, 46) + '" placeholder="Enter saves, Shift+Enter for a new line."' + dis + '>' + esc(d.comment != null ? d.comment : (c.comments[ci] || '')) + '</textarea></div>';
-      a += '<div class="row"><button data-action="save-note"' + dis + ' title="Save the comment without changing the result">Save Comment</button></div>';
+      a += '<div class="row"><button data-action="save-note"' + dis + ' title="Save the comment without changing the result">Save</button></div>';
     }
     a += '<div class="case-tools" role="group" aria-label="Change this test case">' +
       '<button data-action="case-tool" data-mode="edit" title="Change the scenario, steps or expected result (E)"' + dis + '>✎ Edit</button>' +
@@ -1481,7 +1481,7 @@
   }
 
   /**
-   * Save Comment: the comment as it is in the field; moveOn: then open the next case.
+   * Save (a case's comment): the comment as it is in the field; moveOn: then open the next case.
    * (Pressing the chosen result again does this too, with a link typed but not added yet.)
    */
   function saveNote(moveOn) {
@@ -1659,7 +1659,7 @@
     var nOpen = all.filter(function (e) { return e.state !== 'closed'; }).length;
     var many = (r.tabs || []).length > 1;
     var dis = S.readOnly ? ' disabled' : '';
-    var rail = '<div class="rail-group"><label class="rail-title" for="issueQ">Search</label><input type="search" id="issueQ" data-bind="issueQ" data-live="1" placeholder="Issue, title, test case…" value="' + esc(val('issueQ', '')) + '"></div>' +
+    var rail = '<div class="rail-group"><label class="rail-title" for="issueQ">Search</label><input type="search" id="issueQ" data-bind="issueQ" data-live="1" placeholder="Issue, title, test case" value="' + esc(val('issueQ', '')) + '"></div>' +
       '<div class="rail-group" role="group" aria-label="Show"><span class="rail-title">Show</span>' +
       '<button class="chip" data-action="issue-show" data-show="open" aria-pressed="' + (show === 'open') + '">Open <span class="n">' + nOpen + '</span></button>' +
       '<button class="chip" data-action="issue-show" data-show="all" aria-pressed="' + (show === 'all') + '">All <span class="n">' + all.length + '</span></button></div>';
@@ -1678,7 +1678,7 @@
     h += '<div class="card spin-wrap' + (busy ? ' busy' : '') + '"' + (busy ? ' aria-busy="true"' : '') + '><div class="table-wrap"><table class="issues"><thead><tr><th>Issue</th><th>Title</th><th>Priority</th><th>State</th><th>Test cases</th></tr></thead><tbody>';
     list.forEach(function (e) {
       var ref = e.url ? '<a class="mono" href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.ref) + ' ↗</a>' : '<span class="mono">' + esc(e.ref) + '</span>';
-      var title = e.title ? esc(e.title) : '<span class="faint">' + (e.fetchError ? 'No title: ' + esc(e.fetchError) : busy && /github\.com/.test(e.url) ? 'Getting it from GitHub…' : 'No title yet') + '</span>';
+      var title = e.title ? esc(e.title) : '<span class="faint">' + (e.fetchError ? 'No title: ' + esc(e.fetchError) : busy && /github\.com/.test(e.url) ? 'Getting it from GitHub' : 'No title yet') + '</span>';
       h += '<tr' + (e.state === 'closed' ? ' class="closed"' : '') + '><td class="nowrap">' + ref + '</td><td>' + title + '</td><td>' + priorityPill(e.priority) + '</td>' +
         '<td>' + (e.state ? '<span class="pill ' + (e.state === 'closed' ? 'pass' : 'outline') + '">' + (e.state === 'closed' ? 'Closed' : 'Open') + '</span>' : '<span class="faint">–</span>') + '</td>' +
         '<td>' + issueCasesHtml(e, many) + '</td></tr>';
@@ -1737,7 +1737,7 @@
       (f.area ? '<div class="small muted">' + esc(f.area) + '</div>' : '') +
       (f.details ? '<div class="small ml finding-details">' + esc(TR.cellLines(f.details).join('\n')) + '</div>' : '') +
       '<div class="small faint">' + esc([f.by, f.at].filter(Boolean).join(' · ')) + '</div>';
-    if (!sm) return h + '<div class="small faint" style="margin-top:6px">Reading ' + esc(tab) + '…</div></div>';
+    if (!sm) return h + '<div class="small faint" style="margin-top:6px">Reading ' + esc(tab) + '</div></div>';
     var draft = S.writeUp[f.key];
     if (draft) {
       return h + '<div class="writeup">' + scenarioEditor(draft, 'wu:' + f.key,
@@ -1797,7 +1797,7 @@
       var msm = suiteOf(mtab);
       h += '<div class="card card-pad section"><div class="row" style="margin-bottom:8px"><h3 class="grow">New test case</h3>' + suitePicker('manTab', 'man:tab', mtab, 'man-suite') + '</div>' +
         (msm ? scenarioEditor(S.manual[0], 'man:0', '<button class="ghost" data-action="discard-manual">Cancel</button><button class="primary" data-action="add-manual" data-index="0"' + dis + '>Save</button>', msm)
-          : '<div class="loading">Reading ' + esc(mtab) + '…</div>') + '</div>';
+          : '<div class="loading">Reading ' + esc(mtab) + '</div>') + '</div>';
     }
     if (!S.readOnly && val('noteOpen')) {
       h += '<div class="card card-pad section"><div class="row"><h3 class="grow">New finding</h3>' + suitePicker('fTab', 'fTab', val('fTab', only || S.tab)) + '</div>' +
@@ -1994,7 +1994,7 @@
     var r = d.latest;
     var tools = '<div class="report-tools no-print">' + sumSwitch(true) + '<span class="updated grow">Updated on: ' + esc(d.generatedAt) + '</span>' +
       '<div class="run-actions"><button class="small-btn" data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>' +
-      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div></div>' +
+      (r.source.runUrl ? '<button class="small-btn" data-action="sum-full-report" data-url="' + esc(r.source.runUrl) + '" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div></div>' +
       '<div class="print-only print-title">' + esc(bookTitle(book())) + ' · ' + esc(TR.tabLabel(S.tab)) + ' · cycle ' + esc(cycleLabel() || '–') + ' · automated · updated on ' + esc(d.generatedAt) + '</div>';
     return tools + autoSummaryHtml(d, { open: 'sum-open', keep: d.keep });
   }
@@ -2059,12 +2059,12 @@
           render();
         });
       }
-      return '<div class="loading">Working out the figures…</div>';
+      return '<div class="loading">Working out the figures</div>';
     }
     var r = S.summary;
     // Manual | Automated first (Automated is off until a run is attached to this suite and cycle)
     var hasAuto = !!(auto && auto.latest);
-    var offTitle = !auto ? 'Looking for automated runs…' : auto.error ? auto.error : 'No automated run is attached to ' + TR.tabLabel(r.tab) + ' › ' + cycleText(r.cycle) + ' yet';
+    var offTitle = !auto ? 'Looking for automated runs' : auto.error ? auto.error : 'No automated run is attached to ' + TR.tabLabel(r.tab) + ' › ' + cycleText(r.cycle) + ' yet';
     // The suite and cycle are picked above; on paper, one line says what it is.
     var here = auHere(); // a workbook without an automated suite: Manual only, no switch
     var h = '<div class="report-tools no-print">' + (here ? sumSwitch(hasAuto, offTitle) : '') + '<span class="updated grow">Updated on: ' + esc(r.generatedAt) + '</span>' +
@@ -2240,7 +2240,7 @@
     return '<div class="stack-s">' + (bare ? '' : '<label class="note-label" for="au_' + prefix + '_book">' + (prefix === 'mv' ? 'Attach the run to' : 'Attach the results to') + (required ? ' <span class="faint">(required)</span>' : '') + '</label>') + '<div class="link-path">' +
       dropdown({ bind: 'au:' + prefix + ':book', id: 'au_' + prefix + '_book', cls: 'top-dd', value: b, prefix: '<span class="dd-prefix">Workbook</span>', title: 'Workbook',
         options: auAllowedBooks(prefix).map(function (x) { return { value: x, label: bookTitle(x) }; }) }) +
-      dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading…' : 'Select',
+      dropdown({ bind: 'au:' + prefix + ':tab', id: 'au_' + prefix + '_tab', cls: 'top-dd', value: t, prefix: '<span class="dd-prefix">Test suite</span>', title: 'Test suite', disabled: !tg, placeholder: b && !tg ? 'Loading' : 'Select',
         options: tabs.map(function (x) { return { value: x.name, label: TR.tabLabel(x.name) }; }) }) +
       dropdown({ bind: 'au:' + prefix + ':cycle', id: 'au_' + prefix + '_cycle', cls: 'top-dd', value: val('au:' + prefix + ':cycle', ''), prefix: '<span class="dd-prefix">Test cycle</span>', title: 'Test cycle', disabled: !tab,
         options: tab ? tab.cycles.map(function (c) { return { value: 'c:' + c, label: cycleText(c) }; }) : [] }) +
@@ -2298,14 +2298,14 @@
     var A = S.auto;
     if (!A.data) {
       if (!A.loading && !A.error) auLoad();
-      return A.error ? '<div class="banner bad"><span>' + esc(A.error) + '</span><span class="grow"></span><button data-action="au-reload">Try Again</button></div>' : '<div class="loading">Loading the automated results…</div>';
+      return A.error ? '<div class="banner bad"><span>' + esc(A.error) + '</span><span class="grow"></span><button data-action="au-reload">Try Again</button></div>' : '<div class="loading">Loading the automated results</div>';
     }
     var mine = auBookSuites();
     if (!mine.some(function (x) { return x.id === A.suite; })) A.suite = mine.length ? mine[0].id : ''; // another workbook: its first suite
     if (A.screen === 'run' && A.runId) {
       var det = auDetail();
       if (det && det.run.attach.book !== book()) { A.screen = 'runs'; A.runId = ''; A.detail = null; return viewAutomation(); } // a run of another workbook
-      return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run…</div>');
+      return withRail(auRail(det ? det.run.suiteId : A.suite), det ? auRunView(det) : '<div class="loading">Loading the run</div>');
     }
     var s = auSuite();
     if (!s) {
@@ -2437,12 +2437,12 @@
     if (!until) return 'Available on GitHub for a limited time after the run, at most 90 days.';
     return Date.parse(src.expiresAt) < Date.now() ? 'Was available until ' + until + '.' : 'Available until ' + until + '.';
   }
-  /** The Full report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
+  /** The Git report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
   function auReportTip(r) {
     var text = r.source && r.source.runUrl
       ? 'The suite\'s own report, traces, videos and logs, on its GitHub Actions run. ' + auKeptText(r.source) + ' The results on this page stay in Test Run.'
       : 'This run was imported from a results file, so Test Run has no link to the suite\'s own report: it stays wherever the run was done. The results on this page stay in Test Run.';
-    return helpButton({ id: 'frTip', label: 'About the full report', title: 'Full report', html: '<span>' + esc(text) + '</span>' });
+    return helpButton({ id: 'frTip', label: 'About the Git report', title: 'Git report', html: '<span>' + esc(text) + '</span>' });
   }
 
   /** Screen 4: a run's results, the management view. o.published: on the published site, read only (unlocked there). */
@@ -2453,15 +2453,17 @@
     var state = t.failed ? 'fail' : t.passed ? 'pass' : 'other';
     var by = r.by ? (r.source.kind === 'github' ? 'started by ' : 'imported by ') + r.by : '';
     var meta = [auDate(r.startedAt), auCommit(r), r.env, auOptions(r), by, auLength(r.durationMs)].filter(Boolean);
-    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
+    // Back sits above the title; the actions row follows it
+    var h = '<section class="card card-pad stack">' + (o.published ? '<button class="small-btn run-back" data-action="pub-back">‹ Back</button>' : '<button class="small-btn run-back" data-action="au-back">‹ Back</button>') +
+      '<div class="auto-head"><div class="grow"><h2 class="row">' + TR.dot(state) + '<span class="sr">' + TR.CLS_LABEL[state] + '.</span> ' + esc(r.suiteName) + ' · ' + (t.failed ? t.failed + ' failed' : t.passed ? 'all passed' : 'nothing passed or failed') + '</h2>' +
       '<p class="small muted">' + esc(meta.join(' · ')) + '</p><span class="small">' + esc(attachText(r.attach)) + '</span></div></div>';
-    // Actions: back on the left; then Change Cycle…, Delete…, ⤓ Download, ↗ Full Report and its ? last
-    h += '<div class="run-actions">' + (o.published ? '<button class="small-btn" data-action="pub-back">‹ Summary</button>' : '<button class="small-btn" data-action="au-back">‹ Runs</button>') + '<span class="grow"></span>' +
-      (can ? '<button class="small-btn" data-action="au-move" aria-expanded="' + !!A.moving + '">Change Cycle…</button><button class="small-btn danger-outline" data-action="au-delete">Delete…</button>' : '') +
+    // Actions, on the right: Change Cycle, Delete, ⤓ Download, ↗ Git Report and its ? last
+    h += '<div class="run-actions"><span class="grow"></span>' +
+      (can ? '<button class="small-btn" data-action="au-move" aria-expanded="' + !!A.moving + '">Change Cycle</button><button class="small-btn danger-outline" data-action="au-delete">Delete</button>' : '') +
       (o.published
         ? '<button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>'
         : '<button class="small-btn" data-action="au-excel" title="The results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>') +
-      (r.source.runUrl ? '<button class="small-btn" data-action="au-full-report" title="Opens the run on GitHub">↗ Full Report</button>' : '') + auReportTip(r) + '</div>';
+      (r.source.runUrl ? '<button class="small-btn" data-action="au-full-report" title="Opens the run on GitHub">↗ Git Report</button>' : '') + auReportTip(r) + '</div>';
     if (A.moving && can) {
       h += '<div class="item stack"><div class="tool-title">Change cycle</div><p class="small muted">Attach this run to another workbook, test suite or test cycle.</p>' + auAttachPickers('mv') + auFullWarning('mv', r.suiteId, r.id) +
         '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-move-cancel">Cancel</button><button class="primary" data-action="au-move-save">Save</button></div></div>';
@@ -2562,7 +2564,7 @@
     if (fromGh) {
       var ready2 = auAttachChosen('im') && val('au:gh:run', '') && !A.busy;
       h += auGhRunPicker(s) + auAttachPickers('im', true) + auFullWarning('im', s.id, '') +
-        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-gh-import"' + (ready2 ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+        '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-gh-import"' + (ready2 ? '' : ' disabled') + '>' + (A.busy ? 'Importing' : 'Import Results') + '</button></div></section>';
       return '<div class="stack">' + h + '</div>';
     }
     if (f) {
@@ -2570,19 +2572,19 @@
       h += '<div class="item row"><span class="file-chosen grow">' + (p ? '<span class="sym-pass" aria-hidden="true">✓</span>' : f.error ? '<span class="sym-fail" aria-hidden="true">✗</span>' : '') +
         '<span class="mono">' + esc(f.label) + '</span><span class="faint">' + fmtBytes(f.size) + '</span></span>' +
         (p ? '<span class="small">' + esc(p.formatLabel) + ' · <b>' + p.totals.total + '</b> tests · <span class="sym-pass">' + TR.SYM.pass + '</span> ' + p.totals.passed + ' <span class="sym-fail">' + TR.SYM.fail + '</span> ' + p.totals.failed + ' <span class="sym-other">' + TR.SYM.other + '</span> ' + p.totals.skipped + (p.tool ? ' · from ' + esc(p.tool) : '') + '</span>'
-          : f.busy ? '<span class="small muted">Reading…</span>' : '') +
+          : f.busy ? '<span class="small muted">Reading</span>' : '') +
         '<button class="link-btn danger" data-action="au-file-clear" aria-label="Remove ' + esc(f.label) + '">✕</button></div>';
       if (f.error) h += '<div class="bad-text small">' + esc(f.error) + '</div>';
       if (p && p.ignored && p.ignored.length) h += '<div class="note warn">Not results files, so left out: ' + esc(p.ignored.join(', ')) + '.</div>';
     } else {
-      h += '<div class="drop" id="auDrop"><b>Drop the results file here</b><span class="small muted">or</span><button data-action="au-file">⤒ Choose Files…</button></div>';
+      h += '<div class="drop" id="auDrop"><b>Drop the results file here</b><span class="small muted">or</span><button data-action="au-file">⤒ Choose Files</button></div>';
     }
     h += '<div class="form-grid">' +
       auField('auBranch', 'Branch <span class="faint">(optional)</span>', '<input id="auBranch" data-bind="au:branch" value="' + esc(val('au:branch', '')) + '">', 'Read from the file when it says') +
       auField('auEnv', 'Environment <span class="faint">(optional)</span>', '<input id="auEnv" data-bind="au:env" value="' + esc(val('au:env', '')) + '">') + '</div>';
     h += auAttachPickers('im', true) + auFullWarning('im', s.id, '');
     var ready = f && f.preview && auAttachChosen('im') && !A.busy;
-    h += '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-import-save"' + (ready ? '' : ' disabled') + '>' + (A.busy ? 'Importing…' : 'Import Results') + '</button></div></section>';
+    h += '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-import-save"' + (ready ? '' : ' disabled') + '>' + (A.busy ? 'Importing' : 'Import Results') + '</button></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
 
@@ -2604,7 +2606,7 @@
     var c = G.check;
     h += '<div class="subsection"><div class="step-title"><span class="step-n">1</span>Repository</div><div class="row"><label class="sr" for="auRepo">Repository link</label>' +
       '<input id="auRepo" type="url" style="flex:1 1 360px" data-bind="au:l:repo" placeholder="https://github.com/owner/repo" value="' + esc(v('repo', s ? (s.repo ? 'https://github.com/' + s.repo : '') : '')) + '">' +
-      '<button data-action="au-gh-check"' + (G.checking ? ' disabled' : '') + '>' + (G.checking ? 'Checking…' : 'Check') + '</button></div>' +
+      '<button data-action="au-gh-check"' + (G.checking ? ' disabled' : '') + '>' + (G.checking ? 'Checking' : 'Check') + '</button></div>' +
       (G.checkError ? '<div class="check-line bad">' + esc(G.checkError) + '</div>'
         : c ? '<div class="check-line ok">✓ ' + esc(c.repo.fullName) + ' · ' + (c.repo.private ? 'private' : 'public') + ' · ' + plural(c.counts.total, 'workflow') + ', ' + c.counts.dispatch + ' you can start by hand</div>'
           : '<div class="small muted">Any repository Test Run\'s GitHub access can read. Check it to pick its workflow, so ▶ Run can start it; without that, results come in with ⤒ Import Results.</div>') + '</div>';
@@ -2624,26 +2626,28 @@
         'Only workflows you can start by hand (they have a Run workflow button on GitHub) are listed, since Test Run starts runs the same way.' + (notListed.length ? ' Not listed: ' + notListed.join(', ') + '.' : ''));
       var arts = G.arts && G.artsFor === v('wf', '') ? G.arts : null;
       var artOpts = arts ? arts.artifacts.map(function (a) { return { value: a.name, label: a.name, hint: a.results ? a.results.formatLabel + ' · ' + plural(a.results.tests, 'test') : a.note }; }) : [];
-      var artHint = !wf ? 'Choose the workflow first' : G.artsLoading ? 'Looking inside the latest run’s artifacts…' : G.artsError ? '' : arts && arts.run ? 'From the latest run (' + auDate(arts.run.createdAt, false) + '), or type the name it will have' : 'No finished run yet: type the artifact’s name (test-results by default)';
-      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf || G.artsLoading, placeholder: G.artsLoading ? 'Loading…' : 'Select', options: artOpts }),
-        G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : artHint);
+      var artHint = !wf ? 'Choose the workflow first.' : arts && arts.run ? 'Found in the latest run (' + auDate(arts.run.createdAt, false) + '). You can also type the name it will have.' : 'The file the workflow uploads its results in. With no finished run yet, type its name (test-results by default).';
+      // help in the i; an error from GitHub stays in plain sight, in red
+      h += auField('au_l_art', 'Results artifact', dropdown({ bind: 'au:l:art', id: 'au_l_art', value: v('art', ''), title: 'Results artifact', free: true, disabled: !wf || G.artsLoading, placeholder: G.artsLoading ? 'Loading' : 'Select', options: artOpts }),
+        G.artsError ? '<span class="bad-text">' + esc(G.artsError) + '</span>' : '', artHint);
       var envOpts = [{ value: '', label: 'None' }].concat(wf ? wf.inputs.map(function (x) { return { value: x.name, label: x.name, hint: x.description }; }) : []);
-      h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), 'Runs are grouped by it, and the run form names its GitHub environment');
+      h += auField('au_l_env', 'Environment option <span class="faint">(optional)</span>', dropdown({ bind: 'au:l:env', id: 'au_l_env', value: v('env', ''), title: 'Environment option', disabled: !wf, options: envOpts }), '', 'Runs are grouped by it, and the run form names its GitHub environment.');
     }
     h += '</div>' + (reading ? '<div class="spin-overlay" role="status"><span class="spinner" aria-hidden="true"></span><span class="sr">Reading the repository on GitHub</span></div>' : '') + '</div></div>';
-    // 3 · Attach Workbook: where the latest run's results go (Import Latest Run saves the suite, then brings it in)
+    // 3 · Attach Workbook: where ⤒ Import Results (in the bottom row) puts the latest run's results
     var n = 3;
     if (wf) {
-      var im = G.imported;
-      h += '<div class="subsection"><div class="step-title"><span class="step-n">' + (n++) + '</span>Attach Workbook' + infoTip('auAttachTip', 'Attach Workbook', auAttachNote(S.auto.data.keep)) + '</div>' + auAttachPickers('lk', true, true) +
-        '<div class="row"><button data-action="au-gh-import-latest"' + (G.importing || !auAttachChosen('lk') ? ' disabled' : '') + '>' + (G.importing ? 'Importing…' : 'Import Latest Run') + '</button>' +
-        (im ? '<span class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</span>' : '<span class="small muted">Saves the suite, then brings in the latest finished run.</span>') + '</div></div>';
+      h += '<div class="subsection"><div class="step-title"><span class="step-n">' + (n++) + '</span>Attach Workbook' + infoTip('auAttachTip', 'Attach Workbook', auAttachNote(S.auto.data.keep)) + '</div>' + auAttachPickers('lk', true, true) + '</div>';
     }
     // 4 · Extras
     h += '<div class="subsection"><div class="step-title"><span class="step-n">' + n + '</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
       auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', '', 'Finds manual case IDs in test titles or tags.') + '</div></div>';
-    h += '<div class="row">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">Unlink Suite…</button>' : '') + '<span class="grow"></span>' +
-      '<button class="ghost" data-action="au-link-close">Cancel</button><button class="primary" data-action="au-link-save">Save Suite</button></div></div>';
+    // the bottom row: De-link on the left; ⤒ Import Results, Cancel and Save on the right
+    var im = G.imported;
+    if (wf && im) h += '<div class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</div>';
+    h += '<div class="au-foot">' + (s && S.auto.data.isOwner ? '<button class="danger-outline" data-action="au-suite-remove">De-link</button>' : '') + '<span class="grow"></span>' +
+      (wf ? '<button data-action="au-gh-import-latest" title="Saves, then brings in the latest finished run"' + (G.importing || !auAttachChosen('lk') ? ' disabled' : '') + '><span aria-hidden="true">⤒</span> ' + (G.importing ? 'Importing' : 'Import Results') + '</button>' : '') +
+      '<button class="ghost" data-action="au-link-close">Cancel</button><button class="primary" data-action="au-link-save">Save</button></div></div>';
     return h;
   }
 
@@ -2667,7 +2671,7 @@
     S.ddOpen = null; S.ddQ = '';
     render();
   }
-  /** Focus inside the popup: the repository link, or Save Suite when it is already filled in. */
+  /** Focus inside the popup: the repository link, or Save when it is already filled in. */
   function auLinkFocus() {
     var f = $('auRepo');
     if (f && !f.value) f.focus();
@@ -2849,7 +2853,7 @@
     var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + auJobDot(j) + ' ' + esc(auJobTitle(j)) + '</h2>' +
       '<p class="small muted">' + esc(auJobMeta(j)) + (active ? ' · <b id="auElapsed" data-since="' + since + '">' + auClock(Date.now() - since) + '</b> so far' : '') + '</p>' +
       '<span class="small">' + esc(attachText(j.attach)) + '</span></div>' +
-      (active && can && j.state !== 'importing' ? '<div class="row"><button class="danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling…' : 'Cancel Run') + '</button></div>' : '') + '</div>';
+      (active && can && j.state !== 'importing' ? '<div class="row"><button class="danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling' : 'Cancel Run') + '</button></div>' : '') + '</div>';
     if (j.lastError && active) h += '<div class="note warn">' + esc(j.lastError) + ' Trying again.</div>';
     if (!active && j.message) h += '<div class="banner ' + (j.state === 'cancelled' ? 'warn' : 'bad') + '"><span>' + esc(j.message) + '</span></div>';
     if (j.jobs && j.jobs.length) {
@@ -2859,7 +2863,7 @@
           '</div></div>';
       }).join('');
     } else if (active) {
-      h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up…' : 'Asking GitHub for the new run…') + '</p>';
+      h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up' : 'Asking GitHub for the new run') + '</p>';
     }
     var every = (S.auto.data && S.auto.data.checkEvery) || 5;
     h += active ? '<p class="small muted">Test Run checks on the run every ' + (every === 1 ? 'minute' : every + ' minutes') + ' (Setup › Automation), and imports the results by itself when it ends. Leaving this page doesn\'t stop the run; the live log is on GitHub.</p>'
@@ -2930,8 +2934,8 @@
     if (fl && fl.note) h += '<div class="note warn">' + esc(fl.note) + '</div>';
     var branches = rf && rf.branches ? rf.branches : null;
     h += '<div class="form-grid run-inputs">' + auField('au_rn_branch', 'Branch', dropdown({ bind: 'au:rn:branch', id: 'au_rn_branch', value: branch, title: 'Branch', disabled: !branches || !!(rf && rf.loading), change: 'au-run-branch',
-      placeholder: rf && rf.loading ? 'Loading…' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
-    if (!fl && branch) h += '<p class="small muted wide">Reading the run form on ' + esc(branch) + '…</p>';
+      placeholder: rf && rf.loading ? 'Loading' : 'Select', options: (branches || []).map(function (b) { return { value: b.name, label: b.name, hint: b.default ? 'default' : '' }; }) }));
+    if (!fl && branch) h += '<p class="small muted wide">Reading the run form on ' + esc(branch) + '</p>';
     defs.forEach(function (d) {
       var id = 'au_in_' + d.name.replace(/\W/g, '_'), bind = 'au:in:' + d.name, hint = esc(d.description);
       var opt = !d.required && (d.type === 'string' || d.type === 'number') ? ' <span class="faint">(optional)</span>' : '';
@@ -2954,7 +2958,7 @@
     var envName = envDef ? auInputVal(envDef) : '';
     var ready = branch && fl && fl.dispatch !== false && auAttachChosen('rn') && !A.starting;
     h += '<div class="row"><span class="small muted secrets-note">' + (envName ? 'Secrets come from the repository\'s GitHub environment <span class="mono">' + esc(envName) + '</span>; nothing to upload.' : 'Secrets come from the repository\'s GitHub settings; nothing to upload.') + '</span>' +
-      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-run-start"' + (ready ? '' : ' disabled') + '>' + (A.starting ? 'Starting…' : 'Start Run') + '</button></div></section>';
+      '<button class="ghost" data-action="au-back">Cancel</button><button class="primary" data-action="au-run-start"' + (ready ? '' : ' disabled') + '>' + (A.starting ? 'Starting' : 'Start Run') + '</button></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
 
@@ -2974,7 +2978,7 @@
     if (list && list.error) return '<div class="note bad">' + esc(list.error) + '</div>';
     var word = { success: 'passed', failure: 'failed', cancelled: 'cancelled', timed_out: 'timed out', skipped: 'skipped' };
     return auField('au_gh_run', 'GitHub run', dropdown({ bind: 'au:gh:run', id: 'au_gh_run', cls: 'cover-dd', value: val('au:gh:run', ''), title: 'GitHub run', disabled: !list || !list.length,
-      placeholder: !list ? 'Loading…' : list.length ? 'Select' : 'No finished runs yet',
+      placeholder: !list ? 'Loading' : list.length ? 'Select' : 'No finished runs yet',
       options: (list || []).map(function (x) {
         return { value: String(x.id), label: '#' + x.number + ' · ' + x.branch + ' · ' + auDate(x.createdAt) + ' · ' + (x.event === 'workflow_dispatch' ? 'started by hand' : x.event),
           hint: (word[x.conclusion] || x.conclusion || '') + (x.kept ? ' · already in Test Run' : '') };
@@ -2987,14 +2991,14 @@
 
   function auSetupCard() {
     var A = S.auto;
-    if (!A.data) { if (!A.loading && !A.error) auLoad(); return A.error ? '<div class="banner bad">' + esc(A.error) + '</div>' : '<div class="loading">Loading the automation settings…</div>'; }
+    if (!A.data) { if (!A.loading && !A.error) auLoad(); return A.error ? '<div class="banner bad">' + esc(A.error) + '</div>' : '<div class="loading">Loading the automation settings</div>'; }
     if (!A.setupGh && !A.setupGhLoading) {
       A.setupGhLoading = true;
       TR.http('GET', '/api/automation/github/status').then(function (r) { A.setupGhLoading = false; A.setupGh = r; render(); });
     }
     var g = A.setupGh;
     var via = g && (g.transport === 'gh' ? 'gh' : g.transport === 'fetch' ? 'a GitHub token' : g.transport === 'fake' ? 'a pretend GitHub (demo)' : 'GitHub');
-    var access = !g ? '<span class="small muted">Checking…</span>'
+    var access = !g ? '<span class="small muted">Checking</span>'
       : g.ok ? '<span class="check-line ok" style="margin:0">✓ ' + esc(via) + ', signed in as ' + esc(g.login || 'unknown') + '</span>'
         : '<span class="check-line bad" style="margin:0">' + esc(g.error) + '</span>';
     var keep = A.data.keep;
@@ -3011,13 +3015,13 @@
       auExcludeField() +
       '</div></section>';
     // + Add sits at the right of the card's title, whether or not suites are linked yet; a suite's name opens it to change
-    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Workbooks</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">Remove</span></th></tr></thead><tbody>' +
+    h += '<section class="card"><div class="card-pad card-title-row"><h2>Linked suites</h2><button data-action="au-link">+ Add</button></div><div class="table-wrap"><table><thead><tr><th>Suite</th><th>Workbooks</th><th>Repository</th><th>Results</th><th>Linked</th><th><span class="sr">De-link</span></th></tr></thead><tbody>' +
       (suites.length ? suites.map(function (s) {
         var res = (s.format ? A.data.formats[s.format] || s.format : s.workflowId ? 'Not read yet' : 'Imported files') + (s.workflowId && s.artifact ? ' in <span class="mono">' + esc(s.artifact) + '</span>' : '');
         return '<tr><td><button class="linkish" data-action="au-edit" data-id="' + esc(s.id) + '" title="Change “' + esc(s.name) + '”">' + esc(s.name) + '</button>' + (s.workflow ? '<div class="small muted">workflow ' + esc(s.workflow) + '</div>' : '') + '</td>' +
           '<td class="small">' + (s.books ? (s.books.length ? s.books.map(function (b) { return esc(bookTitle(b)); }).join('<br>') : '<span class="faint">None</span>') : '<span class="muted">All workbooks</span>') + '</td><td class="mono">' + (s.repo ? esc(s.repo) : '<span class="faint">–</span>') + '</td><td>' + res + '</td>' +
           '<td class="small muted">' + esc([s.linkedBy, s.linkedAt ? auDate(s.linkedAt, false) : ''].filter(Boolean).join(' · ') || '–') + '</td>' +
-          '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">Remove</button></td></tr>';
+          '<td class="num"><button class="small-btn danger" data-action="au-setup-remove" data-id="' + esc(s.id) + '">De-link</button></td></tr>';
       }).join('') : '<tr><td colspan="6" class="no-data">No suites linked yet. + Add links one: any framework whose workflow writes JUnit XML or CTRF JSON.</td></tr>') + '</tbody></table></div></section>';
     return '<div class="stack">' + h + '</div>';
   }
@@ -3163,7 +3167,7 @@
       return '<div class="row team-head"><div class="grow"><h2>Online access</h2><p class="small muted">Testers and managers open Test Run in their own browser with an invite link; nothing to install. This host-server must stay on while they work.</p></div>' +
         (on == null ? '' : '<label class="check team-switch"><input type="checkbox" data-action="team-enable"' + (on ? ' checked' : '') + '> Share online</label>') + '</div>';
     };
-    if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading…</div></section>'; }
+    if (!r) { loadTeam(); return h + head(null) + '<div class="loading">Loading</div></section>'; }
     var t = r.team;
     var a = r.address;
     h += head(t.enabled);
@@ -3178,7 +3182,7 @@
     if (t.mode === 'quick') {
       if (a.tunnel.running || a.tunnel.reconnectIn != null) {
         h += '<div class="row conn-status"><span class="pill ' + (a.tunnel.url ? 'pass' : 'other') + '">' + (a.tunnel.url ? 'Shared' : a.tunnel.reconnectIn != null ? 'Reconnecting' : 'Starting') + '</span>' +
-          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel…')) + '</span><button data-action="team-share" data-on="0">Stop Sharing</button></div>';
+          '<span class="mono grow">' + esc(a.tunnel.url || (a.tunnel.reconnectIn != null ? 'trying again in ' + a.tunnel.reconnectIn + ' s' : 'opening the tunnel')) + '</span><button data-action="team-share" data-on="0">Stop Sharing</button></div>';
       } else if (a.tunnel.available) {
         h += '<div class="row conn-status"><button class="primary" data-action="team-share" data-on="1">Start Sharing Over the Internet</button><span class="small muted">Opens a Cloudflare quick tunnel to this host-server.</span></div>';
       } else {
@@ -3418,7 +3422,7 @@
   /** Setup → Media: the limits everyone records with (host only). */
   function mediaCard() {
     var md = S.media;
-    if (!md) { loadMedia(); return '<div class="loading">Loading the media settings…</div>'; }
+    if (!md) { loadMedia(); return '<div class="loading">Loading the media settings</div>'; }
     if (md.error) return '<div class="banner bad">' + esc(md.error) + '</div>';
     var keep = md.keepOptions.map(function (k) { return opt(String(k), k === 60 ? '1 hr' : k + ' min', k === md.keepMinutes); }).join('');
     return '<section class="card card-pad stack media-card"><div><h2>Media</h2><p class="small muted">Limits for everyone\'s screenshots and recordings in Test Run Extension. Testers can\'t change them.</p></div>' +
@@ -3452,7 +3456,7 @@
   function publishNow(extra) {
     if (S.publishBusy) return;
     S.publishBusy = true;
-    toast('Publishing to GitHub…');
+    toast('Publishing to GitHub');
     render();
     TR.http('POST', '/api/publish/now', extra || {}).then(function (r) {
       S.publishBusy = false;
@@ -3546,7 +3550,7 @@
     var h = '<section class="card card-pad stack" id="publish"><div class="card-title-row"><h2>Publish to GitHub</h2>' +
       helpButton({ id: 'publishTip', label: 'Who can read what is published', title: 'Published workbooks are public',
         html: '<span>Anyone can read them on GitHub and on the GitHub Pages site: test cases, results, comments, findings, tester names and issue links, and anyone may keep a copy. Invite keys and team settings are never published.</span>' }) + '</div>';
-    if (!r) { loadPublish(); return h + '<div class="loading">Loading…</div></section>'; }
+    if (!r) { loadPublish(); return h + '<div class="loading">Loading</div></section>'; }
     if (r.error && r.repo == null) return h + '<div class="note bad">' + esc(r.error) + '</div></section>';
     if (r.problem) h += '<div class="note bad">' + esc(r.problem) + '</div>';
     else h += '<div class="small muted">Goes to <a href="https://github.com/' + esc(r.repo) + '" target="_blank" rel="noopener" class="mono">' + esc(r.repo) + '</a>' + (r.isPrivate === false ? ' (a public repository)' : '') + '.</div>';
@@ -3561,10 +3565,10 @@
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
       (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
     // Changes above apply only once saved
-    h += '<div class="row"><button class="primary" data-action="publish-save"' + (dirty ? '' : ' disabled') + ' title="' + (dirty ? 'Save these choices' : 'Nothing changed') + '">Save preferences</button>' +
+    h += '<div class="row"><button class="primary" data-action="publish-save"' + (dirty ? '' : ' disabled') + ' title="' + (dirty ? 'Save these choices' : 'Nothing changed') + '">Save</button>' +
       (dirty ? '<span class="small muted">Unsaved changes</span><button class="ghost" data-action="publish-discard">Discard</button>' : '') + '</div>';
     var l = r.last || {};
-    h += '<div class="row publish-row"><button data-action="publish-now"' + (S.publishBusy || r.problem || dirty ? ' disabled' : '') + (dirty ? ' title="Save your preferences first"' : '') + '>' + (S.publishBusy ? 'Publishing…' : 'Publish now') + '</button>' +
+    h += '<div class="row publish-row"><button data-action="publish-now"' + (S.publishBusy || r.problem || dirty ? ' disabled' : '') + (dirty ? ' title="Save your changes first"' : '') + '>' + (S.publishBusy ? 'Publishing' : 'Publish now') + '</button>' +
       '<span class="small muted grow">' + (l.at ? 'Last published ' + esc(l.at) + (l.by ? ' by ' + esc(l.by) : '') + (l.commit ? ' · <a href="' + esc(l.url) + '" target="_blank" rel="noopener" class="mono">' + esc(l.commit.slice(0, 7)) + '</a>' : '') + (l.note ? ' · ' + esc(l.note) : '') : 'Not published from this host-server yet.') + '</span>' +
       '<a class="btn" href="?reports=1" target="_blank" rel="noopener" title="The last published reports, as anyone sees them, served from this host-server">Preview here</a>' +
       '</div>' +
@@ -3643,7 +3647,7 @@
         options: s.cases.filter(function (x) { return !x.retired; }).map(function (x) { return { value: x.key, label: x.id || 'Row ' + x.row, hint: oneLine(x.scenario).slice(0, 110) }; }),
         tagLabel: function (k) { var x = s.cases.filter(function (y) { return y.key === k; })[0]; return x ? x.id || 'Row ' + x.row : k; },
         tagTitle: function (k) { var x = s.cases.filter(function (y) { return y.key === k; })[0]; return x ? oneLine(x.scenario) : ''; }
-      }) : '<div class="small muted">Reading the test cases…</div>') + '</div>' +
+      }) : '<div class="small muted">Reading the test cases</div>') + '</div>' +
       '<div class="wide small">' + aiCaseNote(s, picked) + '</div></div>' +
       '<div class="row" style="margin-top:8px"><span class="grow"></span><button class="ghost" data-action="add-issue">Cancel</button><button class="primary" data-action="add-issue-save">Save</button></div></div>';
   }
@@ -3651,7 +3655,7 @@
   /** Under the test cases: whether they will be marked failed, or what happens without one. */
   function aiCaseNote(s, picked) {
     if (!picked.length) return '<span class="muted">Without a test case, it is kept under <b>Findings</b> until it is linked to one.</span>';
-    if (!s) return '<span class="muted">Reading the test cases…</span>';
+    if (!s) return '<span class="muted">Reading the test cases</span>';
     return s.hasCycle ? '<label class="check"><input type="checkbox" data-bind="aiFail"' + (val('aiFail', true) ? ' checked' : '') + '> Mark ' + (picked.length > 1 ? 'them' : 'it') + ' failed in cycle ' + esc(s.cycle || 'Status') + '</label>'
       : '<span class="faint">This suite has no test cycle yet, so the issue is only linked.</span>';
   }
@@ -3682,7 +3686,7 @@
     var i = S.cr && S.cr.info;
     var head = '<div class="row"><h2 class="grow">Complete Report</h2><button class="ghost small-btn" data-action="modal-close" aria-label="Close">✕</button></div>' +
       '<p class="small muted" style="margin:2px 0 14px">' + esc(String(S.cr.book).replace(/\.xlsx$/i, '')) + ': the workbook and its screenshots and recordings, as one .zip.</p>';
-    if (!i) return head + '<div class="loading" style="padding:20px">Checking…</div>';
+    if (!i) return head + '<div class="loading" style="padding:20px">Checking</div>';
     if (!i.ok) return head + '<div class="banner bad">' + esc(i.error) + '</div>';
     var gone = (Date.now() - S.cr.at) / 1000;
     var gen = { on: false, sub: '' };
@@ -4048,7 +4052,7 @@
             else if (r && r.code !== 'EXISTS') failed.push(f.name + ': ' + r.error);
           });
         };
-        if (files.length > 1) toast('Importing ' + files.length + ' workbooks…');
+        if (files.length > 1) toast('Importing ' + files.length + ' workbooks');
         files.reduce(function (p, f) { return p.then(function () { return one(f); }); }, Promise.resolve()).then(function () {
           failed.forEach(function (m) { toast(m, 'bad'); });
           if (!done.length) return;
@@ -4454,7 +4458,7 @@
       var on = el.getAttribute('data-on') === '1';
       var go = function () {
         el.disabled = true;
-        if (on) toast(S.team.team.mode === 'fixed' ? 'Starting the tunnel…' : 'Opening a tunnel… this takes a few seconds.');
+        if (on) toast(S.team.team.mode === 'fixed' ? 'Starting the tunnel' : 'Opening a tunnel. This takes a few seconds.');
         teamCall('/api/team/share', { on: on });
       };
       if (!on && !me().local) {
@@ -4732,7 +4736,7 @@
       render();
       TR.http('POST', '/api/automation/github/link', body).then(function (r) {
         if (!r.ok) { G.importing = false; G.imported = { ok: false, text: r.error }; render(); return; }
-        A.editing = true; A.suite = r.suite.id; // saved: Save Suite now changes it
+        A.editing = true; A.suite = r.suite.id; // saved: Save now changes it
         TR.http('POST', '/api/automation/github/import', { suite: r.suite.id, book: a.book, tab: a.tab, cycle: a.cycle }).then(function (x) {
           G.importing = false;
           if (!x.ok) { G.imported = { ok: false, text: x.error }; auLoad(); return; }
@@ -4848,15 +4852,15 @@
       if (!s) return;
       var n = auRunsOf(s.id, true).length;
       askConfirm({
-        title: 'Remove “' + esc(s.name) + '”?',
+        title: 'De-link “' + esc(s.name) + '”?',
         banner: 'This cannot be undone.', bannerKind: 'bad',
         items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
-        yes: 'Remove Suite', danger: true
+        yes: 'De-link', danger: true
       }, function () {
         TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
           if (!r.ok) { toast(r.error, 'bad'); return; }
           refreshApp();
-          toast('Removed “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          toast('De-linked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
           if (A.suite === s.id) A.suite = '';
           auLoad();
         });
@@ -4959,17 +4963,17 @@
       if (!s) return;
       var n = auRunsOf(s.id, true).length;
       askConfirm({
-        title: 'Unlink “' + esc(s.name) + '”?',
+        title: 'De-link “' + esc(s.name) + '”?',
         banner: 'This cannot be undone.', bannerKind: 'bad',
         items: [n ? 'Its ' + plural(n, 'kept run') + ' and their results leave Test Run.' : 'It has no kept runs.', 'The suite\'s repository, and its reports on GitHub, aren\'t touched.'],
-        yes: 'Unlink Suite', danger: true
+        yes: 'De-link', danger: true
       }, function () {
         TR.http('POST', '/api/automation/suites/remove', { id: s.id }).then(function (r) {
           if (!r.ok) { toast(r.error, 'bad'); return; }
           auLinkClose();
           S.auto.screen = 'runs'; S.auto.suite = '';
           refreshApp();
-          toast('Unlinked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
+          toast('De-linked “' + s.name + '”.' + (r.runs ? ' ' + plural(r.runs, 'run') + (r.runs === 1 ? ' was' : ' were') + ' deleted with it.' : ''));
           auLoad();
         });
       });
