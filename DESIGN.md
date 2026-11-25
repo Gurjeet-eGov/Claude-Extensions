@@ -116,6 +116,10 @@ Sizes: 30px high by default, 13px text, padding `5px 11px`. Round icons and icon
 
 **↗ Git Report** (Automation's run page, Summary › Automated, and both on the published site) opens the suite's own published report when the run gives one (its `report-link` artifact), else the run on GitHub; its title says which ("Opens the suite's published report", "Opens the run on GitHub"). It shows only when the run has one of the two; the Git report **?** comes last either way. On a run's page, **‹ Back** and the actions share one row above the title: Back on the left, the actions on the right.
 
+**Summary's tools are the same on Manual and Automated:** full-size buttons (not `.small-btn`), **⤓ Download** then **Print / PDF**, live and on the published site; Automated adds ↗ Git Report and its ? after them. On the published site, a guest (no invite key that opens the cycle's runs) sees Automated's figures only: no Top failure causes, no ↗ Git Report, no **Open** in Runs for this cycle, and the What changed cards don't open anything.
+
+**A dropdown in a table row keeps its width** whatever is chosen (Setup › Access › Users): a long name is shortened to fit, and the button's title has it whole.
+
 ### Status
 
 - **Symbols:** ✓ pass, ✗ fail, – other (NA, Skipped, Blocked…), ○ not run, ⊘ retired. Defined once in `shared.js` (`SYM`, `CLS_LABEL`); use those, don't retype them.

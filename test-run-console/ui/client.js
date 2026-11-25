@@ -608,9 +608,9 @@
     if (!pk) return h + '<div class="section">' + emptyReport() + '</div>';
     if (!pk.d) return h + '<div class="loading section">Loading ' + esc(pk.w.title) + '</div>';
     if (pk.d.error) return h + '<div class="banner bad section">' + esc(pk.d.error) + '</div>';
-    // Manual | Automated: Manual is public; Automated opens with the visitor's invite link
-    var aIdx = pubAutoIndex();
-    var hasAuto = !!(pk.suite && aIdx && pubRunsFor(pk.w.slug).length);
+    // Manual | Automated: Manual is public; Automated shows its figures to everyone, and the rest with the visitor's invite link
+    var aIdx = pubAutoIndex(), ev = pubEveryone();
+    var hasAuto = !!(pk.suite && ((aIdx && pubRunsFor(pk.w.slug).length) || (ev && ev.cycles.some(function (x) { return x.book === pk.w.slug; }))));
     var sw = hasAuto ? sumSwitch(true) : ''; // a workbook without automated results: Manual only, no switch
     if (hasAuto && S.sumView === 'automated') return h + '<div class="section">' + pubAutoView(pk, sw) + '</div>';
     // The suite and cycle are picked above, so no title here; on paper, one line says what it is.
@@ -642,6 +642,24 @@
     return undefined;
   }
   function pubRunsFor(slug) { var i = S.pubAuto.index; return i ? i.runs.filter(function (r) { return r.book === slug; }) : []; }
+
+  /** automation/everyone.json: the Automated figures anyone may see, signed in or not (summary.mjs › everyoneSummary); undefined while it's read, null when not published. */
+  function pubEveryone() {
+    var P = S.pubAuto;
+    if (P.everyone !== undefined || P.everyoneLoading) return P.everyone;
+    P.everyoneLoading = true;
+    fetch('automation/everyone.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (j) { P.everyoneLoading = false; P.everyone = j && Array.isArray(j.cycles) ? j : null; render(); });
+    return undefined;
+  }
+  /** What everyone sees for a workbook › test suite › cycle: { latest, runs, coverage, guest: true }, or null. */
+  function pubEveryoneData(slug, tab, cycle) {
+    var ev = S.pubAuto.everyone;
+    var g = ev ? ev.cycles.filter(function (x) { return x.book === slug && x.tab === tab && x.cycle === cycle; })[0] : null;
+    return g && g.latest ? { latest: g.latest, runs: g.runs || [], coverage: g.coverage || null, guest: true } : null;
+  }
 
   var agePromise = null;
   function loadAge() {
@@ -710,22 +728,41 @@
     return found;
   }
 
-  /** Published site › Automated, for the workbook, test suite and cycle picked above. */
+  /**
+   * Published site › Automated, for the workbook, test suite and cycle picked above. An invite key that
+   * opens the cycle's runs shows everything (top failure causes, ↗ Git Report, Open); anyone else sees
+   * the figures everyone may see (everyone.json): no failures, Git Report or Open.
+   */
   function pubAutoView(pk, sw) {
     var P = S.pubAuto;
     var token = TR.inviteKey();
     var where = TR.tabLabel(pk.suite.tab) + ' › ' + cycleText(pk.cyc);
     var tools = function (extra) { return '<div class="report-tools no-print">' + sw + '<span class="updated grow">Published ' + esc(pk.idx.publishedAt) + ' · ' + esc(where) + '</span>' + (extra || '') + '</div>'; };
+    var paper = '<div class="print-only print-title">' + esc(pk.w.title) + ' · ' + esc(pk.suite.tab) + ' · cycle ' + esc(pk.cyc || '–') + ' · automated · published ' + esc(pk.idx.publishedAt) + '</div>';
     var spin = function (text) { return '<div class="spin-page"><div class="stack" style="align-items:center"><div class="spinner" aria-hidden="true"></div><p class="muted" role="status">' + esc(text) + '</p></div></div>'; };
+    var print = '<button data-action="print">Print / PDF</button>';
+    var g = pubEveryoneData(pk.w.slug, pk.suite.tab, pk.cyc);
+    // what everyone sees: the figures, ⤓ Download (them, as .csv) and Print / PDF
+    var guest = function (before) {
+      return tools('<button data-action="pub-guest-csv" title="The automated figures as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' + print) + (before || '') + paper + autoSummaryHtml(g, { guest: true });
+    };
+    var none = function () { return tools() + '<div class="empty card"><h3>No automated run for this cycle</h3><p>No automated run is published for ' + esc(where) + '. Pick another test suite or cycle above.</p></div>'; };
+    var reading = S.pubAuto.everyone === undefined; // everyone.json is still being read
     if (!token) {
+      if (g) return guest();
+      if (reading) return tools() + spin('Loading the automated results');
+      if (S.pubAuto.everyone) return none();
       return tools() + '<div class="empty card"><h3>Automated results are for invited people</h3><p>Open your Test Run invite link once in this browser, then come back. The manual results are open to everyone.</p>' +
         '<p style="margin-top:12px"><button data-action="pub-have-link">I Have an Invite Link</button></p></div>';
     }
     var u = P.unlock[pk.w.slug];
     if (!u || u.token !== token) u = pubUnlock(pk.w.slug, token);
     if (u.state === 'unlocking') return tools() + spin('Unlocking the automated results with your invite link');
-    if (u.state === 'error') return tools() + '<div class="banner bad"><span>The automated results could not be unlocked in this browser.</span><span class="grow"></span><button data-action="pub-retry">Try Again</button></div>';
+    var failed = '<div class="banner bad"><span>The automated results could not be unlocked in this browser.</span><span class="grow"></span><button data-action="pub-retry">Try Again</button></div>';
+    if (u.state === 'error') return g ? guest(failed) : tools() + failed;
     if (!u.opened.length) {
+      if (g) return guest();
+      if (reading) return tools() + spin('Loading the automated results');
       return tools() + '<div class="empty card"><h3>These results are locked</h3><p>Your invite link doesn\'t open “' + esc(pk.w.title) + '”. Ask the host for access to this workbook, or for a new link.</p></div>';
     }
     if (P.run) {
@@ -733,11 +770,11 @@
       return tools() + auRunView(S.auto.detail, { published: true });
     }
     var d = pubAutoData(u, pk.suite.tab, pk.cyc);
-    if (!d) return tools() + '<div class="empty card"><h3>No automated run for this cycle</h3><p>No automated run you can open is attached to ' + esc(where) + '. Pick another test suite or cycle above.</p></div>';
+    if (!d) return g ? guest() : reading ? tools() + spin('Loading the automated results') : none();
     var r = d.latest;
-    var actions = '<div class="run-actions"><button class="small-btn" data-action="pub-csv" data-id="' + esc(r.id) + '" title="The automated results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' +
-      auGitReport(r, 'sum-full-report') + auReportTip(r) + '</div>';
-    return tools(actions) + autoSummaryHtml(d, { open: 'pub-open', unlockedFor: pubWho(token) });
+    var actions = '<button data-action="pub-csv" data-id="' + esc(r.id) + '" title="The automated results as a spreadsheet (.csv)"><span aria-hidden="true">⤓</span> Download</button>' + print +
+      auGitReport(r, 'sum-full-report', '') + auReportTip(r);
+    return tools(actions) + paper + autoSummaryHtml(d, { open: 'pub-open', unlockedFor: pubWho(token) });
   }
 
   /** A published run's results (run.age), opened with its run key, for the read-only run view. */
@@ -753,18 +790,28 @@
     }).then(function (text) { x.detail = JSON.parse(text); return x.detail; });
   }
 
+  /** One CSV cell: quoted when needed, and never read as a formula. */
+  function csvCell(v) {
+    var s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = '\'' + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  /** The figures everyone sees (everyone.json) as CSV: the runs kept for the cycle, newest first. */
+  function everyoneCsv(g) {
+    var rows = [['When', 'Suite', 'Environment', 'Options', 'Passed', 'Failed', 'Skipped', 'Flaky', 'Total', 'Pass rate (%)']].concat(g.runs.map(function (x) {
+      var t = x.totals || {};
+      return [auStamp(x.startedAt).replace(/ (\d\d)-(\d\d)$/, ' $1:$2'), x.suiteName, x.env, auOptions(x), t.passed, t.failed, t.skipped, t.flaky, t.total, x.passRate == null ? '' : x.passRate];
+    }));
+    return '\ufeff' + rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n') + '\r\n';
+  }
+
   /** A run's tests as CSV (opens in Excel), made in this browser from the unlocked results. */
   function resultsCsv(run) {
-    var cell = function (v) {
-      var s = String(v == null ? '' : v);
-      if (/^[=+\-@\t\r]/.test(s)) s = '\'' + s; // never read as a formula
-      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
     var word = { pass: 'Passed', fail: 'Failed', other: 'Skipped' };
     var rows = [['Suite', 'File', 'Test', 'Tags', 'Case IDs', 'Status', 'Duration (s)', 'Retries', 'Message']].concat(run.tests.map(function (x) {
       return [x.suite, x.file, x.title, (x.tags || []).join(', '), (x.caseIds || []).join(', '), (word[x.status] || x.status) + (x.flaky ? ' (flaky)' : ''), Math.round((x.durationMs || 0) / 10) / 100, x.retries || 0, x.message];
     }));
-    return '﻿' + rows.map(function (r) { return r.map(cell).join(','); }).join('\r\n') + '\r\n';
+    return '﻿' + rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n') + '\r\n';
   }
 
   function body() {
@@ -1993,8 +2040,8 @@
   function viewAutoSummary(d) {
     var r = d.latest;
     var tools = '<div class="report-tools no-print">' + sumSwitch(true) + '<span class="updated grow">Updated on: ' + esc(d.generatedAt) + '</span>' +
-      '<div class="run-actions"><button class="small-btn" data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button>' +
-      auGitReport(r, 'sum-full-report') + auReportTip(r) + '</div></div>' +
+      '<button data-action="sum-excel" data-id="' + esc(r.id) + '" title="The automated results as a workbook (.xlsx)"><span aria-hidden="true">⤓</span> Download</button><button data-action="print">Print / PDF</button>' +
+      auGitReport(r, 'sum-full-report', '') + auReportTip(r) + '</div>' +
       '<div class="print-only print-title">' + esc(bookTitle(book())) + ' · ' + esc(TR.tabLabel(S.tab)) + ' · cycle ' + esc(cycleLabel() || '–') + ' · automated · updated on ' + esc(d.generatedAt) + '</div>';
     return tools + autoSummaryHtml(d, { open: 'sum-open', keep: d.keep });
   }
@@ -2002,11 +2049,13 @@
   /**
    * The Automated view, live and on the published site: the latest run (figures with the previous
    * run's, what changed, top causes), the runs kept for the cycle, and the manual cases automation
-   * also runs. d: { latest, runs, coverage }; o: { open (the action that opens a run), keep, unlockedFor }.
+   * also runs. d: { latest, runs, coverage }; o: { open (the action that opens a run), keep, unlockedFor,
+   * guest (the published site without an invite key that opens the runs: no top failure causes, and nothing opens a run) }.
    */
   function autoSummaryHtml(d, o) {
     var r = d.latest, t = r.totals, prev = r.previous, pt = prev ? prev.totals : null, c = r.changed;
     var open = function (id, f) { return ' data-action="' + o.open + '" data-id="' + esc(id) + '"' + (f ? ' data-f="' + f + '"' : ''); };
+    var tag = o.guest ? 'div' : 'button'; // a guest's "What changed" cards don't open the run
     var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2>Latest run · ' + esc(r.suiteName) + '</h2>' +
       '<p class="small muted">' + esc([auDate(r.startedAt), auCommit(r), r.env, auOptions(r)].filter(Boolean).join(' · ')) + '</p></div>' +
       (o.unlockedFor != null ? '<span class="pill pass">' + esc(o.unlockedFor ? 'Unlocked for ' + o.unlockedFor : 'Unlocked with your invite link') + '</span>' : '') + '</div>' +
@@ -2017,12 +2066,12 @@
       '<div class="progress-wrap">' + TR.bar(auCounts(t)) + '<div class="legend"><span><span class="sym-pass">' + TR.SYM.pass + '</span> <b>' + t.passed + '</b> passed</span><span><span class="sym-fail">' + TR.SYM.fail + '</span> <b>' + t.failed + '</b> failed</span><span><span class="sym-other">' + TR.SYM.other + '</span> <b>' + t.skipped + '</b> skipped</span></div>' +
       '<span class="small muted">' + (prev ? 'previous run: ' + esc(auDate(prev.startedAt)) : 'no earlier run to compare with') + '</span></div></section>';
 
-    function card(n, l, sub, f) { return '<button' + open(r.id, f) + '><span class="v">' + n + '</span><span class="l"><b>' + l + '</b>' + (sub ? ' · ' + sub : '') + '</span></button>'; }
+    function card(n, l, sub, f) { return '<' + tag + (o.guest ? ' class="chg"' : open(r.id, f)) + '><span class="v">' + n + '</span><span class="l"><b>' + l + '</b>' + (sub ? ' · ' + sub : '') + '</span></' + tag + '>'; }
     h += '<section class="card card-pad stack"><h2>What changed since the previous run</h2>' + (prev
       ? '<div class="changed">' + card(c.newFailures, 'new failures', 'passed last time', 'newfail') + card(c.stillFailing, 'still failing', '', 'still') + card(c.fixed, 'fixed', 'failed last time', 'fixed') + card(c.flaky, 'flaky', 'passed on a retry', 'flaky') + '</div>'
       : '<p class="small muted">This is the first run of ' + esc(r.suiteName) + ' kept for ' + esc(r.attach.tab) + ', so there is nothing to compare it with yet.</p>') + '</section>';
 
-    h += '<section class="card card-pad stack"><div class="row"><h2 class="grow">Top failure causes</h2>' + (r.causeCount ? '<button class="link-btn"' + open(r.id, 'failed') + '>All causes ›</button>' : '') + '</div><div>' +
+    if (!o.guest) h += '<section class="card card-pad stack"><div class="row"><h2 class="grow">Top failure causes</h2>' + (r.causeCount ? '<button class="link-btn"' + open(r.id, 'failed') + '>All causes ›</button>' : '') + '</div><div>' +
       (r.causes.length ? r.causes.map(function (g, i) {
         var isOpen = !!S.sumOpen[i];
         return '<div class="cause' + (isOpen ? '' : ' collapsed') + '"><button class="cause-head" data-action="sum-cause" data-i="' + i + '" aria-expanded="' + isOpen + '"><span class="chev" aria-hidden="true">▾</span><span class="' + (g.other ? '' : 'mono') + '">' + esc(g.signature) + '</span>' +
@@ -2031,12 +2080,12 @@
       }).join('') : '<p class="small muted">Nothing failed in this run.</p>') + '</div></section>';
 
     h += '<section class="card"><div class="card-pad" style="padding-bottom:8px"><h2>Runs for this cycle</h2>' + (o.keep ? '<p class="small muted">' + auKeepText(o.keep) + ' for each automated suite.</p>' : '') + '</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th class="num">Pass rate</th><th><span class="sr">Open</span></th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th class="num">Pass rate</th>' + (o.guest ? '' : '<th><span class="sr">Open</span></th>') + '</tr></thead><tbody>' +
       d.runs.map(function (x) {
         return '<tr><td class="nowrap">' + esc(auDate(x.startedAt)) + '<div class="small muted">' + esc([x.suiteName, x.env, auOptions(x)].filter(Boolean).join(' · ')) + '</div></td>' +
           '<td style="min-width:150px">' + auResult(x.totals) + '</td>' +
           '<td class="num nowrap">' + (x.passRate == null ? '–' : '<b>' + x.passRate + '%</b><div>' + auFrom(x.passRate, x.prevPassRate, '%') + '</div>') + '</td>' +
-          '<td class="num"><button class="small-btn"' + open(x.id) + ' aria-label="Open the run from ' + esc(auDate(x.startedAt)) + '">Open</button></td></tr>';
+          (o.guest ? '' : '<td class="num"><button class="small-btn"' + open(x.id) + ' aria-label="Open the run from ' + esc(auDate(x.startedAt)) + '">Open</button></td>') + '</tr>';
       }).join('') + '</tbody></table></div></section>';
 
     var cv = d.coverage;
@@ -2442,11 +2491,15 @@
     var web = function (u) { return typeof u === 'string' && /^https?:\/\//i.test(u); };
     return src && web(src.reportUrl) ? src.reportUrl : src && web(src.runUrl) ? src.runUrl : '';
   }
-  /** ↗ Git Report, when the run has somewhere to open. action: au-full-report (the run's page) or sum-full-report (Summary › Automated, with data-url). */
-  function auGitReport(r, action) {
+  /**
+   * ↗ Git Report, when the run has somewhere to open. action: au-full-report (the run's page) or
+   * sum-full-report (Summary › Automated, with data-url). cls: the button's class ('small-btn' unless given; '' on Summary, as Download).
+   */
+  function auGitReport(r, action, cls) {
     var src = r.source || {}, u = auReportUrl(src);
     if (!u) return '';
-    return '<button class="small-btn" data-action="' + action + '"' + (action === 'sum-full-report' ? ' data-url="' + esc(u) + '"' : '') +
+    cls = cls == null ? 'small-btn' : cls;
+    return '<button' + (cls ? ' class="' + cls + '"' : '') + ' data-action="' + action + '"' + (action === 'sum-full-report' ? ' data-url="' + esc(u) + '"' : '') +
       ' title="' + (u === src.reportUrl ? 'Opens the suite\'s published report' : 'Opens the run on GitHub') + '">↗ Git Report</button>';
   }
   /** The Git report tooltip (DESIGN.md › Tooltips): where the suite's own report is, and how long it stays. */
@@ -3572,7 +3625,7 @@
       return '<label class="check"><input type="checkbox" data-action="publish-book" data-name="' + esc(b.name) + '"' + (d.books[b.name] ? ' checked' : '') + '> ' + esc(b.name.replace(/\.xlsx$/i, '')) + '</label>';
     }).join('') : '<p class="small faint">No workbooks yet.</p>') +
       (r.books.length && !r.books.some(function (b) { return d.books[b.name]; }) ? '<p class="small muted">None ticked: publishing takes every published report off the site.</p>' : '') +
-      (r.automation && r.automation.runs ? '<p class="small muted">With them go their <b>' + plural(r.automation.runs, 'automated run') + '</b>, locked: on the site, only invited people who may see a run open it, with their own invite link. New Link, Remove or a change of access locks them again at the next publish.</p>' : '') + '</div>';
+      (r.automation && r.automation.runs ? '<p class="small muted">With them go their <b>' + plural(r.automation.runs, 'automated run') + '</b>. Anyone on the site sees their figures in Summary › Automated; the failures and the runs themselves are locked: only invited people who may see a run open them, with their own invite link. New Link, Remove or a change of access locks them again at the next publish.</p>' : '') + '</div>';
     h += '<div class="subsection"><h3>When</h3>' +
       '<div class="row"><label class="check"><input type="checkbox" data-action="publish-nightly"' + (d.nightly ? ' checked' : '') + '> Every day at</label><input type="time" id="publishTime" data-change="publish-time" value="' + esc(d.time) + '"' + (d.nightly ? '' : ' disabled') + '><span class="small faint">while Test Run is running</span></div>' +
       (r.acknowledged ? '' : '<p class="small faint">This starts after your first Publish now.</p>') + '</div>';
@@ -4698,6 +4751,11 @@
         toast('That run could not be opened in this browser.', 'bad');
         render();
       });
+    },
+    'pub-guest-csv': function () {
+      var pk = reportPick(), g = pk && pk.suite ? pubEveryoneData(pk.w.slug, pk.suite.tab, pk.cyc) : null;
+      if (!g) return;
+      TR.saveBlob(new Blob([everyoneCsv(g)], { type: 'text/csv;charset=utf-8' }), (pk.w.title + ' - ' + pk.suite.tab + (pk.cyc ? ' - cycle ' + pk.cyc : '') + ' - automated.csv').replace(/[\\/:*?"<>|]/g, '_'));
     },
     'pub-back': function () { S.pubAuto.run = null; S.auto.detail = null; render(); window.scrollTo(0, 0); },
     'pub-csv': function (el) {

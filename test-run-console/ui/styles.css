@@ -749,9 +749,11 @@ details.link-settings > div { margin-top: 8px; padding-left: 2px; }
 table.people td { vertical-align: middle; }
 /* Users: a dropdown in a table row opens over the rows below, not cut off by the table */
 .table-wrap:has(.multi-pop) { overflow: visible; }
-table.people td.u-role { min-width: 150px; }
-table.people td.u-books { min-width: 160px; }
-table.people td.u-suites { min-width: 170px; }
+/* Users: the dropdowns keep their width whatever is chosen; a long name is shortened with … (its title has it whole) */
+table.people td.u-role { width: 184px; }
+table.people td.u-books { width: 196px; }
+table.people td.u-suites { width: 209px; }
+table.people button.multi-btn > .grow { width: 0; flex: 1 1 auto; }
 .u-new { width: 170px; }
 
 /* Setup → Test cycles: rename a cycle in place */
@@ -786,6 +788,8 @@ table.people td.u-suites { min-width: 170px; }
 .changed { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .changed button { flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; min-height: 0; border-color: var(--border); color: var(--text); font-weight: 400; white-space: normal; text-align: left; }
 .changed button:hover { border-color: var(--accent); }
+/* the same cards for a guest on the published site: nothing to open */
+.changed .chg { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .changed .v { font-size: 20px; font-weight: 750; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .changed .l { font-size: 12px; color: var(--muted); }
 /* the previous run's figure beside this one: "↑ from 84%", green when better, red when worse */

@@ -184,3 +184,46 @@ export async function cycleRoute(ctx, store, url, person, keep) {
     coverage: coverageOf(cases, liveCaseIds(tabModel)),
   });
 }
+
+// ---------------------------------------------------------------------------
+// What everyone sees on the published site, with no invite link: automation/everyone.json, not locked
+// ---------------------------------------------------------------------------
+
+/** A run as everyone sees it: the figures and what changed (counts). No commit, links, failures or test names. */
+const everyoneRun = (s) => ({
+  suiteName: s.suiteName, startedAt: s.startedAt, importedAt: s.importedAt, env: s.env, options: s.options || {},
+  attach: { tab: s.attach.tab, cycle: s.attach.cycle }, totals: s.totals, passRate: s.passRate,
+  previous: s.previous ? { startedAt: s.previous.startedAt, totals: s.previous.totals, passRate: s.previous.passRate } : null,
+  changed: s.changed,
+});
+/** A row of "Runs for this cycle" as everyone sees it. */
+const everyoneBrief = (b) => ({ suiteName: b.suiteName, startedAt: b.startedAt, env: b.env, options: b.options || {}, totals: b.totals, passRate: b.passRate, prevPassRate: b.prevPassRate });
+
+/**
+ * automation/everyone.json: per workbook › test suite › cycle, what the Automated summary shows to
+ * anyone, signed in or not: the latest run's figures and what changed (counts), the runs kept for it,
+ * and how many manual cases automation covers. Top failure causes, test names, commits, the Git report
+ * and the runs themselves stay in the locked files. items: [{ slug, meta }] (meta: publishedMeta).
+ * The newest run decides, as on the published site's own Automated view.
+ */
+export function everyoneSummary(items) {
+  const when = (m) => `${m.summary.startedAt || ''}|${m.summary.importedAt || ''}`;
+  const sorted = [...items].sort((a, b) => (when(a.meta) < when(b.meta) ? 1 : when(a.meta) > when(b.meta) ? -1 : 0));
+  const groups = new Map();
+  for (const { slug, meta } of sorted) {
+    const a = meta.summary.attach;
+    const k = JSON.stringify([slug, a.tab, a.cycle]);
+    if (!groups.has(k)) groups.set(k, { book: slug, tab: a.tab, cycle: a.cycle, latest: everyoneRun(meta.summary), runs: [], cases: [], tabCases: meta.tabCases || 0 });
+    const g = groups.get(k);
+    g.runs.push(everyoneBrief(meta.brief));
+    g.cases.push(meta.cases || {});
+  }
+  return {
+    version: 1,
+    cycles: [...groups.values()].map(({ cases, tabCases, ...g }) => {
+      const coverage = { total: tabCases, covered: 0, passing: 0, failing: 0 };
+      for (const v of Object.values(latestCases(cases))) { coverage.covered++; if (v === 'pass') coverage.passing++; else if (v === 'fail') coverage.failing++; }
+      return { ...g, coverage };
+    }),
+  };
+}

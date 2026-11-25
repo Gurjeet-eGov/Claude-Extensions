@@ -3,6 +3,7 @@
 // implementation). On the data branch, beside workbooks/ and reports/:
 //
 //   automation/index.json     public: per run only { id, book (the workbook's slug), publishedAt, bytes }
+//   automation/everyone.json  public: what the Automated summary shows to anyone, figures only (summary.mjs › everyoneSummary)
 //   automation/<id>/key.age   the run's own random age identity, encrypted to everyone who may open the run
 //   automation/<id>/meta.age  what the Automated summary needs (JSON), encrypted to the run's identity
 //   automation/<id>/run.age   the run view's data (gzipped JSON), encrypted to the run's identity
@@ -33,6 +34,8 @@ import { RUN_ID } from './results.mjs';
 
 export const KDF = { salt: 'test-run', info: 'automation results v1' };
 export const FILES = ['key.age', 'meta.age', 'run.age'];
+/** The automated summary everyone may read, without an invite link (summary.mjs › everyoneSummary). */
+export const EVERYONE = 'automation/everyone.json';
 /** An age X25519 identity as age writes it (bech32, upper case). */
 export const IDENTITY = /^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/;
 
@@ -212,8 +215,8 @@ export async function sealRuns(items, { cache = null, prefix = '', now = new Dat
   return { files, index, sealed };
 }
 
-/** Is this a path of the published automation/ folder (index.json, or a run's .age file)? */
+/** Is this a path of the published automation/ folder (index.json, everyone.json, or a run's .age file)? */
 export function isAutomationPath(p) {
-  return p === 'automation/index.json' || /^automation\/\d{8}-\d{6}-[0-9a-f]{6}\/(key|meta|run)\.age$/.test(p);
+  return p === 'automation/index.json' || p === EVERYONE || /^automation\/\d{8}-\d{6}-[0-9a-f]{6}\/(key|meta|run)\.age$/.test(p);
 }
 

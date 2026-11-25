@@ -114,6 +114,6 @@ test('sealRuns: the cache gives the same bytes while nothing changes; new conten
   assert.equal((await sealRuns(items, { cache })).sealed, 1, 'who it is for changed');
   assert.deepEqual((await sealRuns([], { cache })).files, [], 'no runs: no files at all');
   assert.ok(!existsSync(join(dir, '20261124-101500-aaaaaa')), 'a run not published any more leaves the cache');
-  assert.ok(isAutomationPath('automation/index.json') && isAutomationPath('automation/20261124-101500-aaaaaa/run.age'));
+  assert.ok(isAutomationPath('automation/index.json') && isAutomationPath('automation/everyone.json') && isAutomationPath('automation/20261124-101500-aaaaaa/run.age'));
   assert.ok(!isAutomationPath('automation/../app.json') && !isAutomationPath('automation/x/run.age'));
 });

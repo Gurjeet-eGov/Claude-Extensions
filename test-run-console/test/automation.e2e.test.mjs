@@ -209,8 +209,9 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       assert.equal(await page.locator('.cause').count(), 2, 'the top 2 causes');
       assert.equal(await page.locator('[data-action=sum-open][aria-label^="Open the run"]').count(), 2, 'the runs kept for the cycle');
       await page.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18 · automation passing on 1, failing on 1.' }).waitFor();
-      const order = await page.locator('.report-tools .run-actions > button, .report-tools .run-actions > .help-wrap > button').allTextContents();
-      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', '?'], 'Download, then ? last (no Git Report for an imported run)');
+      const order = await page.locator('.report-tools > button, .report-tools > .help-wrap > button').allTextContents();
+      assert.deepEqual(order.map((x) => x.trim()), ['⤓ Download', 'Print / PDF', '?'], 'Download and Print / PDF as on Manual, then ? last (no Git Report for an imported run)');
+      assert.equal(await page.locator('.report-tools .small-btn').count(), 0, 'the same size as Manual\'s');
       const dl = page.waitForEvent('download');
       await page.locator('.report-tools [data-action=sum-excel]').click();
       assert.match((await dl).suggestedFilename(), /^CMS Automation - .* - results\.xlsx$/);
@@ -247,6 +248,9 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       await p.locator('h2', { hasText: 'Latest run · CMS Automation' }).waitFor();
       await p.locator('.pill.pass', { hasText: 'Unlocked for Priya' }).waitFor();
       await p.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18' }).waitFor();
+      assert.equal(await p.locator('.cause').count(), 2, 'an invited key sees the top causes');
+      const tools = await p.locator('.report-tools > button, .report-tools > .help-wrap > button').allTextContents();
+      assert.deepEqual(tools.map((x) => x.trim()), ['⤓ Download', 'Print / PDF', '?']);
       await p.locator('[data-action=pub-open][aria-label^="Open the run"]').first().click();
       await p.locator('h2', { hasText: 'CMS Automation · 2 failed' }).waitFor();
       await p.locator('.run-actions > [data-action=pub-back]', { hasText: '‹ Back' }).waitFor();
@@ -262,20 +266,42 @@ test('Summary › Automated, Auto badges on Run, and the published site unlockin
       await p.context().close();
     });
 
-    await t.test('published site: a key without the workbook stays locked; no key asks for an invite link', async () => {
+    await t.test('published site: a guest (no key, or one without the workbook) sees the figures only', async () => {
+      /** What a guest sees: the figures, no top causes, Git Report or Open; Download and Print / PDF. */
+      const guestView = async (g) => {
+        await g.locator('h2', { hasText: 'Latest run · CMS Automation' }).waitFor();
+        await g.locator('.kpi', { hasText: 'pass rate' }).locator('.delta', { hasText: '↓ from 75%' }).waitFor();
+        await g.locator('.changed .chg', { hasText: 'new failures' }).locator('.v', { hasText: '1' }).waitFor();
+        await g.locator('p', { hasText: 'Manual cases also run by automation: 2 of 18 · automation passing on 1, failing on 1.' }).waitFor();
+        assert.equal(await g.locator('h2', { hasText: 'Top failure causes' }).count(), 0, 'no top failure causes');
+        assert.equal(await g.locator('.cause').count(), 0);
+        assert.equal(await g.locator('.changed button').count(), 0, 'the What changed cards open nothing');
+        assert.equal(await g.locator('main tbody tr').count(), 2, 'the runs kept for the cycle');
+        assert.equal(await g.locator('[data-action=pub-open]').count(), 0, 'no Open');
+        assert.equal(await g.locator('[data-action=sum-full-report]').count(), 0, 'no Git Report');
+        assert.equal(await g.locator('.pill', { hasText: 'Unlocked' }).count(), 0);
+        const tools = await g.locator('.report-tools > button, .report-tools > .help-wrap > button').allTextContents();
+        assert.deepEqual(tools.map((x) => x.trim()), ['⤓ Download', 'Print / PDF'], 'Download and Print / PDF, as on Manual');
+        const dl = g.waitForEvent('download');
+        await g.locator('.report-tools [data-action=pub-guest-csv]').click();
+        const file = await dl;
+        assert.match(file.suggestedFilename(), / - automated\.csv$/);
+        const csv = readFileSync(await file.path(), 'utf8');
+        assert.match(csv, /^\ufeffWhen,Suite,Environment,Options,Passed,Failed,Skipped,Flaky,Total,Pass rate \(%\)\r\n/);
+        assert.equal(csv.trim().split('\r\n').length, 3, 'a row per run kept');
+        assert.doesNotMatch(csv, /GRO assigns the complaint|Error|expect\(/, 'no test names or failure messages');
+      };
       const r = await visitor(KEYS.rahul);
       await r.goto(`${base}?reports=1`);
       await autoOn(r);
       await r.locator('.seg.same button', { hasText: 'Automated' }).click();
-      await r.locator('.empty h3', { hasText: 'These results are locked' }).waitFor();
+      await guestView(r);
       await r.context().close();
       const n = await visitor(null);
       await n.goto(`${base}?reports=1`);
       await autoOn(n);
       await n.locator('.seg.same button', { hasText: 'Automated' }).click();
-      await n.locator('.empty h3', { hasText: 'Automated results are for invited people' }).waitFor();
-      await n.getByRole('button', { name: 'I Have an Invite Link' }).click();
-      assert.equal(await n.evaluate(() => document.activeElement && document.activeElement.id), 'inviteLink');
+      await guestView(n);
       await n.locator('.seg.same button', { hasText: 'Manual' }).click();
       await n.locator('.kpi', { hasText: 'executed' }).first().waitFor(); // Manual stays public
       await n.context().close();

@@ -33,8 +33,8 @@ import { createAutomation } from './lib/automation/routes.mjs';
 import { createGithub } from './lib/github.mjs';
 import { normalizeAutomationSettings } from './lib/automation/store.mjs';
 import { previousRun, RUN_ID } from './lib/automation/results.mjs';
-import { cleanLock, newIdentity, recipientsFor, sealRuns, SealCache, isAutomationPath, FILES as SEALED_FILES } from './lib/automation/seal.mjs';
-import { publishedMeta, runDetailData, liveCaseIds } from './lib/automation/summary.mjs';
+import { cleanLock, newIdentity, recipientsFor, sealRuns, SealCache, isAutomationPath, FILES as SEALED_FILES, EVERYONE } from './lib/automation/seal.mjs';
+import { publishedMeta, runDetailData, liveCaseIds, everyoneSummary } from './lib/automation/summary.mjs';
 
 const UI = join(ROOT, 'ui');
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/summary.html': 'summary.html', '/styles.css': 'styles.css', '/shared.js': 'shared.js', '/client.js': 'client.js', '/summary.js': 'summary.js',
@@ -666,7 +666,11 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
         const who = await recipientsFor(m, { team: app.team, hostIdentity: await hostIdentity() });
         items.push({ id: m.id, slug: slugs[m.attach.book], meta: publishedMeta(store, m, run, prev, caseIds.get(k)), detail: runDetailData(store, m, run, prev), recipients: who.map((r) => r.recipient) });
       }
-      return sealRuns(items, { cache: sealCache, prefix: DATA });
+      const out = await sealRuns(items, { cache: sealCache, prefix: DATA });
+      // and what everyone sees without an invite link: the figures only, not locked (everyone.json)
+      const kept = new Set(out.index.runs.map((r) => r.id));
+      if (kept.size) out.files.push({ path: `${DATA}${EVERYONE}`, content: Buffer.from(JSON.stringify(everyoneSummary(items.filter((it) => kept.has(it.id))), null, 1)) });
+      return out;
     });
     sealChain = job.then(() => {}, () => {});
     return job;
@@ -706,7 +710,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
       slugs[b.name] = slug;
     }
     files.push({ path: `${DATA}reports/index.json`, content: Buffer.from(JSON.stringify(index, null, 1)) });
-    const auto = await automationFiles(slugs); // automation/: the locked automated results
+    const auto = await automationFiles(slugs); // automation/: the locked automated results, and everyone.json
     files.push(...auto.files);
     return { files, index, automation: auto.index };
   }
@@ -936,6 +940,8 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
     const autoIndex = await readRemoteFile({ ...c, ref: src.ref, path: `${src.root}automation/index.json` });
     if (autoIndex) {
       files.push({ path: `${DATA}automation/index.json`, content: autoIndex });
+      const everyone = await readRemoteFile({ ...c, ref: src.ref, path: `${src.root}${EVERYONE}` });
+      if (everyone) files.push({ path: `${DATA}${EVERYONE}`, content: everyone });
       let runs = [];
       try { runs = JSON.parse(autoIndex.toString('utf8')).runs || []; } catch { runs = []; }
       for (const r of runs) {

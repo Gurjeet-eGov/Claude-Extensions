@@ -207,7 +207,8 @@ The host can publish the reports to the GitHub repository, so they can be read o
 - **Save preferences** applies your changes; it is greyed out until something changed (**Discard** drops them). A change to the ticked workbooks asks first, in a pop-up that says what goes on or comes off the public site, then publishes right away. **Cancel** there undoes the change to the workbooks.
 - **What a publish is:** the branch `test-run-data`, replaced by **one commit with no history**, made through your `gh` login. At its root:
   - `workbooks/`: each ticked workbook and its sidecar file (setup, findings, issue list), exactly as saved;
-  - `reports/`: the summary of every test suite and cycle, and a download copy of each workbook, which the Pages site shows.
+  - `reports/`: the summary of every test suite and cycle, and a download copy of each workbook, which the Pages site shows;
+  - `automation/`: the automated runs kept for those workbooks. `everyone.json` holds what anyone sees in Summary › Automated: each cycle's figures (pass rate, passed, failed, skipped, what changed, the runs kept) with no failure messages, test names, commits or links. The runs themselves are locked: only invited people who may see a run open it, with their own invite link, and see its top failure causes, **↗ Git Report** and **Open**.
 - So the repository does not grow with every publish, a workbook you untick really leaves the branch (and so GitHub's copy, once GitHub cleans up), and the code history on `master` stays clean.
 - Then Test Run starts the **Test Run page** workflow, which builds the Pages site from `master` (the page) and `test-run-data` (the data). If GitHub refuses to start it, the publish still counts, and Setup → Publish says so: publish again, or run the workflow from the repository's Actions tab.
 - Your local checkout is not touched (the commit is made on GitHub directly), and nothing is committed when nothing changed.

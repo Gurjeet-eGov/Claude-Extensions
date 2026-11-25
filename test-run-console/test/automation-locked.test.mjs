@@ -123,6 +123,24 @@ test('publish: only kept runs of the published workbooks, locked to who may see 
     assert.ok(await openRun(sealed(r3.run.id), app.lock.identity), 'the host opens it');
     assert.ok(!f['automation/index.json'].toString('utf8').includes('AGE-SECRET'));
 
+    // what everyone sees, not locked: the figures of each cycle, and nothing else
+    const everyoneText = f['automation/everyone.json'].toString('utf8');
+    const ev = JSON.parse(everyoneText);
+    assert.equal(ev.cycles.length, 1);
+    const cy = ev.cycles[0];
+    assert.deepEqual([cy.book, cy.tab, cy.cycle], [slug, TAB, 'v2.12']);
+    assert.equal(cy.latest.suiteName, priya.meta.summary.suiteName);
+    assert.deepEqual(cy.latest.totals, priya.meta.summary.totals);
+    assert.deepEqual(cy.latest.changed, priya.meta.summary.changed);
+    assert.equal(cy.latest.passRate, priya.meta.summary.passRate);
+    assert.deepEqual(cy.runs.map((x) => x.startedAt), [r3, r2].map((x) => x.run.startedAt), 'the runs kept, newest first');
+    assert.deepEqual(cy.coverage, { total: 18, covered: 2, passing: 1, failing: 1 });
+    assert.deepEqual(Object.keys(cy.latest).sort(), ['attach', 'changed', 'env', 'importedAt', 'options', 'passRate', 'previous', 'startedAt', 'suiteName', 'totals']);
+    assert.deepEqual(Object.keys(cy.latest.attach).sort(), ['cycle', 'tab']);
+    assert.ok(cy.runs.every((x) => !('id' in x) && !('source' in x) && !('sha' in x) && !('branch' in x)));
+    for (const secret of [r2.run.id, r3.run.id, 'causes', 'runUrl', 'reportUrl', 'sha', 'branch', 'GRO assigns', 'AGE-SECRET', 'Priya']) assert.ok(!everyoneText.includes(secret), `everyone.json leaves out ${secret}`);
+    assert.equal((await s.req('GET', '/automation/everyone.json')).cycles.length, 1, 'served by the laptop too');
+
     // served by the laptop too, as published
     assert.equal((await s.req('GET', '/automation/index.json')).runs.length, 2);
     const key = await s.req('GET', `/automation/${r3.run.id}/key.age`);
