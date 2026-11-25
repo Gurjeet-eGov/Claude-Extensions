@@ -834,11 +834,11 @@ pre.trace { margin: 0; background: var(--surface-2); border: 1px solid var(--bor
 .report-tools .run-actions { flex: none; }
 .sum-note { margin: -4px 0 12px; }
 
-/* Automation › GitHub Actions: the Running view's job and steps, runs going on a suite, Setup › Automation */
-.steps-list { display: flex; flex-direction: column; gap: 6px; }
-.steps-list > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.job-line { align-items: center; gap: 10px; }
+/* Automation › GitHub Actions: runs going on a suite (In GitHub Actions), Setup › Automation */
+.job-line { align-items: center; gap: 10px; flex-wrap: nowrap; } /* circle, text, buttons: one row; the text wraps */
 .job-line .grow { min-width: 0; }
+.job-actions { display: flex; gap: 8px; flex: none; }
+@media (max-width: 760px) { .job-line { flex-wrap: wrap; } .job-actions { width: 100%; padding-left: 30px; } }
 .keep-dd { width: 90px; }
 .every-dd { width: 210px; }
 .exclude-input { width: 240px; max-width: 100%; }

@@ -41,7 +41,7 @@ function fakeRepo(o = {}) {
   return fake;
 }
 
-async function start({ fake = fakeRepo(), sheets } = {}) {
+async function start({ fake = fakeRepo(), sheets, findTimeoutMs } = {}) {
   if (!sheets) {
     sheets = join(mkdtempSync(join(tmpdir(), 'testrun-augh-')), 'sheets');
     mkdirSync(join(sheets, '.testrun'), { recursive: true });
@@ -57,7 +57,7 @@ async function start({ fake = fakeRepo(), sheets } = {}) {
     }));
     writeFileSync(join(sheets, BOOK), await buildSampleXlsx());
   }
-  const server = createServer({ sheetsDir: sheets, ghPath: '/nope/gh', github: fake.github, automationPollMs: 60000 });
+  const server = createServer({ sheetsDir: sheets, ghPath: '/nope/gh', github: fake.github, automationPollMs: 60000, automationFindTimeoutMs: findTimeoutMs });
   const base = await server.listenOn(0);
   const req = async (method, path, body, key) => {
     const headers = { 'X-Test-Run': '1' };
@@ -179,6 +179,23 @@ test('start a run and follow it: found after the dispatch, queued, in progress, 
     // a finished job can be dismissed; a running one cannot
     assert.equal((await s.req('POST', '/api/automation/job/dismiss', { id: j.id })).ok, true);
     assert.equal((await s.req('GET', '/api/automation/jobs')).jobs.length, 0);
+  } finally { s.close(); }
+});
+
+test('a run GitHub never shows: given up on after the find time, marked notFound, with the workflow\'s runs page', async () => {
+  const s = await start({ findTimeoutMs: 20 });
+  try {
+    const suite = await linked(s);
+    const r = await s.req('POST', '/api/automation/github/run', { suite: suite.id, branch: 'master', inputs: { scope: 'api' }, ...ATTACH });
+    assert.equal(r.ok, true, r.error);
+    const runs = s.fake.runs(REPO);
+    runs.splice(runs.findIndex((x) => x.event === 'workflow_dispatch'), 1); // GitHub never lists it
+    await new Promise((res) => setTimeout(res, 40));
+    await s.gh.tick();
+    const j = (await s.req('GET', `/api/automation/job?id=${r.job.id}`)).job;
+    assert.deepEqual([j.state, j.notFound], ['failed', true]);
+    assert.match(j.message, /^Unable to find the GitHub job within a minute\./);
+    assert.equal(j.runUrl, `https://github.com/${REPO}/actions/workflows/integration.yml`, 'GitHub Log opens the workflow\'s runs');
   } finally { s.close(); }
 });
 

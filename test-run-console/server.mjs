@@ -156,7 +156,7 @@ function tailscaleUrl(bin) {
 // site. publishPrefix and publishedDir are where published data was kept before that branch (the
 // default branch's test-run-console/published/, and this checkout's copy of it), read until the
 // branch exists. cloneDir is the clone whose copy of the data branch "Start from the published data" reads.
-export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], publishedDir = join(ROOT, 'published'), repo: repoOverride, publishPrefix, dataBranch = 'test-run-data', dataPrefix = '', pagesWorkflow = 'test-run-pages.yml', cloneDir = ROOT, log = () => {}, github, automationPollMs } = {}) {
+export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPath, tailscaleBin, restartDelays = [2000, 5000, 15000, 30000, 60000, 120000, 300000], publishedDir = join(ROOT, 'published'), repo: repoOverride, publishPrefix, dataBranch = 'test-run-data', dataPrefix = '', pagesWorkflow = 'test-run-pages.yml', cloneDir = ROOT, log = () => {}, github, automationPollMs, automationFindTimeoutMs } = {}) {
   const INSTANCE = randomBytes(8).toString('hex'); // tells "this Test Run" apart when checking an address
   mkdirSync(sheetsDir, { recursive: true });
   const lib = new Library(sheetsDir);
@@ -200,7 +200,7 @@ export function createServer({ sheetsDir = join(ROOT, 'sheets'), tunnelBin, ghPa
   // GitHub (starting and following runs) through the one client, lib/github.mjs: gh api today.
   const automation = createAutomation({
     sheetsDir, lib, callApi, mayOpen, isOwner: isOwnerPerson, keep: () => app.automation.keep, readBody,
-    github: github || createGithub({ ghPath }), log, pollMs: automationPollMs,
+    github: github || createGithub({ ghPath }), log, pollMs: automationPollMs, findTimeoutMs: automationFindTimeoutMs,
     checkEvery: () => app.automation.checkEvery,
     excludeEnvironments: () => app.automation.excludeEnvironments,
     setKeep: (n) => { app.automation = normalizeAutomationSettings({ ...app.automation, keep: n }); saveApp(); return app.automation.keep; },

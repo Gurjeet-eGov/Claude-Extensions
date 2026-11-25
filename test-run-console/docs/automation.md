@@ -192,7 +192,9 @@ On the suite's page, **▶ Run** opens the run form: the branch, the workflow's 
 
 The options are read from the workflow file **on the branch you choose**, and read again when you pick another branch: fields you already filled in stay, if that branch's form has them too. Only that branch's fields are sent, so a branch with a newer (or older) form runs with its own fields. If GitHub can't be read just then, the form saved when the suite was linked is used instead; when the default branch's form has changed, that saved copy is refreshed.
 
-The **Running** view follows it: queued or running, the current job and its steps, the time so far, and **↗ GitHub Log**. The Automation tab shows how many runs are going. You can leave the page, or close the browser: the run goes on, and Test Run follows it even across a restart of Test Run. When it ends, the results artifact is read and the run is attached where you chose; the run view opens by itself. **Cancel Run** asks first, then asks GitHub to stop it.
+The run then shows at the top of the suite's page, under **In GitHub Actions**: queued or running (a yellow circle fading in and out), the **elapsed time**, **↗ GitHub Log** (the live log on GitHub; greyed out for the few seconds until GitHub gives the run's address) and **Cancel Run** (it asks first, then asks GitHub to stop it). The Automation tab shows how many runs are going. You can leave the page, or close the browser: the run goes on, and Test Run follows it even across a restart of Test Run. When it ends, the results artifact is read, the run is attached where you chose, and it shows in **Runs** ("Imported 243 tests from CMS 3.0").
+
+Test Run looks for the new run on GitHub every 10 seconds, for a minute. If GitHub hasn't listed it by then, it says **Unable to find the GitHub job**: look for it on the workflow's Actions page (↗ GitHub Log opens it), and when it's done, bring its results in with **⤒ Import Results › GitHub Run**.
 
 If the run ends without its results (no artifact with that name, or no results file in it), Test Run says so, with a link to the run on GitHub.
 

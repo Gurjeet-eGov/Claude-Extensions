@@ -1,7 +1,7 @@
 // Automation with GitHub Actions in Chromium, against the fake GitHub (never the real one): Link a
 // suite's GitHub steps (Check, workflow, results artifact, ⤒ Import Results), ▶ Run with the
-// workflow's own options, the Running view (and the count on the Automation tab) until the results
-// come in by themselves (a branch with another form swaps the fields; its report-link makes ↗ Git Report
+// workflow's own options, the run under In GitHub Actions (elapsed time, ↗ GitHub Log, Cancel Run, and the
+// count on the Automation tab) until the results come in by themselves (a branch with another form swaps the fields; its report-link makes ↗ Git Report
 // open the suite's published report), Import results › GitHub Run,
 // and Setup › Automation (Exclude environments, and the hint when none is left). Skipped when
 // Playwright is not installed, like the other browser tests.
@@ -45,11 +45,14 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  const toast = (text) => page.locator('.toast', { hasText: text }).first().waitFor();
+  const toast = (text, timeout) => page.locator('.toast', { hasText: text }).first().waitFor(timeout ? { timeout } : undefined);
   try {
     await t.test('Link a suite: Check, the workflow and its results artifact, ⤒ Import Results, Save', async () => {
-      await page.goto(`${base}?view=automation`);
-      await page.locator('.empty [data-action=au-link]').click();
+      // no suite yet: no Automation tab; suites are linked in Setup › Automation › + Add
+      await page.goto(`${base}?view=setup`);
+      assert.equal(await page.locator('.nav [data-view=automation]').count(), 0, 'no Automation tab without a suite');
+      await page.locator('[data-part=automation]').click();
+      await page.locator('[data-action=au-link]').click();
       await page.locator('#auRepo').fill(`https://github.com/${REPO}`);
       await page.getByRole('button', { name: 'Check', exact: true }).click();
       await page.locator('.check-line.ok', { hasText: `${REPO} · public · 1 workflow, 1 you can start by hand` }).waitFor();
@@ -63,6 +66,7 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       await toast('Linked “CMS Automation” and imported its latest run into CMS 2.20.1 › Cycle v2.12.');
       await page.locator('.au-foot [data-action=au-link-save]').click();
       await toast('Saved “CMS Automation”.');
+      await page.locator('.nav [data-view=automation]').click(); // the tab shows now: the workbook has a suite
       await page.locator('.auto-head', { hasText: 'workflow Integration tests' }).waitFor();
       const actions = (await page.locator('.auto-head .row button').allTextContents()).map((x) => x.trim());
       assert.deepEqual(actions, ['✎ Edit', '⤒ Import Results', '▶ Run'], '▶ Run is the primary one, with no …');
@@ -93,16 +97,24 @@ test('Automation with GitHub Actions in a browser', { skip: !chromium && 'Playwr
       await page.locator('.secrets-note', { hasText: 'GitHub environment net_two' }).waitFor();
       await page.locator('#au_rn_cycle > .grow', { hasText: 'Cycle v2.12' }).waitFor();
       await page.getByRole('button', { name: 'Start Run' }).click();
-      await page.locator('h2', { hasText: /in GitHub Actions/ }).waitFor();
+      await toast('Starting in GitHub Actions');
+      // back on the suite's page: the run under In GitHub Actions, with its elapsed time, ↗ GitHub Log and Cancel Run
+      await page.locator('h2', { hasText: 'In GitHub Actions' }).waitFor();
       await page.locator('.nav [data-view=automation] .count', { hasText: '1' }).waitFor();
-      await page.getByRole('button', { name: '↗ GitHub Log' }).waitFor();
-      await page.locator('.steps-list').first().waitFor();
+      const row = page.locator('.job-line').first();
+      await row.locator('.dot.going').waitFor();
+      await row.locator('.au-elapsed').waitFor();
+      await row.getByRole('button', { name: 'Cancel Run' }).waitFor();
+      await row.locator('button:not([disabled])', { hasText: '↗ GitHub Log' }).waitFor(); // on once GitHub gave the run's address
+      assert.equal(await row.getByRole('button', { name: 'Open' }).count(), 0, 'no separate Running view');
       const sent = fake.callsTo(/dispatches$/, 'POST')[0].body;
       assert.deepEqual(sent, { ref: 'master', inputs: { environment: 'net_two', scope: 'api', headed: 'true' } });
-      // the results come in by themselves, and the run opens
-      await page.locator('h2', { hasText: 'CMS Automation · 1 failed' }).waitFor({ timeout: 15000 });
-      await toast('Imported 5 tests into CMS 2.20.1 › Cycle v2.12 from GitHub Actions.');
+      // the results come in by themselves and show in Runs
+      await toast('Imported 5 tests from CMS Automation.', 15000);
       assert.equal(await page.locator('.nav [data-view=automation] .count').count(), 0, 'nothing going any more');
+      await page.locator('h2', { hasText: 'In GitHub Actions' }).waitFor({ state: 'detached' });
+      await page.locator('[data-action=au-open]').first().click();
+      await page.locator('h2', { hasText: 'CMS Automation · 1 failed' }).waitFor();
       await page.locator('.run-actions button', { hasText: '↗ Git Report' }).waitFor();
       const order = await page.locator('.run-actions > button, .run-actions > .help-wrap > button').allTextContents();
       assert.deepEqual(order.map((x) => x.trim()), ['‹ Back', 'Change Cycle', 'Delete', '⤓ Download', '↗ Git Report', '?']);

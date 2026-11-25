@@ -212,7 +212,7 @@ class JobFile {
  *        keep(), setKeep(n), checkEvery() (minutes: 1 or 5), setCheckEvery(n), excludeEnvironments() (names
  *        the run form leaves out), setExcludeEnvironments(list), mayOpen(person, book),
  *        isOwner(person), jsonBody(req), log, pollMs (fixed ms, for tests: overrides checkEvery),
- *        findTimeoutMs (how long to look for a started run, 3 min), now() (ms) }
+ *        findTimeoutMs (how long to look for a started run, 1 min), now() (ms) }
  */
 export function createGithubRuns(ctx) {
   const { store, checkAttach, mayOpen, jsonBody } = ctx;
@@ -225,7 +225,7 @@ export function createGithubRuns(ctx) {
   const pollMs = () => ctx.pollMs || normalizeAutomationSettings({ checkEvery: ctx.checkEvery ? ctx.checkEvery() : undefined }).checkEvery * 60000;
   const FIND_MS = 10000;
   const nextDelay = () => (jobs.list.some((j) => ACTIVE.has(j.state) && !j.githubRunId) ? Math.min(pollMs(), FIND_MS) : pollMs());
-  const findTimeoutMs = ctx.findTimeoutMs || 3 * 60000;
+  const findTimeoutMs = ctx.findTimeoutMs || 60000; // then the job fails as notFound: the page says "Unable to find the GitHub job"
   const isOwner = ctx.isOwner || ((p) => !!p && p.role === 'owner');
   const keep = () => normalizeAutomationSettings({ keep: ctx.keep ? ctx.keep() : undefined }).keep;
   /** The environments the run form leaves out, lower case (the host's setting; github-pages by default). */
@@ -659,8 +659,12 @@ export function createGithubRuns(ctx) {
       const found = findRunAfterDispatch(list, { since: job.dispatchedAt, branch: job.branch, actor: job.actor, known: job.known || [], claimed });
       if (!found) {
         if (now() - job.dispatchedAt > findTimeoutMs) {
-          finish(job, 'failed', `GitHub didn't show the new run within ${Math.round(findTimeoutMs / 60000)} minutes. Look for it on the workflow's Actions page; when it's done, bring its results in with ⤒ Import Results › GitHub Run.`);
-          job.runUrl = job.runUrl || runsPage(full);
+          const within = findTimeoutMs >= 120000 ? `${Math.round(findTimeoutMs / 60000)} minutes` : 'a minute';
+          finish(job, 'failed', `Unable to find the GitHub job within ${within}. Look for it on the workflow's Actions page; when it's done, bring its results in with ⤒ Import Results › GitHub Run.`);
+          job.notFound = true;
+          // ↗ GitHub Log opens the workflow's runs, where the run may be found
+          const wfFile = String((store.suite(job.suiteId) || {}).workflowPath || '').split('/').pop();
+          job.runUrl = job.runUrl || (wfFile ? `${runsPage(full)}/workflows/${encodeURIComponent(wfFile)}` : runsPage(full));
         }
         return;
       }

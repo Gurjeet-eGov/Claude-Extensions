@@ -56,16 +56,16 @@
     setup: null,
     writes: 0,
     selfDirty: false,
-    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'start' | 'running'),
+    // Automation: the data from /api/automation, which suite and screen ('runs' | 'run' | 'import' | 'start'),
     // the open run (?run=<id> in the address) and what the run view shows; linkOpen: the Link a suite popup
     auto: {
       data: null, loading: false, error: '', suite: '', screen: PARAMS.run ? 'run' : 'runs', runId: PARAMS.run || '', editing: false, linkOpen: false,
       detail: null, detailLoading: false, filter: 'failed', q: '', sel: '', open: {}, allFiles: false, moving: false,
       file: null, busy: false, targets: {}, targetsLoading: {},
-      // GitHub Actions: the runs going (and lately finished) from /api/automation/jobs, the one the
-      // Running view shows ('running'), the Run form's branches ('start'), Link a suite's GitHub steps,
+      // GitHub Actions: the runs going (and lately finished) from /api/automation/jobs, shown on the
+      // suite's page (In GitHub Actions), the Run form's branches ('start'), Link a suite's GitHub steps,
       // and Import results › GitHub run
-      jobs: null, jobsBusy: false, jobsTimer: null, jobId: '', runForm: null, starting: false,
+      jobs: null, jobsBusy: false, jobsTimer: null, runForm: null, starting: false,
       gh: { check: null, checking: false, checkError: '', arts: null, artsFor: '', artsLoading: false, artsError: '', importing: false, imported: null },
       ghRuns: null, ghRunsFor: '', ghRunsLoading: false, setupGh: null, setupGhLoading: false
     },
@@ -2364,11 +2364,6 @@
     }
     if (A.screen === 'import' && A.data.canAct) return withRail(auRail(s.id), auImport(s));
     if (A.screen === 'start' && A.data.canAct && s.workflowId) return withRail(auRail(s.id), auStart(s));
-    if (A.screen === 'running') {
-      var job = auJob(A.jobId);
-      if (job && auJobHere(job)) return withRail(auRail(job.suiteId), auRunning(job, auSuite(job.suiteId)));
-      A.screen = 'runs';
-    }
     return withRail(auRail(s.id), auRunsList(s));
   }
 
@@ -2846,35 +2841,44 @@
     });
   }
 
-  /** Runs that finished since the last look: the Running view moves on to the results; whoever started one hears of it. */
+  /**
+   * Runs that finished since the last look: whoever started one, or has its suite open, hears of it, and the
+   * Runs table is read again (the new run shows there). One GitHub never showed: "Unable to find the GitHub job".
+   */
   function auJobsFinished(before, after) {
     var A = S.auto, was = {};
     before.forEach(function (j) { was[j.id] = j.state; });
     after.forEach(function (j) {
       if (!AU_ACTIVE[was[j.id]] || AU_ACTIVE[j.state]) return;
-      var here = S.view === 'automation' && A.screen === 'running' && A.jobId === j.id;
-      var where = j.attach.tab + ' › ' + cycleText(j.attach.cycle);
-      if (j.state === 'imported') {
-        var n = j.totals ? plural(j.totals.total, 'test') : 'the results';
-        if (here) { A.screen = 'run'; A.runId = j.importedRunId; A.detail = null; window.scrollTo(0, 0); }
-        if (here || j.by === me().name) toast('Imported ' + n + ' into ' + where + ' from GitHub Actions.' + auRemovedText(j.removed, A.data ? A.data.keep : 2));
-      } else if (!here && j.by === me().name) {
-        toast('The run of “' + j.suiteName + '” ended without results. Open it in Automation to see why.', 'bad');
+      var here = S.view === 'automation' && auJobHere(j) && A.suite === j.suiteId;
+      if (here || j.by === me().name) {
+        if (j.state === 'imported') toast('Imported ' + (j.totals ? plural(j.totals.total, 'test') : 'the results') + ' from ' + j.suiteName + '.' + auRemovedText(j.removed, A.data ? A.data.keep : 2));
+        else if (j.notFound) toast('Unable to find the GitHub job', 'bad');
+        else if (j.state !== 'cancelled') toast('The run of “' + j.suiteName + '” ended without results. Automation says why.', 'bad');
       }
       if (S.view === 'automation') auLoad();
     });
   }
 
-  /** On a suite's page: its runs going in GitHub Actions, and finished ones that brought nothing in. */
+  /**
+   * On a suite's page: its runs going in GitHub Actions, each with the time so far, ↗ GitHub Log (greyed out
+   * until GitHub has given the run's address) and Cancel Run; and finished ones that brought nothing in.
+   */
   function auJobsCard(s) {
     var list = (S.auto.jobs || []).filter(function (j) { return j.suiteId === s.id && j.state !== 'imported' && auJobHere(j); });
     if (!list.length) return '';
+    var can = S.auto.data && S.auto.data.canAct;
     return '<section class="card card-pad stack"><h2>In GitHub Actions</h2>' + list.map(function (j) {
       var active = AU_ACTIVE[j.state];
-      return '<div class="item row job-line">' + auJobDot(j) + '<span class="grow"><b>' + esc(auJobTitle(j)) + '</b><div class="small muted">' + esc(auJobMeta(j)) + '</div>' +
+      var since = Date.parse(j.startedAt) || j.dispatchedAt;
+      var log = '<button class="small-btn" data-action="au-gh-log" data-id="' + esc(j.id) + '"' + (j.runUrl ? '' : ' disabled') + '>↗ GitHub Log</button>';
+      return '<div class="item row job-line">' + auJobDot(j) + '<span class="grow"><b>' + esc(auJobTitle(j)) + '</b><div class="small muted">' + esc(auJobMeta(j)) +
+        (active ? ' · Elapsed time <b class="au-elapsed" data-since="' + since + '">' + auClock(Date.now() - since) + '</b>' : '') + '</div>' +
+        (active && j.lastError ? '<div class="small muted">' + esc(j.lastError) + ' Trying again.</div>' : '') +
         (!active && j.message ? '<div class="small bad-text">' + esc(j.message) + '</div>' : '') + '</span>' +
-        (active ? '<button class="small-btn" data-action="au-job-open" data-id="' + esc(j.id) + '">Open</button>'
-          : (j.runUrl ? '<button class="small-btn" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '') + '<button class="small-btn" data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button>') + '</div>';
+        '<span class="job-actions">' + (active
+          ? log + (can && j.state !== 'importing' ? '<button class="small-btn danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling…' : 'Cancel Run') + '</button>' : '')
+          : (j.runUrl ? log : '') + '<button class="small-btn" data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button>') + '</span></div>';
     }).join('') + '</section>';
   }
 
@@ -2903,39 +2907,6 @@
     var t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
     return (h ? h + ':' + pad2(m) : pad2(m)) + ':' + pad2(sec);
   }
-  function auStepDot(x) {
-    if (x.status === 'completed') return TR.dot(x.conclusion === 'success' ? 'pass' : x.conclusion === 'failure' || x.conclusion === 'timed_out' ? 'fail' : 'other');
-    if (x.status === 'in_progress') return AU_GOING + '<span class="sr">Going.</span>';
-    return TR.dot('none');
-  }
-
-  /** Screen 3: a run going in GitHub Actions (and how it ended, when it brought nothing in). */
-  function auRunning(j, s) {
-    var A = S.auto, active = AU_ACTIVE[j.state];
-    var can = A.data.canAct;
-    var since = Date.parse(j.startedAt) || j.dispatchedAt;
-    var head = s ? auHead(s, '<button class="ghost" data-action="au-back">Back</button>' + (j.runUrl ? '<button class="ghost" data-action="au-gh-log" data-id="' + esc(j.id) + '">↗ GitHub Log</button>' : '')) : '';
-    var h = '<section class="card card-pad stack"><div class="auto-head"><div class="grow"><h2 class="row">' + auJobDot(j) + ' ' + esc(auJobTitle(j)) + '</h2>' +
-      '<p class="small muted">' + esc(auJobMeta(j)) + (active ? ' · <b id="auElapsed" data-since="' + since + '">' + auClock(Date.now() - since) + '</b> so far' : '') + '</p>' +
-      '<span class="small">' + esc(attachText(j.attach)) + '</span></div>' +
-      (active && can && j.state !== 'importing' ? '<div class="row"><button class="danger-outline" data-action="au-job-cancel" data-id="' + esc(j.id) + '"' + (j.cancelWanted ? ' disabled' : '') + '>' + (j.cancelWanted ? 'Cancelling' : 'Cancel Run') + '</button></div>' : '') + '</div>';
-    if (j.lastError && active) h += '<div class="note warn">' + esc(j.lastError) + ' Trying again.</div>';
-    if (!active && j.message) h += '<div class="banner ' + (j.state === 'cancelled' ? 'warn' : 'bad') + '"><span>' + esc(j.message) + '</span></div>';
-    if (j.jobs && j.jobs.length) {
-      h += j.jobs.map(function (x) {
-        return '<div class="stack-s"><span class="small muted">Job <b>' + esc(x.name) + '</b>' + (x.status === 'queued' ? ', waiting for a GitHub machine' : '') + '</span><div class="steps-list">' +
-          (x.steps.length ? x.steps.map(function (st) { return '<div>' + auStepDot(st) + '<span' + (st.status === 'queued' || st.status === 'pending' ? ' class="muted"' : '') + '>' + esc(st.name) + '</span></div>'; }).join('') : '<div class="small muted">No steps yet.</div>') +
-          '</div></div>';
-      }).join('');
-    } else if (active) {
-      h += '<p class="small muted">' + (j.githubRunId ? 'Waiting for a GitHub machine to pick the run up' : 'Asking GitHub for the new run') + '</p>';
-    }
-    var every = (S.auto.data && S.auto.data.checkEvery) || 5;
-    h += active ? '<p class="small muted">Test Run checks on the run every ' + (every === 1 ? 'minute' : every + ' minutes') + ' (Setup › Automation), and imports the results by itself when it ends. Leaving this page doesn\'t stop the run; the live log is on GitHub.</p>'
-      : '<div class="row" style="justify-content:flex-end"><button class="ghost" data-action="au-back">Back</button><button data-action="au-job-dismiss" data-id="' + esc(j.id) + '">Dismiss</button></div>';
-    return '<div class="stack">' + head + h + '</section></div>';
-  }
-
   /** The Run form's branches (and the repository's environments), read once per form; then the chosen branch's fields. */
   function auRunFormLoad(s) {
     var A = S.auto;
@@ -4849,7 +4820,8 @@
         A.starting = false;
         if (!r.ok) { toast(r.error, 'bad'); render(); return; }
         A.jobs = (A.jobs || []).filter(function (j) { return j.id !== r.job.id; }).concat([r.job]);
-        A.screen = 'running'; A.jobId = r.job.id; A.runForm = null;
+        A.screen = 'runs'; A.runForm = null; // the run shows under In GitHub Actions
+        toast('Starting in GitHub Actions');
         clearForm('au:rn:'); clearForm('au:in:');
         clearTimeout(A.jobsTimer);
         A.jobsTimer = setTimeout(auJobsLoad, 2000);
@@ -4867,9 +4839,8 @@
       var name = el.getAttribute('data-value');
       auExcludeSave(((S.auto.data && S.auto.data.excludeEnvironments) || []).filter(function (x) { return x !== name; }));
     },
-    'au-job-open': function (el) { var A = S.auto; A.screen = 'running'; A.jobId = el.getAttribute('data-id'); render(); window.scrollTo(0, 0); },
     'au-gh-log': function (el) {
-      var j = auJob(el.getAttribute('data-id') || S.auto.jobId);
+      var j = auJob(el.getAttribute('data-id'));
       if (j && j.runUrl) window.open(j.runUrl, '_blank', 'noopener');
     },
     'au-job-cancel': function (el) {
@@ -4896,7 +4867,6 @@
         if (!r.ok) { toast(r.error, 'bad'); return; }
         var A = S.auto;
         A.jobs = (A.jobs || []).filter(function (j) { return j.id !== id; });
-        if (A.jobId === id) { A.jobId = ''; A.screen = 'runs'; }
         render();
       });
     },
@@ -4949,7 +4919,7 @@
     },
     'au-back': function () {
       var A = S.auto;
-      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false; A.jobId = ''; A.runForm = null;
+      A.screen = 'runs'; A.runId = ''; A.file = null; A.moving = false; A.editing = false; A.runForm = null;
       A.gh = auGhFresh();
       clearForm('au:l:'); clearForm('au:mv:'); clearForm('au:rn:'); clearForm('au:in:'); clearForm('au:lk:'); clearForm('au:gh:');
       render();
@@ -5099,9 +5069,9 @@
     }
   };
 
-  setInterval(function () {
-    var el = document.getElementById('auElapsed');
-    if (el) el.textContent = auClock(Date.now() - Number(el.getAttribute('data-since')));
+  setInterval(function () { // Automation › In GitHub Actions: each run's elapsed time
+    var els = document.querySelectorAll('.au-elapsed');
+    for (var i = 0; i < els.length; i++) els[i].textContent = auClock(Date.now() - Number(els[i].getAttribute('data-since')));
   }, 1000);
 
   function refreshBoot(goRun, cycle) {
