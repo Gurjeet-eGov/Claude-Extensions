@@ -178,6 +178,8 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
 - **Banner** (`.banner`): a card with a 4px left border, accent by default, `.warn` (other) or `.bad` (fail). For a message that stays on screen: "View only.", "This workbook is open in Excel.", "This cannot be undone."
 - **Note** (`.note`, `.info`, `.bad`): a small tinted line inside a form or card.
 - **A card's title with its action** (`.card-title-row`): the title on the left, its one action at the right end of the same row: **+ Add** on Setup › Automation › Linked suites (there whether or not anything is in the list yet), the **?** on Setup › Publish.
+- **A row's own actions** in a table (`.row-actions`, Linked suites: **✎ Edit**, then **De-link**) sit side by side in the last column, as small buttons. The row's name is plain text, not a link.
+- **A step that has to wait** for something else (a tab's test cycles before the workbook is saved) says so in a `.note.info` as wide as its text, never in `--faint` text.
 
 ### Tables
 
@@ -206,11 +208,12 @@ Bottom right, stays until closed: used when something finished in the background
 
 ### Forms that open in a page
 
-Add issue, Add finding, New test case, Create test case, Already covered, + Add and Edit open a form in the page (a card, or a box under a case). One exception: **Link a suite** (Setup › Automation's + Add, a linked suite's name there, and ✎ Edit on Automation) opens in a popup, so the page it was opened from stays behind it.
+Add issue, Add finding, New test case, Create test case, Already covered, + Add and Edit open a form in the page (a card, or a box under a case). One exception: **Link a suite** (Setup › Automation's + Add, ✎ Edit on a linked suite's row there, and ✎ Edit on Automation) opens in a popup, so the page it was opened from stays behind it.
 - **One at a time.** Opening one closes any other, and what was typed in it is dropped.
 - **Leaving the page closes it**, dropping what was typed. Only a comment or link typed on a case is kept.
 - **Width:** a short form (one or two fields, such as New issue) keeps its fields to about 680px instead of the card's full width; the card keeps its width.
 - **Buttons** at the bottom right: Cancel, then Save, the same size.
+- **A long setup page** (Setup › Workbook, one card per tab of the workbook) keeps its buttons in a bar that stays at the bottom of the window (`.setup-bar`): all at the right: a muted line when there is something to say ("Not saved yet. Save to start test cycles."), then Delete, Cancel and Save. At phone width the line goes above the buttons.
 
 ### Popups
 
