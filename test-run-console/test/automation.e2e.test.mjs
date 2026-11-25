@@ -49,11 +49,13 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
   const toast = (text) => page.locator('.toast', { hasText: text }).first().waitFor();
 
   try {
-    await t.test('no suites yet: + Link Suite, then Save', async () => {
-      await page.goto(`${base}?view=automation`);
-      await page.locator('.empty h3', { hasText: 'No automated suites yet' }).waitFor();
-      await page.locator('.empty [data-action=au-link]').click();
-      await page.locator('h2', { hasText: 'Link a suite' }).waitFor();
+    await t.test('no suites yet: Setup › Automation › + Add, then Save', async () => {
+      // no suite yet: no Automation tab; suites are linked in a popup from Setup › Automation › Linked suites
+      await page.goto(`${base}?view=setup`);
+      assert.equal(await page.locator('.nav [data-view=automation]').count(), 0, 'no Automation tab without a suite');
+      await page.locator('[data-part=automation]').click();
+      await page.locator('[data-action=au-link]').click();
+      await page.locator('.au-link-pop h2', { hasText: 'Link a suite' }).waitFor();
       await page.locator('#auRepo').fill('https://github.com/Gurjeet-eGov/CMS-Automation');
       await page.locator('#auName').fill('CMS Automation');
       await page.locator('#auPattern').fill('CMS/(\\d+');
@@ -62,6 +64,8 @@ test('Automation end to end in a browser', { skip: !chromium && 'Playwright not 
       await page.locator('#auPattern').fill('CMS/\\d+');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await toast('Linked “CMS Automation”.');
+      await page.locator('.au-link-pop').waitFor({ state: 'detached' });
+      await page.locator('.nav [data-view=automation]').click(); // the tab shows now: the workbook has a suite
       await page.locator('.subtab[aria-selected=true]', { hasText: 'CMS Automation' }).waitFor();
       await page.locator('.auto-head a', { hasText: 'Gurjeet-eGov/CMS-Automation ↗' }).waitFor();
       await page.locator('td.no-data', { hasText: 'No runs yet' }).waitFor();

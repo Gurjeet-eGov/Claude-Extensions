@@ -561,7 +561,9 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       // Publish from Setup → Publish
       await page.locator('.nav [data-view=setup]').click();
       await page.locator('[data-action=setup-part][data-part=publish]').click();
-      await page.locator('#publish .note.warn', { hasText: 'Published workbooks are public' }).waitFor();
+      // who can read it: in the card's ?, not a warning note
+      await page.locator('#publish .help-btn[aria-label="Who can read what is published"]').waitFor();
+      assert.equal(await page.locator('#publishTip .tip-title').textContent(), 'Published workbooks are public');
       // Choices apply once saved; a change to the workbooks asks first
       const save = page.locator('[data-action=publish-save]');
       assert.equal(await save.isDisabled(), true, 'nothing changed yet');
@@ -582,11 +584,10 @@ test('console end to end in a browser', { skip: !chromium && 'Playwright not fou
       await page.locator('.toast', { hasText: 'Published to GitHub' }).waitFor();
       assert.equal(await save.isDisabled(), true, 'saved');
       assert.ok(gh.readRepo('test-run-data').files['reports/index.json'], 'the reports are on the data branch');
-      // Space on GitHub Pages, measured from what was published
-      await page.locator('#publish .space-meter .space-bar[role=img]').waitFor();
-      await page.locator('#publish .space-meter', { hasText: /\d+ (KB|MB) of 1 GB · workbooks \d+ (KB|MB) · reports \d+ (KB|MB)/ }).waitFor();
-      assert.equal(await page.locator('#publish .space-meter .note.warn').count(), 0, 'far below the limit');
-      await page.locator('#publish', { hasText: 'one commit, replaced at each publish' }).waitFor();
+      // a quieter card: the last publish, no space meter or branch details
+      await page.locator('#publish .publish-row', { hasText: /Last published / }).waitFor();
+      assert.equal(await page.locator('#publish .space-meter').count(), 0, 'no space meter');
+      assert.equal(await page.locator('#publish', { hasText: 'one commit, replaced at each publish' }).count(), 0, 'no branch details');
       // The hosted page (another origin), serving the published reports like GitHub Pages
       const ui = new URL('../ui/', import.meta.url).pathname;
       const reportsDir = join(sheets, '.testrun', 'published');
