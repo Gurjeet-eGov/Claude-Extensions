@@ -7,6 +7,9 @@ import { currentIteration } from '../lib/iteration.js';
 import { costOfUsageRecord, formatUsd, PRICING_SOURCE, PRICING_AS_OF } from '../lib/pricing.js';
 import { assigneeOptionsHtml } from '../lib/people.js';
 import { testRunStatus, testRunBase, isLocalBase, parseInvite, addressFromGist, whereLabel } from '../lib/testrun.js';
+import { enhanceAll } from '../lib/dropdown.js';
+
+enhanceAll(); // every <select> on the page drawn as DESIGN.md's dropdown (5 rows, search when long)
 
 const $ = (id) => document.getElementById(id);
 let settings = await getSettings();

@@ -155,6 +155,12 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
 - The list opens over what's below it, tags included. It is never cut off by the card or the scrolling column around it. A click outside or Escape closes it; Enter in the search box takes the first match.
 - **Disabled, or loading its options** (`button.multi-btn[disabled]`): greyed out, with `--surface-2` behind, a `--border` edge and `--faint` text ("Loading…" while its options come from GitHub). It can't be opened until they are there.
 - Not for text that is typed freely; that is an input.
+- **In Bug Reporter** (`lib/dropdown.js`, styles in `styles/common.css`): every `<select>` on its pages is drawn this way. The select stays in the page, hidden, holding the value, so page code keeps using `select.value` and its `change` event.
+  - Every list shows **5 rows** at a time and scrolls, and each option is one line, cut with … (the whole text is in its title).
+  - An `<optgroup>` label shows as a micro heading above its options (Assignee: *On this board*, *Everyone who can be assigned*).
+  - An option can carry muted text at the row's right end (`data-side`), such as a test case's status.
+  - A small dropdown in a line of text (Time, Model, Effort, Detail) is as wide as its longest option, and its list may be a little wider than the field so nothing wraps.
+  - **Test case** (report page, Test Run box) is a dropdown with a search box: "None (add it as a finding)" first, then one row per case (`SEC/001 · Verify if…`, its status at the right).
 
 ### Chips, tabs and toggles
 

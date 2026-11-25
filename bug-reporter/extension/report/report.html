@@ -255,8 +255,7 @@
               </div>
               <label class="field">
                 <span>Test case <span class="muted">(optional)</span></span>
-                <input id="trCase" type="text" list="trCases" autocomplete="off" spellcheck="false" placeholder="Type an ID or a few words" />
-                <datalist id="trCases"></datalist>
+                <select id="trCase" data-search="always" data-search-placeholder="Search by ID or words"><option value="">None (add it as a finding)</option></select>
               </label>
             </div>
             <span id="trHint" class="muted small"></span>
