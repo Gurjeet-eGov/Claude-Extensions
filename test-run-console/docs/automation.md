@@ -152,7 +152,22 @@ gotestsum --junitfile results/junit.xml ./...
 
 **Anything else**: if it writes JUnit XML (most CI tools do) or CTRF JSON, it works. To check a file before linking, use **⤒ Import Results** on any suite: it reads the file and shows the counts before keeping anything.
 
-**Case IDs.** To link automated tests to manual cases (for the Auto ✓ / ✗ marks), put the manual case's ID in the test's title or tags, like `@CMS/02`, and give the suite a case-ID pattern (`CMS/\d+`) when linking.
+**Case IDs.** To link automated tests to manual cases, put the manual case's ID in the test's title or tags, like `@CMS/02`, and give the suite a case-ID pattern (`CMS/\d+`) when linking.
+
+- **How they match:** the pattern finds the IDs in each test's title and tags. A found ID matches a workbook ID when both are the same after trimming spaces, ignoring upper and lower case. Nothing else is evened out, so write the ID in the test exactly as the workbook has it: `SEC-001` doesn't match `SEC/001`.
+- **Several tests on one case:** the worst result decides. Fail beats pass, and pass beats skip.
+- **Several runs kept for a cycle:** the newest run that names the case decides.
+
+**What an import writes into the manual suite.** Each live case the run names, in the workbook › test suite › cycle the run is attached to, gets:
+- **The cycle's Automation column.** The column is "Automation <cycle>" ("Automation Comments" for a cycle without a name), added after the cycle's Comment column the first time. The cell holds the test files, failing ones first with their first error line, and a skip's reason when the report gives one, cut at 250 characters. Examples: `create.spec.ts: expected PENDINGATLME`, `menu.spec.ts`. The manual Comment column is never touched.
+- **Status, Tested by and Tested on**, only if nobody has marked the case yet:
+  - Status is the column's first pass or fail value, or an "NA (Skipped)"-like value for a skip;
+  - Tested by is who imported the run, or started it with ▶ Run;
+  - Tested on is the run's date.
+
+  A case a tester already marked keeps its result. A green **Auto ✓** beside a manual Fail shows the difference, and hovering the Auto tag shows the Automation text.
+- **A newer run** updates the statuses automation set, unless a tester has changed them since, and replaces the Automation cell.
+- **Deleting a run** takes back what it wrote, where nothing changed since. Moving it to another cycle does the same, then writes into the new cycle. Runs dropped by the keep limit leave their writes.
 
 ## Report link (optional)
 

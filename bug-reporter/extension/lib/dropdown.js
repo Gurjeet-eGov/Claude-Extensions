@@ -25,7 +25,8 @@ document.addEventListener('click', (e) => {
  * On the <select>: data-search="always" (a search box however short the list), data-search-placeholder,
  * data-rows (rows shown, default 5). On an <option>: data-hint (muted text after its label) and
  * data-side (muted text at the row's right end, e.g. a test case's status). An option with value ""
- * is the placeholder: the field shows its text greyed out. <optgroup> labels show as headings.
+ * is the placeholder: the field shows its text greyed out (with the hidden attribute it isn't listed,
+ * so the field reads like "Find test case"). <optgroup> labels show as headings.
  */
 export function enhanceSelect(sel) {
   if (!sel || sel.dataset.dd) return;
@@ -49,7 +50,7 @@ export function enhanceSelect(sel) {
   let q = '';
 
   /** The options in order, each with the heading of its <optgroup> (if any). */
-  const opts = () => [...sel.options].map((o) => ({
+  const opts = () => [...sel.options].filter((o) => !o.hidden).map((o) => ({
     value: o.value,
     label: o.textContent.trim(),
     hint: o.dataset.hint || '',
@@ -129,6 +130,7 @@ export function enhanceSelect(sel) {
       if (it && !it.disabled) pick(it.dataset.value);
     });
     pop.addEventListener('keydown', (e) => {
+      if (!pop) return; // Enter in the search box picked an option and closed the list
       const items = [...pop.querySelectorAll('.dd-item:not([disabled])')];
       const i = items.indexOf(document.activeElement);
       if (i < 0) return;

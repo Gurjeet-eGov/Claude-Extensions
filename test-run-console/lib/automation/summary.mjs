@@ -42,6 +42,45 @@ export function caseResults(run, only) {
   return out;
 }
 
+/**
+ * What a run writes into the manual suite, one item per manual case ID its tests name:
+ * { id, result: 'pass'|'fail'|'other', text }. result as caseResults gives it; text is the test files
+ * ("auth.spec.ts"), failing ones first with their first error line ("auth.spec.ts: expected …"),
+ * a skip with its reason when the report gives one, comma-separated and cut at 250 characters.
+ * A test with no file goes by its title.
+ */
+export const AUTO_TEXT_MAX = 250;
+export function automatedItems(run) {
+  const byCase = new Map();
+  for (const t of run.tests || []) {
+    for (const id of t.caseIds || []) {
+      const k = caseKey(id);
+      if (!k) continue;
+      if (!byCase.has(k)) byCase.set(k, []);
+      byCase.get(k).push(t);
+    }
+  }
+  const nameOf = (t) => String(t.file || '').split(/[\\/]/).pop().trim() || clip(t.title, 120) || 'test';
+  const firstLine = (s) => String(s || '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
+  const out = [];
+  for (const [id, tests] of byCase) {
+    let result = '';
+    for (const t of tests) if ((RANK[t.status] || 0) > (RANK[result] || 0)) result = t.status;
+    const parts = [];
+    for (const st of ['fail', 'pass', 'other']) {
+      for (const t of tests.filter((x) => x.status === st || (st === 'other' && x.status !== 'fail' && x.status !== 'pass'))) {
+        const msg = st === 'pass' ? '' : firstLine(t.message);
+        const part = msg ? `${nameOf(t)}: ${msg}` : nameOf(t);
+        if (!parts.includes(part)) parts.push(part);
+      }
+    }
+    let text = parts.join(', ');
+    if (text.length > AUTO_TEXT_MAX) text = `${text.slice(0, AUTO_TEXT_MAX - 1).trimEnd()}…`;
+    out.push({ id, result: result || 'other', text });
+  }
+  return out;
+}
+
 /** Each case's result in the newest run that has it. maps: caseResults of each run, newest first. */
 export function latestCases(maps) {
   const out = {};

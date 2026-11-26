@@ -27,9 +27,10 @@ export function fmtTime(sec) {
   return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
 }
 
-/** One line for the limits: "Video 1080p · 30 fps · up to about 1 min" */
+/** One line for the limits: "Video limit: 01m 07s", the longest recording that fits (whole seconds, never rounded up). */
 export function limitsLine(l) {
-  return `Video ${l.quality} · ${l.fps} fps · up to ${fmtClip(l.maxSeconds)}`;
+  const sec = Math.max(0, Math.floor(Number(l && l.maxSeconds) || 0));
+  return `Video limit: ${String(Math.floor(sec / 60)).padStart(2, '0')}m ${String(sec % 60).padStart(2, '0')}s`;
 }
 
 /**

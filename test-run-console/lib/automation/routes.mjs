@@ -18,7 +18,7 @@
 import ExcelJS from 'exceljs';
 import { AutomationStore, normalizeAutomationSettings, suiteInBook } from './store.mjs';
 import { canSeeSuite, canAct } from './access.mjs';
-import { cycleRoute } from './summary.mjs';
+import { cycleRoute, automatedItems } from './summary.mjs';
 import { parseResults, buildRun, filesFromMultipart, previousRun, compareRuns, groupCauses, historyOf, lineOf, byFile, passRate, FORMAT_LABEL, RUN_ID } from './results.mjs';
 import { createGithubRuns } from './github-runs.mjs';
 
@@ -177,8 +177,38 @@ export function createAutomation(ctx) {
     };
   }
 
+  /**
+   * A kept run's results in its manual suite: each case its tests name gets the text in the cycle's
+   * Automation column, and its Status, Tested by (by: who imported or started it) and Tested on (the
+   * run's date) when nobody has marked it. Resolves { updated, marked, column, addedColumn }, or
+   * { error } when the workbook couldn't be written (the run is kept either way).
+   */
+  async function writeAutomated(run, by) {
+    const items = automatedItems(run);
+    if (!items.length) return { updated: 0, marked: 0, column: '', addedColumn: false };
+    const at = localStamp(run.startedAt) || localStamp(run.importedAt) || localStamp(new Date().toISOString());
+    try {
+      const r = await callApi('api_applyAutomated', [{ tab: run.attach.tab, cycle: run.attach.cycle, runId: run.id, by: by || run.by || '', at, items }], run.attach.book);
+      if (r && r.ok) return { updated: r.updated, marked: r.marked, column: r.column, addedColumn: r.addedColumn };
+      return { error: (r && r.error) || 'The workbook could not be updated.' };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  /** Take back what a run wrote into its cycle (deleted, or moved elsewhere). Resolves the number of cases cleared. */
+  async function clearAutomated(m) {
+    if (!m || !m.attach || !lib.list().some((b) => b.name === m.attach.book)) return 0;
+    try {
+      const r = await callApi('api_clearAutomated', [{ tab: m.attach.tab, cycle: m.attach.cycle, runId: m.id }], m.attach.book);
+      return r && r.ok ? r.cleared : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   // GitHub Actions: link a suite to its workflow, start and follow runs, import them
-  const github = createGithubRuns({ ...ctx, store, checkAttach, checkBooks, keep, jsonBody });
+  const github = createGithubRuns({ ...ctx, store, checkAttach, checkBooks, keep, jsonBody, writeAutomated });
 
   // Suites linked before suites had workbooks: they belong to the workbooks their runs (kept, or
   // started from Test Run) are attached to. One with no run anywhere stays in every workbook until changed.
@@ -200,7 +230,9 @@ export function createAutomation(ctx) {
       const body = await jsonBody(req);
       const r = store.removeSuite(String(body.id || ''));
       if (!r) return fail('GONE', 'That suite is not linked any more.');
-      return okJson({ removed: r.suite, runs: r.runs.length });
+      let cleared = 0;
+      for (const m of r.runs) cleared += await clearAutomated(m);
+      return okJson({ removed: r.suite, runs: r.runs.length, cleared });
     }
     if (!canAct(person)) return noAct(person);
     if (path === '/api/automation/suites') {
@@ -224,20 +256,30 @@ export function createAutomation(ctx) {
       const run = buildRun(parsed, { suite, attach: at.attach, source: { kind: 'upload', fileName }, branch: q.branch, env: q.env, by: person.name });
       const { meta, removed } = store.add(run, keep());
       store.noteFormat(suite.id, parsed.format);
-      return okJson({ run: withRate(meta), removed, kept: store.group(meta).map(withRate), summary });
+      const marks = await writeAutomated(run, person.name);
+      return okJson({ run: withRate(meta), removed, kept: store.group(meta).map(withRate), summary, marks });
     }
     const body = await jsonBody(req);
     const m = RUN_ID.test(String(body.id || '')) ? store.meta(String(body.id)) : null;
     if (!m || !seesRun(person, m)) return gone();
     if (path === '/api/automation/delete') {
       store.remove(m.id);
-      return okJson({ removed: m, kept: store.group(m).map(withRate) });
+      const cleared = await clearAutomated(m);
+      return okJson({ removed: m, kept: store.group(m).map(withRate), cleared });
     }
     if (path === '/api/automation/reattach') {
       const at = await checkAttach(body, person, store.suite(m.suiteId));
       if (!at.ok) return fail(at.code, at.error);
+      const same = m.attach.book === at.attach.book && m.attach.tab === at.attach.tab && m.attach.cycle === at.attach.cycle;
       const { meta, removed } = store.reattach(m.id, at.attach, keep());
-      return okJson({ run: withRate(meta), removed, kept: store.group(meta).map(withRate) });
+      // moved: what it wrote in the old cycle is taken back, and the new cycle is filled in
+      let marks = null;
+      if (!same) {
+        await clearAutomated(m);
+        const run = store.run(meta.id);
+        if (run) marks = await writeAutomated(run, run.by);
+      }
+      return okJson({ run: withRate(meta), removed, kept: store.group(meta).map(withRate), marks });
     }
     return null;
   }

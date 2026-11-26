@@ -161,6 +161,8 @@ The model is **Run › Test Type**; `dropdown()` in `client.js` draws every one.
   - An option can carry muted text at the row's right end (`data-side`), such as a test case's status.
   - A small dropdown in a line of text (Time, Model, Effort, Detail) is as wide as its longest option, and its list may be a little wider than the field so nothing wraps.
   - **Test case** (report page, Test Run box) is a dropdown with a search box: "None (add it as a finding)" first, then one row per case (`SEC/001 · Verify if…`, its status at the right).
+  - A placeholder `<option value="" hidden>` isn't listed: the field just reads it, greyed out.
+- **In Test Run Extension** (a copy of the same `lib/dropdown.js`, its rules in `popup/popup.css`; a change goes into both copies): **Find test case** under the case. The field always reads "Find test case"; its list has a search box ("Type an ID or words") and one row per case (`SEC/001 · Verify if…`, its status or "not run" at the right). Picking one opens that case. The popup isn't redrawn while the list is open.
 
 ### Chips, tabs and toggles
 
@@ -238,6 +240,7 @@ For reference you glance at, such as the keyboard shortcuts behind a **?**. Not 
 - **Markup:** the button has `aria-describedby` pointing at the tooltip, which has `role="tooltip"`; `aria-expanded` says whether it's pinned. Code: `helpButton()` in `client.js`, and the `.help-wrap` and `.tip` rules in `styles.css` (Bug Reporter has the same rules in `styles/common.css`).
 - **Other reference text** (Automation's Git report, Setup › Publish's "Published workbooks are public"): `helpButton({ id, label, title, html })` draws the same ? with that text in place of the shortcuts; one per screen.
 - **Info** (`infoTip()` in `client.js`, `.info-wrap`, `.info-btn`): a setting's explanation, instead of a line of muted text beside its field. A 16px circle right after the setting's name, 1px `--accent` border, a bold 10px `--accent` **i**; hover fills `--accent-weak`. Its tooltip opens on hover and keyboard focus only (no pinning), left-aligned under the i, 300px wide, text only. Several can share a screen (Setup › Automation: Runs kept, Check running runs every, Exclude environments).
+- **The Auto tag** on a case (Run, `autoBadge()` in `client.js`, `.auto-wrap`): the tag itself is focusable, and its tooltip, on hover and keyboard focus only, shows what the cycle's Automation column holds for the case, read only: a `--muted` title ("Automated test failed"), then the text. It sits at the row's right end, so the tooltip is right-aligned under it, 320px wide.
 
 ### Menus
 

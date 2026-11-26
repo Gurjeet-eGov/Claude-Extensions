@@ -63,6 +63,9 @@ var TRCore = (function () {
   // after a plain space must contain a digit, so "Status of fix" is not a cycle.
   var STATUS_RE = /^(?:test )?(?:execution )?(?:status|result)s?(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(\S*\d.*))?$/i;
   var COMMENT_RE = /^(?:comments?|notes?|remarks?)(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(\S*\d.*))?$/i;
+  // What an imported automated run wrote for a cycle: "Automation v2.12", "Automation / v2.12",
+  // or "Automation Comments" for a cycle without a name. Paired only on a cycle's own name.
+  var AUTO_RE = /^automation(?:\s+comments?)?(?:\s*[\/|:\-\u2013]\s*(.+)|\s+(.+))?$/i;
 
   /** A header cell on one line: line breaks and repeated spaces become one space. */
   function oneLineHeader(s) {
@@ -85,22 +88,36 @@ var TRCore = (function () {
   function detectCycles(headers) {
     var statuses = [];
     var comments = [];
+    var autos = [];
     for (var i = 0; i < headers.length; i++) {
       var raw = oneLineHeader(headers[i]);
       if (!raw) continue;
       var m = raw.match(STATUS_RE);
       if (m) { statuses.push({ label: (m[1] || m[2] || '').trim(), status: i }); continue; }
       var c = raw.match(COMMENT_RE);
-      if (c) comments.push({ label: (c[1] || c[2] || '').trim(), col: i, used: false });
+      if (c) { comments.push({ label: (c[1] || c[2] || '').trim(), col: i, used: false }); continue; }
+      var a = raw.match(AUTO_RE);
+      if (a) autos.push({ label: (a[1] || a[2] || '').trim(), col: i, used: false });
     }
-    return statuses.map(function (s) {
-      var pair = null;
-      for (var j = 0; j < comments.length; j++) {
-        if (!comments[j].used && normLabel(comments[j].label) === normLabel(s.label)) { pair = comments[j]; break; }
+    var pairOf = function (list, label) {
+      for (var j = 0; j < list.length; j++) {
+        if (!list[j].used && normLabel(list[j].label) === normLabel(label)) { list[j].used = true; return list[j]; }
       }
-      if (pair) pair.used = true;
-      return { label: s.label, status: s.status, comment: pair ? pair.col : -1 };
+      return null;
+    };
+    return statuses.map(function (s) {
+      var pair = pairOf(comments, s.label);
+      var auto = pairOf(autos, s.label);
+      var out = { label: s.label, status: s.status, comment: pair ? pair.col : -1 };
+      if (auto) out.auto = auto.col; // only a cycle that has one: elsewhere c.auto >= 0 is false
+      return out;
     });
+  }
+
+  /** The header of a cycle's Automation column: "Automation v2.12", or "Automation Comments" for a cycle without a name. */
+  function autoHeader(label) {
+    var l = String(label == null ? '' : label).trim();
+    return l ? 'Automation ' + l : 'Automation Comments';
   }
 
   /**
@@ -111,7 +128,7 @@ var TRCore = (function () {
     var norm = headers.map(normalizeHeader);
     var cycles = detectCycles(headers);
     var taken = {};
-    cycles.forEach(function (c) { taken[c.status] = true; if (c.comment >= 0) taken[c.comment] = true; });
+    cycles.forEach(function (c) { taken[c.status] = true; if (c.comment >= 0) taken[c.comment] = true; if (c.auto >= 0) taken[c.auto] = true; });
     var fields = {};
     FIELDS.forEach(function (f) {
       fields[f] = -1;
@@ -355,6 +372,7 @@ var TRCore = (function () {
         testedOn: cell(row, fields.testedOn).trim(),
         statuses: cycles.map(function (cy) { return cell(row, cy.status).trim(); }),
         comments: cycles.map(function (cy) { return cell(row, cy.comment); }),
+        autoComments: cycles.map(function (cy) { return cy.auto >= 0 ? cell(row, cy.auto) : ''; }),
         extras: []
       };
       extras.forEach(function (i) {
@@ -900,6 +918,7 @@ var TRCore = (function () {
     activeCases: activeCases,
     normalizeHeader: normalizeHeader,
     detectCycles: detectCycles,
+    autoHeader: autoHeader,
     detectColumns: detectColumns,
     detectHeaderRow: detectHeaderRow,
     resolveColumns: resolveColumns,

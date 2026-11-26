@@ -24,7 +24,7 @@ The extension has a fixed ID (from the `key` in `manifest.json`), wherever the f
 ## Use it
 
 1. **Sign in:** click the button and paste the access link your test lead sent you (the host can paste `http://127.0.0.1:5178`, or their admin link). Nothing else shows until you're signed in. A View only link shows a link to the Summary instead.
-2. **Choose Workbook/Suite:** opens Test Run. Pick the workbook, test suite and cycle there, and click a case. The extension shows the same, and follows as you move. **‹ ›** and **Find a case by ID** move within the suite. Closed and opened again, it carries on where it was (after marking, the next case), unless you picked another case in Test Run meanwhile.
+2. **Choose Workbook/Suite:** opens Test Run. Pick the workbook, test suite and cycle there, and click a case. The extension shows the same, and follows as you move. **‹ ›** and the **Find test case** dropdown (type an ID or words) move within the suite. Closed and opened again, it carries on where it was (after marking, the next case), unless you picked another case in Test Run meanwhile.
 3. **Evidence (optional the first time):**
    - **Screenshot:** the page you are on, as a PNG that fits 1920×1080.
    - **Record:** a small Recorder window opens. **Choose what to record** (Chrome asks for a screen, window or tab, and whether to share audio). The window then minimises itself, and in the popup **Pause** (then **Resume**) and **Stop** take the Record button's place. Stop attaches the recording. It stops by itself just before the size limit.

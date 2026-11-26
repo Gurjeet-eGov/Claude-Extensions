@@ -121,7 +121,7 @@ function tr_open_(tabName, cfg) {
   var cycles = TRCore.detectCycles(headers);
   var used = {};
   TRCore.FIELDS.forEach(function (f) { if (res.fields[f] >= 0) used[res.fields[f]] = true; });
-  cycles.forEach(function (c) { used[c.status] = true; if (c.comment >= 0) used[c.comment] = true; });
+  cycles.forEach(function (c) { used[c.status] = true; if (c.comment >= 0) used[c.comment] = true; if (c.auto >= 0) used[c.auto] = true; });
   var extras = [];
   for (var i = 0; i < headers.length; i++) if (!used[i] && String(headers[i]).trim()) extras.push(i);
   return {
@@ -366,6 +366,7 @@ function tr_removeCycle(tabName, header) {
     var cy = m.cycles[ci];
     var cols = [cy.status];
     if (cy.comment >= 0) cols.push(cy.comment);
+    if (cy.auto >= 0) cols.push(cy.auto);
     cols.sort(function (a, b) { return b - a; }).forEach(function (c) { m.sheet.deleteColumn(c + 1); });
     var t = cfg.tabs[tabName];
     var left = m.cycles.filter(function (c, i) { return i !== ci; });
@@ -414,6 +415,7 @@ function tr_renameCycle(tabName, header, label) {
     var sh = m.sheet;
     sh.getRange(m.headerRow, cy.status + 1).setValue(TRCore.cellSafe(tr_renameHeader_(m.headers[cy.status], cy.label, label)));
     if (cy.comment >= 0) sh.getRange(m.headerRow, cy.comment + 1).setValue(TRCore.cellSafe(tr_renameHeader_(m.headers[cy.comment], cy.label, label)));
+    if (cy.auto >= 0) sh.getRange(m.headerRow, cy.auto + 1).setValue(TRCore.cellSafe(TRCore.autoHeader(label)));
     var after = tr_open_(tabName, cfg);
     if (!after.cycles.some(function (c) { return c.label === label; })) throw tr_err_('BAD_INPUT', '"' + label + '" does not read as a cycle name in the column header. Try another name, for example v2.20.1.');
     var t = cfg.tabs[tabName];
@@ -529,6 +531,146 @@ function tr_setEvidenceNote(req) {
     var after = lines.join('\n');
     if (after !== before) m.sheet.getRange(c.row, cy.comment + 1).setValue(TRCore.cellSafe(after));
     return { ok: true, comment: after };
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Automated results in the manual suite: a cycle's "Automation <cycle>" column, and the status
+// of cases nobody has marked yet. What automation wrote is kept per case (sidecar, kind 'auto'),
+// so a newer run may update it and deleting the run takes back only what is still as it wrote it.
+// -----------------------------------------------------------------------------
+
+/** A case ID as automated results name it: trimmed, upper case (lib/automation/summary.mjs caseKey). */
+function tr_autoCaseKey_(id) {
+  return String(id == null ? '' : id).trim().toUpperCase();
+}
+
+function tr_autoMetaKey_(tab, label, id) {
+  return [tab, String(label || '').toLowerCase(), tr_autoCaseKey_(id)].join('\n');
+}
+
+/** The status value for an automated result: the column's first pass / fail value; a skip takes an "NA"/"skip" value, else the first other one. */
+function tr_autoStatusValue_(opts, result) {
+  var cls = result === 'pass' || result === 'fail' ? result : 'other';
+  var list = (opts || []).filter(function (o) { return o.cls === cls; });
+  if (cls === 'other') {
+    var na = list.filter(function (o) { return /skip|\bn\s*\/?\s*a\b/i.test(o.value); })[0];
+    if (na) return na.value;
+  }
+  return list.length ? list[0].value : '';
+}
+
+/** The cycle's Automation column, added after its Comment column when it has none. Returns the tab model, opened again if it changed. */
+function tr_ensureAutoColumn_(m, ci) {
+  var cy = m.cycles[ci];
+  if (cy.auto >= 0) return m;
+  var sh = m.sheet;
+  var last = Math.max(cy.status, cy.comment) + 1; // 1-based: the column the new one goes after
+  var src = (cy.comment >= 0 ? cy.comment : cy.status) + 1;
+  sh.insertColumnsAfter(last, 1);
+  var P = SpreadsheetApp.CopyPasteType;
+  var hr = m.headerRow;
+  var dataRows = Math.max(m.lastRow - hr, 0);
+  sh.getRange(hr, src).copyTo(sh.getRange(hr, last + 1), P.PASTE_FORMAT, false);
+  if (dataRows > 0) sh.getRange(hr + 1, src, dataRows, 1).copyTo(sh.getRange(hr + 1, last + 1, dataRows, 1), P.PASTE_FORMAT, false);
+  sh.getRange(hr, last + 1).setValue(TRCore.cellSafe(TRCore.autoHeader(cy.label)));
+  var again = tr_open_(m.tab, m.cfg);
+  if (!again.cycles[ci] || again.cycles[ci].auto < 0) throw tr_err_('BAD_INPUT', 'The Automation column of ' + m.tab + ' could not be added.');
+  return again;
+}
+
+/**
+ * Write an automated run's results into a cycle. req: { tab, cycle, runId, by, at ('yyyy-MM-dd HH:mm'),
+ * items: [{ id, result: 'pass'|'fail'|'other', text }] }. Each live case an item names gets the text in
+ * the cycle's Automation column; its Status, Tested by and Tested on are set only when nobody marked it
+ * (or automation did, and it is still as automation left it). Returns { updated, marked, column, addedColumn }.
+ */
+function tr_applyAutomated(req) {
+  req = req || {};
+  return tr_withLock_(function () {
+    var m = tr_open_(req.tab);
+    if (!m.cycles.length) throw tr_err_('NO_CYCLE', m.tab + ' has no test cycle yet.');
+    var ci = tr_findCycle_(m, req.cycle || '', !req.cycle);
+    var byKey = {};
+    (req.items || []).forEach(function (it) { var k = tr_autoCaseKey_(it && it.id); if (k) byKey[k] = it; });
+    var named = function (c) { return !c.retired && c.id && byKey[tr_autoCaseKey_(c.id)]; };
+    if (!tr_cases_(m).some(named)) return { ok: true, updated: 0, marked: 0, column: '', addedColumn: false };
+    var had = m.cycles[ci].auto >= 0;
+    m = tr_ensureAutoColumn_(m, ci);
+    var cy = m.cycles[ci];
+    var sh = m.sheet;
+    var opts = tr_statusOptions_(m, cy);
+    var by = TRCore.cleanText(req.by, 120);
+    var at = TRCore.cleanText(req.at, 40);
+    var updated = 0;
+    var marked = 0;
+    tr_cases_(m).forEach(function (c) {
+      if (!named(c)) return;
+      var it = byKey[tr_autoCaseKey_(c.id)];
+      var key = tr_autoMetaKey_(m.tab, cy.label, c.id);
+      var prev = tr_metaGet_('auto', key);
+      var cur = String(c.statuses[ci] || '').trim();
+      var text = TRCore.cleanText(it.text, 250);
+      var value = tr_autoStatusValue_(opts, it.result);
+      // automation may set the status of a case nobody marked, or one it marked itself and nobody changed since
+      var owned = !!value && (!cur || !!(prev && prev.wroteStatus && cur === prev.status));
+      var changed = false;
+      if (owned) {
+        if (value !== cur) { sh.getRange(c.row, cy.status + 1).setValue(TRCore.cellSafe(value)); changed = true; }
+        if (m.fields.testedBy >= 0 && c.testedBy !== by) { sh.getRange(c.row, m.fields.testedBy + 1).setValue(TRCore.cellSafe(by)); changed = true; }
+        if (m.fields.testedOn >= 0 && c.testedOn !== at) { sh.getRange(c.row, m.fields.testedOn + 1).setValue(at); changed = true; }
+        marked++;
+      }
+      if (String(c.autoComments[ci] || '') !== text) { sh.getRange(c.row, cy.auto + 1).setValue(TRCore.cellSafe(text)); changed = true; }
+      if (changed) updated++;
+      tr_metaPut_('auto', key, { runId: String(req.runId || ''), wroteStatus: owned, status: owned ? value : '', text: text, testedBy: owned ? by : '', testedOn: owned ? at : '' });
+    });
+    return { ok: true, updated: updated, marked: marked, column: String(m.headers[cy.auto] || TRCore.autoHeader(cy.label)), addedColumn: !had };
+  });
+}
+
+/**
+ * Take back what an automated run wrote into a cycle (the run was deleted, or moved to another
+ * cycle). req: { tab, cycle, runId }. A status or Automation cell someone changed since stays.
+ * Returns { cleared }.
+ */
+function tr_clearAutomated(req) {
+  req = req || {};
+  return tr_withLock_(function () {
+    var runId = String(req.runId || '');
+    var label = String(req.cycle || '').toLowerCase();
+    var prefix = [String(req.tab || ''), label, ''].join('\n');
+    var mine = tr_metaList_('auto').filter(function (r) { return String(r.key).indexOf(prefix) === 0 && r.value && r.value.runId === runId; });
+    if (!mine.length) return { ok: true, cleared: 0 };
+    var m = null;
+    try { m = tr_open_(req.tab); } catch (e) { m = null; }
+    var ci = -1;
+    if (m) m.cycles.forEach(function (c, i) { if (c.label.toLowerCase() === label) ci = i; });
+    var cy = ci >= 0 ? m.cycles[ci] : null;
+    var byKey = {};
+    if (cy) tr_cases_(m).forEach(function (c) { if (c.id) byKey[tr_autoMetaKey_(m.tab, cy.label, c.id)] = c; });
+    var cleared = 0;
+    mine.forEach(function (r) {
+      var v = r.value;
+      var c = byKey[r.key];
+      if (c) {
+        var sh = m.sheet;
+        var changed = false;
+        if (v.wroteStatus && String(c.statuses[ci] || '').trim() === v.status) {
+          sh.getRange(c.row, cy.status + 1).setValue('');
+          if (m.fields.testedBy >= 0 && c.testedBy === v.testedBy) sh.getRange(c.row, m.fields.testedBy + 1).setValue('');
+          if (m.fields.testedOn >= 0 && c.testedOn === v.testedOn) sh.getRange(c.row, m.fields.testedOn + 1).setValue('');
+          changed = true;
+        }
+        if (cy.auto >= 0 && v.text && String(c.autoComments[ci] || '') === v.text) {
+          sh.getRange(c.row, cy.auto + 1).setValue('');
+          changed = true;
+        }
+        if (changed) cleared++;
+      }
+      tr_metaDelete_('auto', r.key);
+    });
+    return { ok: true, cleared: cleared };
   });
 }
 

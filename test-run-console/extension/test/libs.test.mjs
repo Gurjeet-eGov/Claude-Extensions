@@ -29,7 +29,9 @@ test('media: photos fit 1920×1080, sizes and lengths read well, recordings stop
   assert.equal(fitWithin(1280, 720, 1920, 1080).scale, 1, 'never made larger');
   assert.deepEqual([fmtBytes(412 * 1024), fmtBytes(6.3 * 1024 * 1024), fmtBytes(20 * 1024 * 1024)], ['412 KB', '6.3 MB', '20 MB']);
   assert.deepEqual([fmtClip(67), fmtClip(111), fmtTime(42)], ['about 1 min 10 s', 'about 1 min 50 s', '00:42']);
-  assert.equal(limitsLine({ quality: '1080p', fps: 30, maxSeconds: 67 }), 'Video 1080p · 30 fps · up to about 1 min 10 s');
+  assert.equal(limitsLine({ quality: '1080p', fps: 30, maxSeconds: 70 }), 'Video limit: 01m 10s');
+  assert.equal(limitsLine({ quality: '1080p', fps: 30, maxSeconds: 67.9 }), 'Video limit: 01m 07s', 'never rounded up');
+  assert.equal(limitsLine({ quality: '720p', fps: 15, maxSeconds: 605 }), 'Video limit: 10m 05s');
   const max = 20 * 1024 * 1024;
   const at = stopAtBytes(max, 2500000);
   assert.ok(at < max - 600000 && at > max - 800000, `stops ~2 s early (${max - at} bytes of room)`);

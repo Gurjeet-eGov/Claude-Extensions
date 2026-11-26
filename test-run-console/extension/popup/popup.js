@@ -4,6 +4,7 @@
 // evidence can only change with new evidence (or after the file is removed).
 import { parseLink, request, consoleUrl, Offline } from '../lib/testrun.js';
 import { fitWithin, fmtBytes, fmtTime, limitsLine, withoutEvidenceLine, elapsedMs } from '../lib/media.js';
+import { enhanceSelect } from '../lib/dropdown.js';
 
 const S = {
   screen: 'loading', // signin | loading | offline | viewonly | choose | testing
@@ -24,6 +25,7 @@ const S = {
 };
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const oneLine = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 const app = () => document.getElementById('app');
 
 async function saveConn() { await chrome.storage.local.set({ conn: S.conn }); }
@@ -89,6 +91,7 @@ async function follow(first) {
   const cur = r.current;
   const changed = first || !S.current || !cur || cur.at !== S.current.at;
   if (!changed) return;
+  if (!first && listOpen()) return; // not under an open list: the next look picks it up
   const was = S.current;
   // where the extension was when it was last open (read before loading the suite moves it)
   const { pos } = first ? await chrome.storage.local.get('pos') : {};
@@ -106,7 +109,7 @@ async function follow(first) {
 
 /** The suite again, quietly: redrawn only when its results or evidence changed. */
 async function refreshSuite(force) {
-  if (!S.suite || !S.current || (!force && (S.busy || S.confirmRemove))) return;
+  if (!S.suite || !S.current || (!force && (S.busy || S.confirmRemove || listOpen()))) return;
   const before = JSON.stringify(S.suite);
   const was = S.suite;
   await loadSuite();
@@ -133,6 +136,8 @@ function openCase(key) {
 }
 
 const theCase = () => (S.suite ? S.suite.cases.find((x) => x.key === S.caseKey) : null);
+/** Is the test case list open? The popup isn't redrawn under it (that would close it). */
+const listOpen = () => !!document.querySelector('.multi.open');
 /** A case's attachments, screenshot first: [{ kind, name, size, usedFor, … }]. */
 const filesOf = (c) => ['photo', 'video'].filter((k) => c && c.evidence && c.evidence[k]).map((k) => c.evidence[k]);
 const recLive = () => !!(S.rec && ['recording', 'paused', 'saving'].includes(S.rec.state));
@@ -163,6 +168,8 @@ function render() {
   else if (S.screen === 'choose') h += chooseHtml();
   else h += testingHtml();
   app().innerHTML = h;
+  const find = document.getElementById('find');
+  if (find) enhanceSelect(find); // the test case picker, as DESIGN.md › Dropdowns draws it
   if (focus) {
     const el = document.getElementById(focus.id);
     if (el) { el.focus(); try { if (focus.start != null) el.setSelectionRange(focus.start, focus.end); } catch { /* not text */ } }
@@ -173,14 +180,13 @@ function signInHtml() {
   return `<div class="sign-in"><b>Sign in to Test Run</b><span class="muted">Paste the access link your test lead sent you.</span></div>
     <label class="sr" for="link">Access link</label><input id="link" placeholder="https://…/test-run/#join=…" value="${esc(S.linkText)}" autocomplete="off">
     ${S.error ? `<div class="err">${esc(S.error)}</div>` : ''}
-    <button class="primary" data-action="sign-in" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Signing in…' : 'Sign in'}</button>
-    <div class="faint">Nothing else shows until you're signed in.</div>`;
+    <button class="primary" data-action="sign-in" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Signing in…' : 'Sign in'}</button>`;
 }
 
 function limitsBox() {
   const l = S.limits;
   if (!l) return '';
-  return `<div class="box muted"><div class="lb">Set by your test lead</div>${esc(limitsLine(l))}<br>Photos up to ${l.photo.width}×${l.photo.height} · each file up to ${fmtBytes(l.maxBytes)}</div>`;
+  return `<div class="box muted"><div class="lb">Set by your test lead</div>${esc(limitsLine(l))} · ${esc(l.quality)}, ${esc(l.fps)} fps<br>Photos up to ${l.photo.width}×${l.photo.height} · each file up to ${fmtBytes(l.maxBytes)}</div>`;
 }
 
 function chooseHtml() {
@@ -204,9 +210,9 @@ function testingHtml() {
   const i = s.cases.indexOf(c);
   const cls = clsOf(c.status);
   h += `<div class="row"><button class="icon" data-action="prev" aria-label="Previous case" ${i <= 0 ? 'disabled' : ''}>‹</button>
-    <div class="grow"><div class="lb"><a href="#" class="case-link" data-action="open-case" title="Open ${esc(c.id || 'this case')} in Test Run">${esc(c.id || `Row ${c.row}`)}</a> · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>${filesOf(c).some((f) => f.usedFor) ? ' with evidence' : ''}` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
+    <div class="grow"><div class="lb"><a href="#" class="case-link" data-action="open-case" title="Open ${esc(c.id || 'this case')} in Test Run">${esc(c.id || `Row ${c.row}`)}</a> · ${c.status ? `<span class="pill ${cls}">${esc(c.status)}</span>` : 'not run'}</div><div class="scenario" title="${esc(c.scenario)}">${esc(c.scenario)}</div></div>
     <button class="icon" data-action="next" aria-label="Next case" ${i >= s.cases.length - 1 ? 'disabled' : ''}>›</button></div>
-    <label class="sr" for="find">Find a case by ID</label><input id="find" list="ids" placeholder="Find a case by ID" autocomplete="off"><datalist id="ids">${s.cases.map((x) => `<option value="${esc(x.id || x.key)}">${esc(x.scenario.slice(0, 80))}</option>`).join('')}</datalist>`;
+    <select id="find" aria-label="Find test case" data-search="always" data-search-placeholder="Type an ID or words"><option value="" selected hidden>Find test case</option>${s.cases.map((x) => `<option value="${esc(x.key)}" data-side="${esc(x.status || 'not run')}">${esc(`${x.id || `Row ${x.row}`} · ${oneLine(x.scenario).slice(0, 120)}`)}</option>`).join('')}</select>`;
   if (S.pending) {
     h += `<div class="ask">Add a new screenshot or screen recording to mark it <b>${esc(S.pending)}</b>. <button class="link" data-action="cancel-pending">Cancel</button></div>`;
   }
@@ -238,7 +244,13 @@ function flash(text, bad) {
   S.flash = { text, bad: !!bad };
   render();
   const mine = S.flash;
-  setTimeout(() => { if (S.flash === mine) { S.flash = null; render(); } }, bad ? 6000 : 3000);
+  const clear = () => {
+    if (S.flash !== mine) return;
+    if (listOpen()) { setTimeout(clear, 1000); return; } // not under an open list
+    S.flash = null;
+    render();
+  };
+  setTimeout(clear, bad ? 6000 : 3000);
 }
 
 // ---------------------------------------------------------------------------
@@ -467,7 +479,6 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => { if (e.target.id === 'find') findCase(e.target.value); });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.id === 'link') { e.preventDefault(); signIn(); }
-  if (e.key === 'Enter' && e.target.id === 'find') { e.preventDefault(); findCase(e.target.value); }
 });
 
 init();

@@ -450,7 +450,9 @@ export function createGithubRuns(ctx) {
     });
     const { meta, removed } = store.add(run, keep());
     store.noteFormat(suite.id, parsed.format);
-    return { meta, removed, artifact: used ? used.name : '', summary: { format: parsed.format, formatLabel: parsed.formatLabel, tool: parsed.tool, totals: parsed.totals, files: parsed.files, ignored: parsed.ignored } };
+    // the manual suite: Automation column, and the status of cases nobody marked (routes.mjs writeAutomated)
+    const marks = ctx.writeAutomated ? await ctx.writeAutomated(run, o.by) : null;
+    return { meta, removed, marks, artifact: used ? used.name : '', summary: { format: parsed.format, formatLabel: parsed.formatLabel, tool: parsed.tool, totals: parsed.totals, files: parsed.files, ignored: parsed.ignored } };
   }
 
   /**
@@ -492,7 +494,7 @@ export function createGithubRuns(ctx) {
     const had = alreadyKept(suite.id, ghRun.id, at.attach);
     if (had) throw err('ALREADY', `Run #${ghRun.run_number} is already in Test Run, attached to ${at.attach.tab} › ${at.attach.cycle ? `Cycle ${at.attach.cycle}` : 'Status'}.`);
     const r = await importRun(suite, owner, repo, ghRun, at.attach, { by: person.name });
-    return { run: withRate(r.meta), removed: r.removed, kept: store.group(r.meta).map(withRate), summary: r.summary, githubRun: { id: ghRun.id, number: ghRun.run_number, htmlUrl: ghRun.html_url } };
+    return { run: withRate(r.meta), removed: r.removed, kept: store.group(r.meta).map(withRate), summary: r.summary, marks: r.marks, githubRun: { id: ghRun.id, number: ghRun.run_number, htmlUrl: ghRun.html_url } };
   }
 
   /** Recent finished runs of the suite's workflow, newest first, with those already kept marked. */
@@ -715,6 +717,7 @@ export function createGithubRuns(ctx) {
       job.importedRunId = r.meta.id;
       job.totals = r.meta.totals;
       job.removed = r.removed.map((m) => ({ id: m.id, startedAt: m.startedAt }));
+      job.marks = r.marks || null;
     } catch (e) {
       if (job.conclusion === 'cancelled' && e.code === 'NO_RESULTS') finish(job, 'cancelled', 'The run was cancelled before it uploaded its results.');
       else if (e.code === 'NO_RESULTS') finish(job, 'no_results', e.message);

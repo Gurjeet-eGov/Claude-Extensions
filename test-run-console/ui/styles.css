@@ -532,6 +532,11 @@ button.info-btn:hover, button.info-btn:focus-visible { background: var(--accent-
 .info-wrap .tip { left: 0; right: auto; width: 300px; }
 .info-wrap:hover .tip, .info-wrap:focus-within .tip { display: block; }
 .info-wrap.shut .tip { display: none; }
+/* The Auto tag on a case (Run): its tooltip is the cycle's Automation column for the case, read only.
+   The tag sits at the row's right end, so the tooltip opens leftwards; the suite card lets it out while it shows. */
+.auto-wrap .tip { left: auto; right: 0; width: 320px; }
+.auto-wrap .pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.path:has(.auto-wrap:hover), .path:has(.auto-wrap:focus-within) { overflow: visible; }
 /* A setting's name with its i (Setup › Automation); .kv-top lines it up with the field's first line, not the middle */
 .kv-label { display: inline-flex; align-items: center; gap: 6px; }
 .kv-label label { font-size: inherit; color: inherit; font-weight: inherit; }

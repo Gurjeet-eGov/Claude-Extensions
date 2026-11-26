@@ -59,3 +59,5 @@ function api_renameCycle(tab, header, label) { return tr_call_(function () { ret
 function api_writeIssuesSheet() { return tr_call_(function () { return tr_writeIssuesSheet(); }); }
 function api_requireTestedColumns() { return tr_call_(function () { return tr_requireTestedColumns(); }); }
 function api_setEvidenceNote(req) { return tr_call_(function () { return tr_setEvidenceNote(req); }); }
+function api_applyAutomated(req) { return tr_call_(function () { return tr_applyAutomated(req); }); }
+function api_clearAutomated(req) { return tr_call_(function () { return tr_clearAutomated(req); }); }

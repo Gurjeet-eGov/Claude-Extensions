@@ -2025,15 +2025,24 @@
     return null;
   }
 
-  /** Run: "Auto ✓ / ✗ / –" on a case whose ID automated tests name, in the runs kept for this cycle. */
+  /**
+   * Run: "Auto ✓ / ✗ / –" on a case whose ID automated tests name, in the runs kept for this cycle.
+   * Hover or keyboard focus shows, read only, what the cycle's Automation column holds for the case.
+   */
   function autoBadge(c) {
     var d = S.autoCycle && S.autoCycle.data;
     if (!d || !d.cases || !c.id || c.retired || S.autoCycle.key !== book() + '\n' + S.tab + '\n' + cycleLabel()) return '';
     var st = d.cases[String(c.id).trim().toUpperCase()];
     if (!st) return '';
     var cls = st === 'pass' || st === 'fail' ? st : 'other';
-    return '<span class="pill ' + cls + '" title="Latest automated result attached to this cycle">Auto ' + TR.SYM[cls] +
-      '<span class="sr">, automated test ' + { pass: 'passed', fail: 'failed', other: 'skipped' }[cls] + '</span></span>';
+    var word = { pass: 'passed', fail: 'failed', other: 'skipped' }[cls];
+    var ci = S.model ? S.model.cycleIdx : -1;
+    var note = ci >= 0 && c.autoComments ? String(c.autoComments[ci] || '').trim() : '';
+    var id = 'autoTip-' + String(c.key).replace(/[^\w-]/g, '_');
+    return '<span class="info-wrap auto-wrap"><span class="pill ' + cls + '" tabindex="0" aria-describedby="' + esc(id) + '">Auto ' + TR.SYM[cls] +
+      '<span class="sr">, automated test ' + word + '</span></span>' +
+      '<span id="' + esc(id) + '" role="tooltip" class="tip"><span class="tip-title">Automated test ' + word + '</span>' +
+      esc(note || 'The latest automated result attached to this cycle.') + '</span></span>';
   }
 
   /** Summary › Automated: the latest run attached to the test suite and cycle, and the runs kept for it. */
@@ -2311,6 +2320,17 @@
     return '<div class="note warn">' + esc(a.tab + ' › ' + cycleText(a.cycle)) + ' already has ' + plural(group.length, 'run') + '. ' +
       (prefix === 'mv' ? 'Moving this one there' : 'Importing this one') + ' removes the oldest (' + esc(goes.map(function (r) { return auDate(r.startedAt); }).join(', ')) + ').</div>';
   }
+  /**
+   * What an import (or a move) wrote into the manual suite: " Updated 9 cases." The Run screen, when it
+   * shows that test suite, is read again so the new statuses and Automation column show.
+   */
+  function auMarksText(marks, attach) {
+    if (!marks) return '';
+    if (marks.error) return ' The test cases were not updated: ' + marks.error;
+    if (attach && marks.updated && book() === attach.book && S.tab === attach.tab) loadTab(cycleLabel(), true);
+    return marks.updated ? ' Updated ' + plural(marks.updated, 'case') + '.' : '';
+  }
+
   function auRemovedText(removed, keep) {
     if (!removed || !removed.length) return '';
     return ' The run' + (removed.length > 1 ? 's' : '') + ' from ' + removed.map(function (r) { return auDate(r.startedAt); }).join(' and ') + (removed.length > 1 ? ' were' : ' was') + ' removed: ' + (keep === 1 ? '1 is' : keep + ' are') + ' kept.';
@@ -2703,7 +2723,7 @@
     }
     // 4 · Extras
     h += '<div class="subsection"><div class="step-title"><span class="step-n">' + n + '</span>Extras <span class="faint small" style="font-weight:400">(optional)</span></div><div class="form-grid">' +
-      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', '', 'Finds manual case IDs in test titles or tags.') + '</div></div>';
+      auField('auPattern', 'Case-ID pattern', '<input id="auPattern" class="mono" data-bind="au:l:pattern" placeholder="e.g. CMS/\\d+" value="' + esc(v('pattern', s ? s.casePattern : '')) + '">', '', 'Finds manual case IDs in test titles or tags. Write the IDs in your tests exactly as in the workbook, e.g. SEC/001. An import fills in the Status of cases nobody has marked yet, and the cycle\'s Automation column.') + '</div></div>';
     // the bottom row: De-link on the left; ⤒ Import Results, Cancel and Save on the right
     var im = G.imported;
     if (wf && im) h += '<div class="check-line ' + (im.ok ? 'ok' : 'bad') + '" style="margin:0">' + esc(im.text) + '</div>';
@@ -2854,7 +2874,7 @@
       if (!AU_ACTIVE[was[j.id]] || AU_ACTIVE[j.state]) return;
       var here = S.view === 'automation' && auJobHere(j) && A.suite === j.suiteId;
       if (here || j.by === me().name) {
-        if (j.state === 'imported') toast('Imported ' + (j.totals ? plural(j.totals.total, 'test') : 'the results') + ' from ' + j.suiteName + '.' + auRemovedText(j.removed, A.data ? A.data.keep : 2));
+        if (j.state === 'imported') toast('Imported ' + (j.totals ? plural(j.totals.total, 'test') : 'the results') + ' from ' + j.suiteName + '.' + auMarksText(j.marks, j.attach) + auRemovedText(j.removed, A.data ? A.data.keep : 2));
         else if (j.notFound) toast('Unable to find the GitHub job', 'bad');
         else if (j.state !== 'cancelled') toast('The run of “' + j.suiteName + '” ended without results. Automation says why.', 'bad');
       }
@@ -4791,7 +4811,7 @@
           if (!x.ok) { G.imported = { ok: false, text: x.error }; auLoad(); return; }
           var t = x.run.totals;
           G.imported = { ok: true, text: '✓ Read ' + plural(t.total, 'test') + ' from run #' + x.githubRun.number + ' (' + auDate(x.run.startedAt, false) + '): ✓ ' + t.passed + ' ✗ ' + t.failed + ' – ' + t.skipped };
-          toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '” and imported its latest run into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+          toast((r.created ? 'Linked “' : 'Saved “') + r.suite.name + '” and imported its latest run into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auMarksText(x.marks, a) + auRemovedText(x.removed, A.data.keep));
           auLoad(); refreshApp();
         });
       });
@@ -4890,7 +4910,7 @@
         if (!r.ok) { toast(r.error, 'bad'); render(); return; }
         A.screen = 'runs'; A.ghRunsFor = '';
         clearForm('au:im:'); clearForm('au:gh:'); clearForm('au:f:');
-        toast('Imported ' + plural(r.run.totals.total, 'test') + ' from run #' + r.githubRun.number + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' from run #' + r.githubRun.number + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auMarksText(r.marks, a) + auRemovedText(r.removed, A.data.keep));
         auLoad();
         window.scrollTo(0, 0);
       });
@@ -4987,7 +5007,7 @@
         if (!r.ok) { toast(r.error, 'bad'); render(); return; }
         A.file = null; A.screen = 'runs';
         clearForm('au:im:'); delete S.form['au:branch']; delete S.form['au:env']; clearForm('au:f:');
-        toast('Imported ' + plural(r.run.totals.total, 'test') + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(r.removed, A.data.keep));
+        toast('Imported ' + plural(r.run.totals.total, 'test') + ' into ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auMarksText(r.marks, a) + auRemovedText(r.removed, A.data.keep));
         auLoad();
         window.scrollTo(0, 0);
       });
@@ -5044,7 +5064,7 @@
         TR.http('POST', '/api/automation/delete', { id: r.id }).then(function (x) {
           if (!x.ok) { toast(x.error, 'bad'); return; }
           S.auto.screen = 'runs'; S.auto.runId = ''; S.auto.detail = null;
-          toast('Deleted the run from ' + auDate(r.startedAt) + '.');
+          toast('Deleted the run from ' + auDate(r.startedAt) + '.' + auMarksText({ updated: x.cleared || 0 }, r.attach));
           auLoad();
         });
       });
@@ -5071,7 +5091,7 @@
         if (!x.ok) { toast(x.error, 'bad'); return; }
         A.moving = false; A.detail = null;
         clearForm('au:mv:');
-        toast('Moved the run to ' + bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auRemovedText(x.removed, A.data.keep));
+        toast('Moved the run to ' + bookTitle(a.book) + ' › ' + a.tab + ' › ' + cycleText(a.cycle) + '.' + auMarksText(x.marks, a) + auRemovedText(x.removed, A.data.keep));
         auLoad();
       });
     }
