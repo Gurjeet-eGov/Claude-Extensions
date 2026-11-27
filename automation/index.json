@@ -1,0 +1,29 @@
+{
+ "version": 1,
+ "runs": [
+  {
+   "id": "20261127-100608-5a55df",
+   "book": "security-fixes-bomet-17331e",
+   "publishedAt": "2026-11-27T11:30:50.498Z",
+   "bytes": 7748
+  },
+  {
+   "id": "20261127-094141-4282f8",
+   "book": "security-fixes-bomet-17331e",
+   "publishedAt": "2026-11-27T11:30:50.498Z",
+   "bytes": 7509
+  },
+  {
+   "id": "20261125-075918-922930",
+   "book": "cms-sign-off-cms-automation-naipepea-net-two-17-nov-2026-3a669a",
+   "publishedAt": "2026-11-26T11:31:00.332Z",
+   "bytes": 23884
+  },
+  {
+   "id": "20261125-045625-0777c9",
+   "book": "cms-sign-off-cms-automation-naipepea-net-two-17-nov-2026-3a669a",
+   "publishedAt": "2026-11-26T11:31:00.332Z",
+   "bytes": 23462
+  }
+ ]
+}

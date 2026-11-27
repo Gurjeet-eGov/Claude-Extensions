@@ -1,0 +1,652 @@
+{
+  "version": 1,
+  "kinds": {
+    "config": {
+      "global": {
+        "value": {
+          "version": 1,
+          "claude": false,
+          "tabs": {
+            "Security Audit": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "id": "S .No",
+                "scenario": "Scenario",
+                "feature": "Feature",
+                "subFeature": "Sub feature",
+                "testType": "Test Type",
+                "testData": "Test Data",
+                "preCondition": "Pre Condition",
+                "expected": "Expected result",
+                "linkedIssue": "Linked issue",
+                "testedBy": "Tested by",
+                "testedOn": "Tested on"
+              },
+              "fillDown": true,
+              "cycle": "2.12_SecAudit",
+              "release": ""
+            }
+          }
+        },
+        "updated": "2026-11-25 15:22",
+        "by": "Gurjeet Singh"
+      }
+    },
+    "issue": {
+      "https://github.com/eGov-Global/CMS-KENYA/issues/230": {
+        "value": {
+          "url": "https://github.com/eGov-Global/CMS-KENYA/issues/230",
+          "ref": "#230",
+          "added": "2026-11-25 17:08",
+          "addedBy": "Gurjeet Singh",
+          "title": "Citizen: Citizen logout in one browser does not end sessions in other browsers",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 00:50",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 00:50",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/eGov-Global/CMS-KENYA/issues/231": {
+        "value": {
+          "url": "https://github.com/eGov-Global/CMS-KENYA/issues/231",
+          "ref": "#231",
+          "added": "2026-11-25 17:19",
+          "addedBy": "Gurjeet Singh",
+          "title": "Citizen: Citizen was logged in on same browser two different tabs, one got logged out",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "closed",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 00:50",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 00:50",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/eGov-Global/CMS-KENYA/issues/232": {
+        "value": {
+          "url": "https://github.com/eGov-Global/CMS-KENYA/issues/232",
+          "ref": "#232",
+          "added": "2026-11-25 17:26",
+          "addedBy": "Gurjeet Singh",
+          "title": "Configurator: ADMIN logged in on two windows of same browser, one got logged out and other",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 00:50",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 00:50",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/eGov-Global/CMS-KENYA/issues/233": {
+        "value": {
+          "url": "https://github.com/eGov-Global/CMS-KENYA/issues/233",
+          "ref": "#233",
+          "added": "2026-11-25 17:33",
+          "addedBy": "Gurjeet Singh",
+          "title": "Configurator: 3 minute logout warning popup not displayed",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 00:50",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 00:50",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/eGov-Global/CMS-KENYA/issues/235": {
+        "value": {
+          "url": "https://github.com/eGov-Global/CMS-KENYA/issues/235",
+          "ref": "#235",
+          "added": "2026-11-26 15:50",
+          "addedBy": "Gurjeet Singh",
+          "title": "[Bug] Employee & Citizen: Different employees logged in on same browser is not handled by idletimeout",
+          "priority": "P0",
+          "state": "closed",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 00:50",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 00:50",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/Gurjeet-eGov/PythonScripts/issues/10": {
+        "value": {
+          "url": "https://github.com/Gurjeet-eGov/PythonScripts/issues/10",
+          "ref": "#10",
+          "added": "2026-11-27 15:22",
+          "addedBy": "Gurjeet Singh",
+          "title": "[P0] Test Dummy: Citizen: Cxzvzvxcvcxzxzcv",
+          "priority": "P0",
+          "source": "bug-reporter"
+        },
+        "updated": "2026-11-27 15:22",
+        "by": "Gurjeet Singh"
+      }
+    },
+    "auto": {
+      "Security Audit\n2.12_secaudit\nSEC/001": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/002": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/003": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/004": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/005": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/006": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/007": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "filestore-access-requires-token.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/008": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "complaint-attachments-and-receipt-load.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/009": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "complaint-photo-and-receipt-load-signed-in.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/011": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "login-branding-images-load-before-sign-in.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/013": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/014": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/015": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/016": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/017": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/018": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/019": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/020": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/021": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/022": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/023": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/024": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/025": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/027": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/028": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/029": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/030": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/031": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/032": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/033": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/034": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/035": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/036": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/037": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/039": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/040": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/041": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/042": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/043": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/044": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-per-window.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/054": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      },
+      "Security Audit\n2.12_secaudit\nSEC/055": {
+        "value": {
+          "runId": "20261127-100608-5a55df",
+          "wroteStatus": false,
+          "status": "",
+          "text": "session-idle-timeout.spec.ts",
+          "testedBy": "",
+          "testedOn": ""
+        },
+        "updated": "2026-11-27 15:36",
+        "by": "Gurjeet Singh"
+      }
+    }
+  }
+}

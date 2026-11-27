@@ -1,0 +1,28 @@
+{
+ "app": "test-run",
+ "id": "ceb99b1e3d1e37ca",
+ "publishedAt": "2026-11-27 17:00",
+ "by": "Gurjeet Singh",
+ "workbooks": [
+  {
+   "name": "CMS Sign Off - CMS Automation (naipepea net-two) 17_Nov_2026.xlsx",
+   "title": "CMS Sign Off - CMS Automation (naipepea net-two) 17_Nov_2026",
+   "slug": "cms-sign-off-cms-automation-naipepea-net-two-17-nov-2026-3a669a",
+   "suites": [
+    "CMS 2.20.1",
+    "CMS 2.20.1 Features",
+    "Dashboard KPI"
+   ],
+   "xlsx": true
+  },
+  {
+   "name": "Security Fixes Bomet.xlsx",
+   "title": "Security Fixes Bomet",
+   "slug": "security-fixes-bomet-17331e",
+   "suites": [
+    "Security Audit"
+   ],
+   "xlsx": true
+  }
+ ]
+}

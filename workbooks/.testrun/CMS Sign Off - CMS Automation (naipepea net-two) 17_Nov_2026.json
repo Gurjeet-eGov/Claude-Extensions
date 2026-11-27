@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "kinds": {
+    "config": {
+      "global": {
+        "value": {
+          "version": 1,
+          "claude": false,
+          "tabs": {
+            "CMS Sign Off - CMS Automation (": {
+              "role": "automation",
+              "headerRow": 1,
+              "columns": {
+                "scenario": "Test Scenario",
+                "feature": "Suite",
+                "preCondition": "Pre-requisites",
+                "expected": "Acceptance Criteria",
+                "linkedIssue": "Issue/Story Ref"
+              },
+              "fillDown": true,
+              "cycle": "",
+              "release": ""
+            },
+            "CMS 2.20.1": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "id": "S .No",
+                "scenario": "Scenario",
+                "subFeature": "Sub feature",
+                "testType": "Test Type",
+                "testData": "Test Data",
+                "preCondition": "Pre Condition",
+                "expected": "Expected result",
+                "linkedIssue": "Linked issue",
+                "release": "Release",
+                "testedBy": "Tested by",
+                "testedOn": "Tested on"
+              },
+              "fillDown": true,
+              "cycle": "",
+              "release": "2.20.1"
+            },
+            "CMS 2.20.1 Features": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "id": "S .No",
+                "scenario": "Scenario",
+                "feature": "Feature",
+                "subFeature": "Sub feature",
+                "testType": "Test Type",
+                "testData": "Test Data",
+                "preCondition": "Pre Condition",
+                "expected": "Expected result",
+                "linkedIssue": "Linked issue"
+              },
+              "fillDown": true,
+              "cycle": "",
+              "release": ""
+            },
+            "Dashboard KPI": {
+              "role": "manual",
+              "headerRow": 1,
+              "columns": {
+                "scenario": "KPI"
+              },
+              "fillDown": true,
+              "cycle": "2.20.1",
+              "release": ""
+            }
+          }
+        },
+        "updated": "2026-11-20 15:06",
+        "by": "Gurjeet Singh"
+      }
+    },
+    "finding": {
+      "F-002": {
+        "value": {
+          "text": "Nai Pepea: Employee: Employee redirected to citizen login, signed out, after first password update",
+          "issue": "#66",
+          "tab": "CMS 2.20.1 Features",
+          "area": "Employee",
+          "details": "A newly signed up employee completed the password update. After the update, the page redirected to the ke-nairobi DIGIT UI login page (`/ke-nairobi/digit-ui/citizen/login`) and the employee was signed out.\nActual: After the password update, the employee is redirected to the citizen login page (`/ke-nairobi/digit-ui/citizen/login`) in a signed-out state, instead of remaining signed in.\nPage: https://naipepea.digit.org/ke-nairobi/digit-ui/citizen/login",
+          "source": "bug-reporter",
+          "url": "https://github.com/egovernments/complaint-management-system/issues/66",
+          "state": "open",
+          "caseId": "",
+          "by": "Gurjeet Singh",
+          "at": "2026-11-20 12:22"
+        },
+        "updated": "2026-11-20 12:22",
+        "by": "Gurjeet Singh"
+      },
+      "F-003": {
+        "value": {
+          "text": "Nai Pepea: Employee: Back to Application after repeat password reset lands on login page",
+          "issue": "#67",
+          "tab": "CMS 2.20.1 Features",
+          "area": "Employee",
+          "details": "After completing a password setup/reset, the user's session stayed signed in. A second password reset was then started in the same browser window. Clicking \"Back to Application\" on the Keycloak UPDATE_PASSWORD flow navigates to the login page (`/configurator/login`, \"Sign in to your account\" with a \"Log in\" button).\n\nNote: the user is still signed in at this point, yet the application shows the login screen, which suggests they need to log in again.\nActual: \"Back to Application\" navigates to the login page (`/configurator/login`) even though the user's session is still signed in. This can make the user think they must log in again.\nExpected: \"Back to Application\" should redirect to the tenant selection page, which has a sign out option, so the user is not confused into thinking they need to log in again.\nPage: https://naipepea.digit.org/auth/realms/KE/login-actions/required-action?execution=UPDATE_PASSWORD&client_id=digit-identity-bff&tab_id=nr5X6JPbgQI&client_data=eyJydSI6Imh0dHBzOi8vbmFpcGVwZWEuZGlnaXQub3JnL2lkZW50aXR5L3YxL3Bhc3N3b3JkL3NldHVwLWNvbXBsZXRlL1lVU2Y2X0lKdWI1M0t1OGR3MFpGNE9TdFEzS0RwYmlMdmZQZ3",
+          "source": "bug-reporter",
+          "url": "https://github.com/egovernments/complaint-management-system/issues/67",
+          "state": "open",
+          "caseId": "",
+          "by": "Gurjeet Singh",
+          "at": "2026-11-20 12:34"
+        },
+        "updated": "2026-11-20 12:34",
+        "by": "Gurjeet Singh"
+      },
+      "F-004": {
+        "value": {
+          "text": "Allow one email to register multiple workspaces but in different countries",
+          "issue": "",
+          "tab": "CMS 2.20.1 Features",
+          "area": "Configurator",
+          "details": "",
+          "source": "",
+          "url": "",
+          "state": "covered",
+          "caseId": "CMS/009",
+          "by": "Gurjeet Singh",
+          "at": "2026-11-20 14:09"
+        },
+        "updated": "2026-11-22 01:47",
+        "by": "Gurjeet Singh"
+      },
+      "F-005": {
+        "value": {
+          "text": "Nai Pepea: Employee: Test+emp380@email.com",
+          "issue": "#68",
+          "tab": "CMS 2.20.1",
+          "area": "Employee",
+          "details": "test+emp380@email.com\nUser unable to login on this account, and when user clicks back to application, it redirects to a different account login page ke-nairobi\nExpected: - User shall be able to login with valid creds\n- Redirect should happen to a correct page\nPage: https://naipepea.digit.org/auth/realms/KE/protocol/openid-connect/auth?client_id=digit-ui-employee&redirect_uri=https%3A%2F%2Fnaipepea.digit.org%2Fidentity%2Fv1%2Fcallback&response_type=code&scope=openid+profile+email&state=W6nNCTYVlefGinXzvEEzrBbqZSIs9-zV6mDaLMAW7Wk&nonce=QsyzwHSqElL31NyjfCp6sXCeqn",
+          "source": "bug-reporter",
+          "url": "https://github.com/egovernments/complaint-management-system/issues/68",
+          "state": "covered",
+          "caseId": "CMS/183",
+          "by": "Gurjeet Singh",
+          "at": "2026-11-20 15:22"
+        },
+        "updated": "2026-11-20 15:37",
+        "by": "Gurjeet Singh"
+      }
+    },
+    "issue": {
+      "https://github.com/Gurjeet-eGov/PythonScripts/issues/9": {
+        "value": {
+          "url": "https://github.com/Gurjeet-eGov/PythonScripts/issues/9",
+          "ref": "#9",
+          "added": "2026-11-19 13:28",
+          "addedBy": "Gurjeet-eGov",
+          "title": "[P0] Test Dummy: Citizen: Jhhbsfpojusfjodfssdf",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-19 13:29",
+          "fetchError": ""
+        },
+        "updated": "2026-11-19 13:29",
+        "by": "Gurjeet-eGov"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/66": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/66",
+          "ref": "#66",
+          "added": "2026-11-20 12:22",
+          "addedBy": "Gurjeet Singh",
+          "title": "Nai Pepea: Employee: Employee redirected to citizen login, signed out, after first password update",
+          "priority": "P1",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 15:06",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 15:06",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/67": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/67",
+          "ref": "#67",
+          "added": "2026-11-20 12:34",
+          "addedBy": "Gurjeet Singh",
+          "title": "Nai Pepea: Employee: Back to Application after repeat password reset lands on login page",
+          "priority": "P2",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 15:06",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 15:06",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/Citizen-Complaint-Resolution-System/issues/2835": {
+        "value": {
+          "url": "https://github.com/egovernments/Citizen-Complaint-Resolution-System/issues/2835",
+          "ref": "#2835",
+          "added": "2026-11-20 13:24",
+          "addedBy": "Gurjeet Singh",
+          "title": "Configurator: Newly onboarded admin cannot add notification provider (NB_ADMIN_ROLE_REQUIRED)",
+          "priority": "P0",
+          "source": "bug-reporter",
+          "state": "closed",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 15:06",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 15:06",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/68": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/68",
+          "ref": "#68",
+          "added": "2026-11-20 15:22",
+          "addedBy": "Gurjeet Singh",
+          "title": "Nai Pepea: Employee: User unable to login on this account, and when user clicks back to application, it redirects to a different account login page ke-nairobi",
+          "priority": "P1",
+          "source": "bug-reporter",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-27 15:06",
+          "fetchError": ""
+        },
+        "updated": "2026-11-27 15:06",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/65": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/65",
+          "ref": "#65",
+          "added": "2026-11-21 23:43",
+          "addedBy": "Gurjeet Singh"
+        },
+        "updated": "2026-11-21 23:43",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/egovernments/complaint-management-system/issues/69": {
+        "value": {
+          "url": "https://github.com/egovernments/complaint-management-system/issues/69",
+          "ref": "#69",
+          "added": "2026-11-21 23:43",
+          "addedBy": "Gurjeet Singh",
+          "title": "CMS on DIGIT 3.0: cms-service on the DIGIT 3.0 /cms/v3 header API, Spring Boot 4 / Java 25",
+          "state": "open",
+          "labels": [],
+          "fetchedAt": "2026-11-22 00:05",
+          "fetchError": ""
+        },
+        "updated": "2026-11-22 00:05",
+        "by": "Gurjeet Singh"
+      },
+      "https://github.com/Gurjeet-eGov/PythonScripts/issues/8": {
+        "value": {
+          "url": "https://github.com/Gurjeet-eGov/PythonScripts/issues/8",
+          "ref": "#8",
+          "added": "2026-11-22 01:47",
+          "addedBy": "Gurjeet Singh",
+          "title": "[P1] Test Dummy: Citizen: This is a test issue to verify if the use case is added to test suite",
+          "state": "open",
+          "labels": [
+            "bug"
+          ],
+          "fetchedAt": "2026-11-22 01:48",
+          "fetchError": ""
+        },
+        "updated": "2026-11-22 01:48",
+        "by": "Gurjeet Singh"
+      }
+    }
+  }
+}

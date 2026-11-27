@@ -1,0 +1,171 @@
+{
+ "version": 1,
+ "cycles": [
+  {
+   "book": "security-fixes-bomet-17331e",
+   "tab": "Security Audit",
+   "cycle": "2.12_SecAudit",
+   "latest": {
+    "suiteName": "CMS 2.12.1",
+    "startedAt": "2026-11-27T09:41:56.960Z",
+    "importedAt": "2026-11-27T10:06:08.496Z",
+    "env": "CMS-Pilot",
+    "options": {
+     "scope": "session-checks"
+    },
+    "attach": {
+     "tab": "Security Audit",
+     "cycle": "2.12_SecAudit"
+    },
+    "totals": {
+     "passed": 57,
+     "failed": 0,
+     "skipped": 1,
+     "flaky": 0,
+     "total": 58
+    },
+    "passRate": 98,
+    "previous": {
+     "startedAt": "2026-11-26T15:03:04.855Z",
+     "totals": {
+      "passed": 57,
+      "failed": 0,
+      "skipped": 1,
+      "flaky": 0,
+      "total": 58
+     },
+     "passRate": 98
+    },
+    "changed": {
+     "newFailures": 0,
+     "stillFailing": 0,
+     "fixed": 0,
+     "flaky": 0
+    }
+   },
+   "runs": [
+    {
+     "suiteName": "CMS 2.12.1",
+     "startedAt": "2026-11-27T09:41:56.960Z",
+     "env": "CMS-Pilot",
+     "options": {
+      "scope": "session-checks"
+     },
+     "totals": {
+      "passed": 57,
+      "failed": 0,
+      "skipped": 1,
+      "flaky": 0,
+      "total": 58
+     },
+     "passRate": 98,
+     "prevPassRate": 98
+    },
+    {
+     "suiteName": "CMS 2.12.1",
+     "startedAt": "2026-11-26T15:03:04.855Z",
+     "env": "",
+     "options": {},
+     "totals": {
+      "passed": 57,
+      "failed": 0,
+      "skipped": 1,
+      "flaky": 0,
+      "total": 58
+     },
+     "passRate": 98,
+     "prevPassRate": null
+    }
+   ],
+   "coverage": {
+    "total": 53,
+    "covered": 42,
+    "passing": 42,
+    "failing": 0
+   }
+  },
+  {
+   "book": "cms-sign-off-cms-automation-naipepea-net-two-17-nov-2026-3a669a",
+   "tab": "CMS 2.20.1",
+   "cycle": "2.20.1",
+   "latest": {
+    "suiteName": "CMS 3.0",
+    "startedAt": "2026-11-25T07:29:34.581Z",
+    "importedAt": "2026-11-25T07:59:18.412Z",
+    "env": "Nai Pepea",
+    "options": {
+     "scope": "full"
+    },
+    "attach": {
+     "tab": "CMS 2.20.1",
+     "cycle": "2.20.1"
+    },
+    "totals": {
+     "passed": 243,
+     "failed": 8,
+     "skipped": 20,
+     "flaky": 0,
+     "total": 271
+    },
+    "passRate": 90,
+    "previous": {
+     "startedAt": "2026-11-24T21:01:16.760Z",
+     "totals": {
+      "passed": 243,
+      "failed": 8,
+      "skipped": 20,
+      "flaky": 0,
+      "total": 271
+     },
+     "passRate": 90
+    },
+    "changed": {
+     "newFailures": 0,
+     "stillFailing": 8,
+     "fixed": 0,
+     "flaky": 0
+    }
+   },
+   "runs": [
+    {
+     "suiteName": "CMS 3.0",
+     "startedAt": "2026-11-25T07:29:34.581Z",
+     "env": "Nai Pepea",
+     "options": {
+      "scope": "full"
+     },
+     "totals": {
+      "passed": 243,
+      "failed": 8,
+      "skipped": 20,
+      "flaky": 0,
+      "total": 271
+     },
+     "passRate": 90,
+     "prevPassRate": 90
+    },
+    {
+     "suiteName": "CMS 3.0",
+     "startedAt": "2026-11-24T21:01:16.760Z",
+     "env": "",
+     "options": {},
+     "totals": {
+      "passed": 243,
+      "failed": 8,
+      "skipped": 20,
+      "flaky": 0,
+      "total": 271
+     },
+     "passRate": 90,
+     "prevPassRate": null
+    }
+   ],
+   "coverage": {
+    "total": 172,
+    "covered": 0,
+    "passing": 0,
+    "failing": 0
+   }
+  }
+ ]
+}
